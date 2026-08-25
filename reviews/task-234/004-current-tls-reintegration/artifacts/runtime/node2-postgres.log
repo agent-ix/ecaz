@@ -1,0 +1,235 @@
+2026-08-25 10:11:49.255 PDT [111008] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:11:49.268 PDT [111008] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:11:49.268 PDT [111008] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:11:49.272 PDT [111008] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:11:49.277 PDT [111014] LOG:  database system was shut down at 2026-08-25 10:11:47 PDT
+2026-08-25 10:11:49.289 PDT [111008] LOG:  database system is ready to accept connections
+2026-08-25 10:11:51.600 PDT [111108] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:11:51.600 PDT [111108] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:51.600 PDT [111108] STATEMENT:  SELECT vec_id, dist
+	   FROM ec_distann_head_search_physical(
+	       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+	       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)
+2026-08-25 10:11:51.650 PDT [111108] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:51.650 PDT [111108] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:51.691 PDT [111118] ERROR:  canceling statement due to user request
+2026-08-25 10:11:51.691 PDT [111118] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:51.691 PDT [111118] STATEMENT:  SELECT vec_id, dist
+	   FROM ec_distann_head_search_physical(
+	       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+	       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)
+2026-08-25 10:11:51.713 PDT [111118] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:51.754 PDT [111128] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:51.754 PDT [111128] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:52.279 PDT [111134] ERROR:  canceling statement due to user request
+2026-08-25 10:11:52.279 PDT [111134] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:52.279 PDT [111134] STATEMENT:  SELECT vec_id, dist
+	   FROM ec_distann_head_search_physical(
+	       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+	       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)
+2026-08-25 10:11:52.299 PDT [111134] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:52.341 PDT [111141] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:52.341 PDT [111141] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:52.379 PDT [111148] FATAL:  terminating connection due to administrator command
+2026-08-25 10:11:52.379 PDT [111148] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:52.379 PDT [111148] STATEMENT:  SELECT vec_id, dist
+	   FROM ec_distann_head_search_physical(
+	       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+	       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)
+2026-08-25 10:11:52.458 PDT [111155] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:52.458 PDT [111155] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:52.493 PDT [111008] LOG:  received immediate shutdown request
+2026-08-25 10:11:52.503 PDT [111008] LOG:  database system is shut down
+2026-08-25 10:11:52.610 PDT [111167] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:11:52.626 PDT [111167] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:11:52.626 PDT [111167] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:11:52.630 PDT [111167] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:11:52.636 PDT [111173] LOG:  database system was interrupted; last known up at 2026-08-25 10:11:49 PDT
+2026-08-25 10:11:52.976 PDT [111173] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-25 10:11:52.981 PDT [111173] LOG:  redo starts at 0/1754600
+2026-08-25 10:11:53.001 PDT [111173] LOG:  invalid record length at 0/1C386B8: expected at least 24, got 0
+2026-08-25 10:11:53.001 PDT [111173] LOG:  redo done at 0/1C38660 system usage: CPU: user: 0.01 s, system: 0.00 s, elapsed: 0.02 s
+2026-08-25 10:11:53.028 PDT [111171] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-25 10:11:53.143 PDT [111171] LOG:  checkpoint complete: wrote 674 buffers (4.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.011 s, sync=0.088 s, total=0.119 s; sync files=276, longest=0.007 s, average=0.001 s; distance=5008 kB, estimate=5008 kB; lsn=0/1C386B8, redo lsn=0/1C386B8
+2026-08-25 10:11:53.150 PDT [111167] LOG:  database system is ready to accept connections
+2026-08-25 10:11:53.258 PDT [111180] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:53.258 PDT [111180] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:53.386 PDT [111184] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:11:53.386 PDT [111184] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:53.386 PDT [111184] STATEMENT:  SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:53.413 PDT [111184] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:53.413 PDT [111184] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:53.453 PDT [111194] ERROR:  canceling statement due to user request
+2026-08-25 10:11:53.453 PDT [111194] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:53.453 PDT [111194] STATEMENT:  SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:53.473 PDT [111194] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:53.487 PDT [111202] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:53.487 PDT [111202] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:54.006 PDT [111208] ERROR:  canceling statement due to user request
+2026-08-25 10:11:54.006 PDT [111208] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:54.006 PDT [111208] STATEMENT:  SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:54.026 PDT [111208] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:54.041 PDT [111215] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:54.041 PDT [111215] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:54.080 PDT [111223] FATAL:  terminating connection due to administrator command
+2026-08-25 10:11:54.080 PDT [111223] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:54.080 PDT [111223] STATEMENT:  SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:54.112 PDT [111230] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:54.112 PDT [111230] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:54.144 PDT [111167] LOG:  received immediate shutdown request
+2026-08-25 10:11:54.154 PDT [111167] LOG:  database system is shut down
+2026-08-25 10:11:54.529 PDT [111242] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:11:54.850 PDT [111242] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:11:54.850 PDT [111242] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:11:54.854 PDT [111242] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:11:54.861 PDT [111248] LOG:  database system was interrupted; last known up at 2026-08-25 10:11:53 PDT
+2026-08-25 10:11:55.269 PDT [111248] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-25 10:11:55.273 PDT [111248] LOG:  redo starts at 0/1C38730
+2026-08-25 10:11:55.274 PDT [111248] LOG:  invalid record length at 0/1D0C9A0: expected at least 24, got 0
+2026-08-25 10:11:55.274 PDT [111248] LOG:  redo done at 0/1D0C948 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-08-25 10:11:55.282 PDT [111246] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-25 10:11:55.326 PDT [111246] LOG:  checkpoint complete: wrote 118 buffers (0.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.017 s, total=0.048 s; sync files=25, longest=0.006 s, average=0.001 s; distance=848 kB, estimate=848 kB; lsn=0/1D0C9A0, redo lsn=0/1D0C9A0
+2026-08-25 10:11:55.332 PDT [111242] LOG:  database system is ready to accept connections
+2026-08-25 10:11:55.386 PDT [111255] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:55.386 PDT [111255] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:55.511 PDT [111259] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:11:55.511 PDT [111259] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:55.511 PDT [111259] STATEMENT:  SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+	   FROM ec_distann_gateway_routing_export(
+	       $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:55.540 PDT [111259] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:55.540 PDT [111259] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:55.651 PDT [111269] ERROR:  canceling statement due to user request
+2026-08-25 10:11:55.651 PDT [111269] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:55.651 PDT [111269] STATEMENT:  SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+	   FROM ec_distann_gateway_routing_export(
+	       $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:55.671 PDT [111269] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:55.687 PDT [111277] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:55.687 PDT [111277] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:56.206 PDT [111283] ERROR:  canceling statement due to user request
+2026-08-25 10:11:56.206 PDT [111283] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:56.206 PDT [111283] STATEMENT:  SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+	   FROM ec_distann_gateway_routing_export(
+	       $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:56.224 PDT [111283] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:56.245 PDT [111290] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:56.245 PDT [111290] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:56.280 PDT [111297] FATAL:  terminating connection due to administrator command
+2026-08-25 10:11:56.280 PDT [111297] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:56.280 PDT [111297] STATEMENT:  SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+	   FROM ec_distann_gateway_routing_export(
+	       $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:56.316 PDT [111304] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:56.316 PDT [111304] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:56.354 PDT [111242] LOG:  received immediate shutdown request
+2026-08-25 10:11:56.363 PDT [111242] LOG:  database system is shut down
+2026-08-25 10:11:56.469 PDT [111316] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:11:56.486 PDT [111316] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:11:56.486 PDT [111316] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:11:56.490 PDT [111316] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:11:56.495 PDT [111322] LOG:  database system was interrupted; last known up at 2026-08-25 10:11:55 PDT
+2026-08-25 10:11:56.783 PDT [111322] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-25 10:11:56.787 PDT [111322] LOG:  redo starts at 0/1D0CA18
+2026-08-25 10:11:56.788 PDT [111322] LOG:  invalid record length at 0/1DA56D8: expected at least 24, got 0
+2026-08-25 10:11:56.788 PDT [111322] LOG:  redo done at 0/1DA5680 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-08-25 10:11:56.796 PDT [111320] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-25 10:11:56.840 PDT [111320] LOG:  checkpoint complete: wrote 84 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.015 s, total=0.049 s; sync files=16, longest=0.006 s, average=0.001 s; distance=611 kB, estimate=611 kB; lsn=0/1DA56D8, redo lsn=0/1DA56D8
+2026-08-25 10:11:56.846 PDT [111316] LOG:  database system is ready to accept connections
+2026-08-25 10:11:56.904 PDT [111329] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:56.904 PDT [111329] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.032 PDT [111333] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:11:57.032 PDT [111333] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:57.032 PDT [111333] STATEMENT:  SELECT vec_id, vector FROM ec_distann_head_shard_export(
+	                     $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:57.063 PDT [111333] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:57.063 PDT [111333] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.104 PDT [111341] ERROR:  canceling statement due to user request
+2026-08-25 10:11:57.104 PDT [111341] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:57.104 PDT [111341] STATEMENT:  SELECT vec_id, vector FROM ec_distann_head_shard_export(
+	                     $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:57.124 PDT [111341] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.139 PDT [111347] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:57.139 PDT [111347] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.657 PDT [111351] ERROR:  canceling statement due to user request
+2026-08-25 10:11:57.657 PDT [111351] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:57.657 PDT [111351] STATEMENT:  SELECT vec_id, vector FROM ec_distann_head_shard_export(
+	                     $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:57.676 PDT [111351] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.690 PDT [111356] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:57.690 PDT [111356] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.723 PDT [111361] FATAL:  terminating connection due to administrator command
+2026-08-25 10:11:57.723 PDT [111361] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:57.723 PDT [111361] STATEMENT:  SELECT vec_id, vector FROM ec_distann_head_shard_export(
+	                     $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-25 10:11:57.757 PDT [111366] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:57.757 PDT [111366] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:57.787 PDT [111316] LOG:  received immediate shutdown request
+2026-08-25 10:11:57.796 PDT [111316] LOG:  database system is shut down
+2026-08-25 10:11:57.901 PDT [111376] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:11:57.915 PDT [111376] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:11:57.915 PDT [111376] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:11:57.918 PDT [111376] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:11:57.924 PDT [111382] LOG:  database system was interrupted; last known up at 2026-08-25 10:11:56 PDT
+2026-08-25 10:11:58.307 PDT [111382] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-25 10:11:58.312 PDT [111382] LOG:  redo starts at 0/1DA5750
+2026-08-25 10:11:58.312 PDT [111382] LOG:  invalid record length at 0/1E48E18: expected at least 24, got 0
+2026-08-25 10:11:58.312 PDT [111382] LOG:  redo done at 0/1E48DC0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-08-25 10:11:58.321 PDT [111380] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-25 10:11:58.363 PDT [111380] LOG:  checkpoint complete: wrote 88 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.012 s, total=0.047 s; sync files=17, longest=0.005 s, average=0.001 s; distance=653 kB, estimate=653 kB; lsn=0/1E48E18, redo lsn=0/1E48E18
+2026-08-25 10:11:58.369 PDT [111376] LOG:  database system is ready to accept connections
+2026-08-25 10:11:58.433 PDT [111389] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:58.433 PDT [111389] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:58.567 PDT [111393] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:11:58.567 PDT [111393] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:58.567 PDT [111393] STATEMENT:  SELECT ec_distann_head_shard_import(
+	                     $1::text::regclass, $2::bytea, $3::integer,
+	                     $4::bigint[], $5::real[], $6::integer)
+2026-08-25 10:11:58.747 PDT [111393] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:58.747 PDT [111393] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:58.800 PDT [111401] ERROR:  canceling statement due to user request
+2026-08-25 10:11:58.800 PDT [111401] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:58.800 PDT [111401] STATEMENT:  SELECT ec_distann_head_shard_import(
+	                     $1::text::regclass, $2::bytea, $3::integer,
+	                     $4::bigint[], $5::real[], $6::integer)
+2026-08-25 10:11:58.819 PDT [111401] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:58.984 PDT [111407] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:58.984 PDT [111407] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:59.506 PDT [111411] ERROR:  canceling statement due to user request
+2026-08-25 10:11:59.506 PDT [111411] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:59.506 PDT [111411] STATEMENT:  SELECT ec_distann_head_shard_import(
+	                     $1::text::regclass, $2::bytea, $3::integer,
+	                     $4::bigint[], $5::real[], $6::integer)
+2026-08-25 10:11:59.526 PDT [111411] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:59.698 PDT [111416] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:59.698 PDT [111416] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:59.744 PDT [111421] FATAL:  terminating connection due to administrator command
+2026-08-25 10:11:59.744 PDT [111421] CONTEXT:  SQL statement "SELECT pg_sleep(5)"
+2026-08-25 10:11:59.744 PDT [111421] STATEMENT:  SELECT ec_distann_head_shard_import(
+	                     $1::text::regclass, $2::bytea, $3::integer,
+	                     $4::bigint[], $5::real[], $6::integer)
+2026-08-25 10:11:59.938 PDT [111426] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:11:59.938 PDT [111426] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:11:59.985 PDT [111376] LOG:  received immediate shutdown request
+2026-08-25 10:11:59.994 PDT [111376] LOG:  database system is shut down
+2026-08-25 10:12:00.100 PDT [111436] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:12:00.115 PDT [111436] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:12:00.115 PDT [111436] LOG:  listening on IPv4 address "127.0.0.1", port 44331
+2026-08-25 10:12:00.119 PDT [111436] LOG:  listening on IPv4 address "127.0.0.2", port 44331
+2026-08-25 10:12:00.125 PDT [111442] LOG:  database system was interrupted; last known up at 2026-08-25 10:11:58 PDT
+2026-08-25 10:12:00.516 PDT [111442] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-25 10:12:00.521 PDT [111442] LOG:  redo starts at 0/1E48E90
+2026-08-25 10:12:00.527 PDT [111442] LOG:  invalid record length at 0/2001198: expected at least 24, got 0
+2026-08-25 10:12:00.527 PDT [111442] LOG:  redo done at 0/2001140 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-08-25 10:12:00.535 PDT [111440] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-25 10:12:00.582 PDT [111440] LOG:  checkpoint complete: wrote 158 buffers (1.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.011 s, sync=0.014 s, total=0.051 s; sync files=23, longest=0.006 s, average=0.001 s; distance=1760 kB, estimate=1760 kB; lsn=0/2001198, redo lsn=0/2001198
+2026-08-25 10:12:00.588 PDT [111436] LOG:  database system is ready to accept connections
+2026-08-25 10:12:00.791 PDT [111449] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:12:00.791 PDT [111449] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:12:01.293 PDT [111436] LOG:  received fast shutdown request
+2026-08-25 10:12:01.296 PDT [111436] LOG:  aborting any active transactions
+2026-08-25 10:12:01.297 PDT [111436] LOG:  background worker "logical replication launcher" (PID 111446) exited with exit code 1
+2026-08-25 10:12:01.297 PDT [111440] LOG:  shutting down
+2026-08-25 10:12:01.301 PDT [111440] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:12:01.338 PDT [111440] LOG:  checkpoint complete: wrote 138 buffers (0.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.016 s, total=0.041 s; sync files=19, longest=0.006 s, average=0.001 s; distance=1187 kB, estimate=1703 kB; lsn=0/2129ED0, redo lsn=0/2129ED0
+2026-08-25 10:12:01.352 PDT [111436] LOG:  database system is shut down
