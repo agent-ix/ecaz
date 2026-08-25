@@ -1623,11 +1623,20 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
         payload_nulls, payload_offsets, payload_values, owner_total_ns, owner_open_validate_ns,
-        owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
+        owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes,
+        owner_payload_spi_ns, owner_binary_send_ns, owner_response_construct_ns,
+        owner_requested_tids, owner_distinct_heap_blocks, owner_max_rows_per_heap_block,
+        owner_block_sort_displaced_rows, owner_block_sort_displacement_total,
+        owner_block_sort_displacement_max, owner_total_shared_blks_hit,
+        owner_total_shared_blks_read, owner_total_shared_blk_read_ns,
+        owner_send_shared_blks_hit, owner_send_shared_blks_read,
+        owner_send_shared_blk_read_ns, owner_projected_values,
+        owner_external_toast_values, owner_stored_bytes, owner_logical_bytes,
+        owner_binary_send_bytes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
-       $9::bigint[], $10::integer[], $11::boolean)";
+       $9::bigint[], $10::integer[], $11::boolean, $12::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -2576,6 +2585,8 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) owner_heap_tids: &'a [ItemPointer],
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_expanded_locator: bool,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) profile_owner_locality: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -2710,6 +2721,99 @@ pub(crate) fn remote_physical_materialize_batch(
                 super::stage_counters::DistannQueryStage::MaterializeOwnerPayloadSqlWork,
                 Duration::from_nanos(batch.telemetry.owner_payload_sql_ns),
             );
+            if batch.telemetry.owner_requested_tids > 0 {
+                for (stage, nanos) in [
+                    (
+                        super::stage_counters::DistannQueryStage::MaterializeOwnerPayloadSpiWork,
+                        batch.telemetry.owner_payload_spi_ns,
+                    ),
+                    (
+                        super::stage_counters::DistannQueryStage::MaterializeOwnerBinarySendWork,
+                        batch.telemetry.owner_binary_send_ns,
+                    ),
+                    (
+                        super::stage_counters::DistannQueryStage::MaterializeOwnerResponseConstructWork,
+                        batch.telemetry.owner_response_construct_ns,
+                    ),
+                ] {
+                    super::stage_counters::record(stage, Duration::from_nanos(nanos));
+                }
+                for (metric, value) in [
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerRequestedTids,
+                        batch.telemetry.owner_requested_tids,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerDistinctHeapBlocks,
+                        batch.telemetry.owner_distinct_heap_blocks,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerMaxRowsPerHeapBlockSum,
+                        batch.telemetry.owner_max_rows_per_heap_block,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerBlockSortDisplacedRows,
+                        batch.telemetry.owner_block_sort_displaced_rows,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerBlockSortDisplacementTotal,
+                        batch.telemetry.owner_block_sort_displacement_total,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerBlockSortDisplacementMaxSum,
+                        batch.telemetry.owner_block_sort_displacement_max,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerTotalSharedBlksHit,
+                        batch.telemetry.owner_total_shared_blks_hit,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerTotalSharedBlksRead,
+                        batch.telemetry.owner_total_shared_blks_read,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerTotalSharedBlkReadNs,
+                        batch.telemetry.owner_total_shared_blk_read_ns,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerSendSharedBlksHit,
+                        batch.telemetry.owner_send_shared_blks_hit,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerSendSharedBlksRead,
+                        batch.telemetry.owner_send_shared_blks_read,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerSendSharedBlkReadNs,
+                        batch.telemetry.owner_send_shared_blk_read_ns,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerProjectedValues,
+                        batch.telemetry.owner_projected_values,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerExternalToastValues,
+                        batch.telemetry.owner_external_toast_values,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerStoredBytes,
+                        batch.telemetry.owner_stored_bytes,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerLogicalBytes,
+                        batch.telemetry.owner_logical_bytes,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerBinarySendBytes,
+                        batch.telemetry.owner_binary_send_bytes,
+                    ),
+                ] {
+                    super::stage_counters::record_work(
+                        metric,
+                        usize::try_from(value).unwrap_or(usize::MAX),
+                    );
+                }
+            }
         }
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::MaterializeOwnerEndpointCritical,
@@ -2779,6 +2883,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_owner_blocks,
                     &wire_owner_offsets,
                     &request.use_expanded_locator,
+                    &request.profile_owner_locality,
                 ],
             )
             .await;
@@ -2817,6 +2922,62 @@ fn decode_physical_materialize_rows(
                     owner_node_lookup_ns: nonnegative_i64_to_u64(row.try_get(8).map_err(row_err)?)?,
                     owner_payload_sql_ns: nonnegative_i64_to_u64(row.try_get(9).map_err(row_err)?)?,
                     payload_bytes: nonnegative_i64_to_u64(row.try_get(10).map_err(row_err)?)?,
+                    owner_payload_spi_ns: nonnegative_i64_to_u64(
+                        row.try_get(11).map_err(row_err)?,
+                    )?,
+                    owner_binary_send_ns: nonnegative_i64_to_u64(
+                        row.try_get(12).map_err(row_err)?,
+                    )?,
+                    owner_response_construct_ns: nonnegative_i64_to_u64(
+                        row.try_get(13).map_err(row_err)?,
+                    )?,
+                    owner_requested_tids: nonnegative_i64_to_u64(
+                        row.try_get(14).map_err(row_err)?,
+                    )?,
+                    owner_distinct_heap_blocks: nonnegative_i64_to_u64(
+                        row.try_get(15).map_err(row_err)?,
+                    )?,
+                    owner_max_rows_per_heap_block: nonnegative_i64_to_u64(
+                        row.try_get(16).map_err(row_err)?,
+                    )?,
+                    owner_block_sort_displaced_rows: nonnegative_i64_to_u64(
+                        row.try_get(17).map_err(row_err)?,
+                    )?,
+                    owner_block_sort_displacement_total: nonnegative_i64_to_u64(
+                        row.try_get(18).map_err(row_err)?,
+                    )?,
+                    owner_block_sort_displacement_max: nonnegative_i64_to_u64(
+                        row.try_get(19).map_err(row_err)?,
+                    )?,
+                    owner_total_shared_blks_hit: nonnegative_i64_to_u64(
+                        row.try_get(20).map_err(row_err)?,
+                    )?,
+                    owner_total_shared_blks_read: nonnegative_i64_to_u64(
+                        row.try_get(21).map_err(row_err)?,
+                    )?,
+                    owner_total_shared_blk_read_ns: nonnegative_i64_to_u64(
+                        row.try_get(22).map_err(row_err)?,
+                    )?,
+                    owner_send_shared_blks_hit: nonnegative_i64_to_u64(
+                        row.try_get(23).map_err(row_err)?,
+                    )?,
+                    owner_send_shared_blks_read: nonnegative_i64_to_u64(
+                        row.try_get(24).map_err(row_err)?,
+                    )?,
+                    owner_send_shared_blk_read_ns: nonnegative_i64_to_u64(
+                        row.try_get(25).map_err(row_err)?,
+                    )?,
+                    owner_projected_values: nonnegative_i64_to_u64(
+                        row.try_get(26).map_err(row_err)?,
+                    )?,
+                    owner_external_toast_values: nonnegative_i64_to_u64(
+                        row.try_get(27).map_err(row_err)?,
+                    )?,
+                    owner_stored_bytes: nonnegative_i64_to_u64(row.try_get(28).map_err(row_err)?)?,
+                    owner_logical_bytes: nonnegative_i64_to_u64(row.try_get(29).map_err(row_err)?)?,
+                    owner_binary_send_bytes: nonnegative_i64_to_u64(
+                        row.try_get(30).map_err(row_err)?,
+                    )?,
                 };
                 if telemetry.is_some_and(|existing| existing != row_telemetry) {
                     return Err(DistannExpandError::Internal(
@@ -3548,6 +3709,26 @@ pub(crate) struct DistannOwnerMaterializeTelemetry {
     pub(crate) owner_node_lookup_ns: u64,
     pub(crate) owner_payload_sql_ns: u64,
     pub(crate) payload_bytes: u64,
+    pub(crate) owner_payload_spi_ns: u64,
+    pub(crate) owner_binary_send_ns: u64,
+    pub(crate) owner_response_construct_ns: u64,
+    pub(crate) owner_requested_tids: u64,
+    pub(crate) owner_distinct_heap_blocks: u64,
+    pub(crate) owner_max_rows_per_heap_block: u64,
+    pub(crate) owner_block_sort_displaced_rows: u64,
+    pub(crate) owner_block_sort_displacement_total: u64,
+    pub(crate) owner_block_sort_displacement_max: u64,
+    pub(crate) owner_total_shared_blks_hit: u64,
+    pub(crate) owner_total_shared_blks_read: u64,
+    pub(crate) owner_total_shared_blk_read_ns: u64,
+    pub(crate) owner_send_shared_blks_hit: u64,
+    pub(crate) owner_send_shared_blks_read: u64,
+    pub(crate) owner_send_shared_blk_read_ns: u64,
+    pub(crate) owner_projected_values: u64,
+    pub(crate) owner_external_toast_values: u64,
+    pub(crate) owner_stored_bytes: u64,
+    pub(crate) owner_logical_bytes: u64,
+    pub(crate) owner_binary_send_bytes: u64,
 }
 
 /// Issue a batch of remote `ec_distann_materialize_row_payloads` calls — one per

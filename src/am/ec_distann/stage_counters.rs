@@ -46,10 +46,13 @@ pub(crate) enum DistannQueryStage {
     ReplicaOpenValidate,
     ReplicaGraphVectorRead,
     ReplicaScore,
+    MaterializeOwnerPayloadSpiWork,
+    MaterializeOwnerBinarySendWork,
+    MaterializeOwnerResponseConstructWork,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 37] = [
+    pub(crate) const ALL: [Self; 40] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -87,6 +90,9 @@ impl DistannQueryStage {
         Self::ReplicaOpenValidate,
         Self::ReplicaGraphVectorRead,
         Self::ReplicaScore,
+        Self::MaterializeOwnerPayloadSpiWork,
+        Self::MaterializeOwnerBinarySendWork,
+        Self::MaterializeOwnerResponseConstructWork,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -128,6 +134,11 @@ impl DistannQueryStage {
             Self::ReplicaOpenValidate => "replica_open_validate",
             Self::ReplicaGraphVectorRead => "replica_graph_vector_read",
             Self::ReplicaScore => "replica_score",
+            Self::MaterializeOwnerPayloadSpiWork => "materialize_owner_payload_spi_work",
+            Self::MaterializeOwnerBinarySendWork => "materialize_owner_binary_send_work",
+            Self::MaterializeOwnerResponseConstructWork => {
+                "materialize_owner_response_construct_work"
+            }
         }
     }
 
@@ -170,6 +181,9 @@ impl DistannQueryStage {
             Self::ReplicaOpenValidate => 34,
             Self::ReplicaGraphVectorRead => 35,
             Self::ReplicaScore => 36,
+            Self::MaterializeOwnerPayloadSpiWork => 37,
+            Self::MaterializeOwnerBinarySendWork => 38,
+            Self::MaterializeOwnerResponseConstructWork => 39,
         }
     }
 }
@@ -214,10 +228,27 @@ pub(crate) enum DistannMaterializationWork {
     GatewayCopiesServed,
     HeadReplicaFallbacks,
     HeadReplicaShardsServed,
+    OwnerRequestedTids,
+    OwnerDistinctHeapBlocks,
+    OwnerMaxRowsPerHeapBlockSum,
+    OwnerBlockSortDisplacedRows,
+    OwnerBlockSortDisplacementTotal,
+    OwnerBlockSortDisplacementMaxSum,
+    OwnerTotalSharedBlksHit,
+    OwnerTotalSharedBlksRead,
+    OwnerTotalSharedBlkReadNs,
+    OwnerSendSharedBlksHit,
+    OwnerSendSharedBlksRead,
+    OwnerSendSharedBlkReadNs,
+    OwnerProjectedValues,
+    OwnerExternalToastValues,
+    OwnerStoredBytes,
+    OwnerLogicalBytes,
+    OwnerBinarySendBytes,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 33] = [
+    pub(crate) const ALL: [Self; 50] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -251,6 +282,23 @@ impl DistannMaterializationWork {
         Self::GatewayCopiesServed,
         Self::HeadReplicaFallbacks,
         Self::HeadReplicaShardsServed,
+        Self::OwnerRequestedTids,
+        Self::OwnerDistinctHeapBlocks,
+        Self::OwnerMaxRowsPerHeapBlockSum,
+        Self::OwnerBlockSortDisplacedRows,
+        Self::OwnerBlockSortDisplacementTotal,
+        Self::OwnerBlockSortDisplacementMaxSum,
+        Self::OwnerTotalSharedBlksHit,
+        Self::OwnerTotalSharedBlksRead,
+        Self::OwnerTotalSharedBlkReadNs,
+        Self::OwnerSendSharedBlksHit,
+        Self::OwnerSendSharedBlksRead,
+        Self::OwnerSendSharedBlkReadNs,
+        Self::OwnerProjectedValues,
+        Self::OwnerExternalToastValues,
+        Self::OwnerStoredBytes,
+        Self::OwnerLogicalBytes,
+        Self::OwnerBinarySendBytes,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -288,6 +336,23 @@ impl DistannMaterializationWork {
             Self::GatewayCopiesServed => "gateway_copies_served",
             Self::HeadReplicaFallbacks => "head_replica_fallbacks",
             Self::HeadReplicaShardsServed => "head_replica_shards_served",
+            Self::OwnerRequestedTids => "owner_requested_tids",
+            Self::OwnerDistinctHeapBlocks => "owner_distinct_heap_blocks",
+            Self::OwnerMaxRowsPerHeapBlockSum => "owner_max_rows_per_heap_block_sum",
+            Self::OwnerBlockSortDisplacedRows => "owner_block_sort_displaced_rows",
+            Self::OwnerBlockSortDisplacementTotal => "owner_block_sort_displacement_total",
+            Self::OwnerBlockSortDisplacementMaxSum => "owner_block_sort_displacement_max_sum",
+            Self::OwnerTotalSharedBlksHit => "owner_total_shared_blks_hit",
+            Self::OwnerTotalSharedBlksRead => "owner_total_shared_blks_read",
+            Self::OwnerTotalSharedBlkReadNs => "owner_total_shared_blk_read_ns",
+            Self::OwnerSendSharedBlksHit => "owner_send_shared_blks_hit",
+            Self::OwnerSendSharedBlksRead => "owner_send_shared_blks_read",
+            Self::OwnerSendSharedBlkReadNs => "owner_send_shared_blk_read_ns",
+            Self::OwnerProjectedValues => "owner_projected_values",
+            Self::OwnerExternalToastValues => "owner_external_toast_values",
+            Self::OwnerStoredBytes => "owner_stored_bytes",
+            Self::OwnerLogicalBytes => "owner_logical_bytes",
+            Self::OwnerBinarySendBytes => "owner_binary_send_bytes",
         }
     }
 
@@ -326,6 +391,23 @@ impl DistannMaterializationWork {
             Self::GatewayCopiesServed => 30,
             Self::HeadReplicaFallbacks => 31,
             Self::HeadReplicaShardsServed => 32,
+            Self::OwnerRequestedTids => 33,
+            Self::OwnerDistinctHeapBlocks => 34,
+            Self::OwnerMaxRowsPerHeapBlockSum => 35,
+            Self::OwnerBlockSortDisplacedRows => 36,
+            Self::OwnerBlockSortDisplacementTotal => 37,
+            Self::OwnerBlockSortDisplacementMaxSum => 38,
+            Self::OwnerTotalSharedBlksHit => 39,
+            Self::OwnerTotalSharedBlksRead => 40,
+            Self::OwnerTotalSharedBlkReadNs => 41,
+            Self::OwnerSendSharedBlksHit => 42,
+            Self::OwnerSendSharedBlksRead => 43,
+            Self::OwnerSendSharedBlkReadNs => 44,
+            Self::OwnerProjectedValues => 45,
+            Self::OwnerExternalToastValues => 46,
+            Self::OwnerStoredBytes => 47,
+            Self::OwnerLogicalBytes => 48,
+            Self::OwnerBinarySendBytes => 49,
         }
     }
 }

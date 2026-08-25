@@ -733,6 +733,10 @@ struct DistannLocalMultinodeStep {
     metrics_mode: Option<DistannMetricsMode>,
     #[serde(default)]
     distann_stage_counters: bool,
+    /// Task 224 owner heap/TOAST locality attribution projection. Four suite
+    /// steps reuse one fixture to cover the registered shapes.
+    #[serde(default)]
+    owner_payload_shape: Option<String>,
     #[serde(default)]
     stage_counter_only: bool,
     #[serde(default)]
@@ -845,7 +849,10 @@ struct DistannLocalMultinodeStep {
 impl DistannLocalMultinodeStep {
     fn effective_metrics_mode(&self) -> DistannMetricsMode {
         self.metrics_mode.unwrap_or({
-            if self.distann_stage_counters || self.stage_counter_only || self.sample_backend_memory
+            if self.distann_stage_counters
+                || self.owner_payload_shape.is_some()
+                || self.stage_counter_only
+                || self.sample_backend_memory
             {
                 DistannMetricsMode::FullMetrics
             } else {
@@ -1729,6 +1736,7 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.run_dir, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.reuse_provenance_dir, &artifact_dir);
             }
             SuiteStep::SpirePipeline(step) => {
                 rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
@@ -4701,6 +4709,7 @@ impl SuiteStep {
                 }
                 if step.metrics_mode == Some(DistannMetricsMode::Benchmark)
                     && (step.distann_stage_counters
+                        || step.owner_payload_shape.is_some()
                         || step.stage_counter_only
                         || step.sample_backend_memory)
                 {
@@ -4721,6 +4730,27 @@ impl SuiteStep {
                 if step.distann_stage_counters && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.owner_payload_shape.is_some()
+                    && (!step.physical_benchmark
+                        || !step.distann_stage_counters
+                        || step.effective_metrics_mode() != DistannMetricsMode::FullMetrics)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_payload_shape requires physical_benchmark, distann_stage_counters, and full_metrics",
+                        step.name
+                    )
+                }
+                if step.owner_payload_shape.as_deref().is_some_and(|shape| {
+                    !matches!(
+                        shape,
+                        "id-only" | "narrow-scalar" | "vector-bearing" | "toasted"
+                    )
+                }) {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_payload_shape must be id-only, narrow-scalar, vector-bearing, or toasted",
                         step.name
                     )
                 }
@@ -6055,6 +6085,9 @@ fn expand_distann_local_multinode(
     );
     if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
+    }
+    if let Some(shape) = step.owner_payload_shape.as_deref() {
+        args.extend(["--owner-payload-shape".into(), shape.to_owned()]);
     }
     if step.stage_counter_only {
         args.push("--stage-counter-only".into());
@@ -8496,6 +8529,67 @@ psql header noise\n\
         assert_eq!(
             rows[1].1.get("metric").map(String::as_str),
             Some("remote_candidates_requested")
+        );
+    }
+
+    #[test]
+    fn task224_owner_payload_locality_is_suite_addressable_and_structured() {
+        let raw = r#"{
+          "name": "task224-owner-locality",
+          "schema_version": 1,
+          "artifact_dir": "reviews/task-224/002-locality-attribution/artifacts/run",
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "locality-100k",
+            "artifact_dir": "${artifact_dir}/toasted",
+            "reuse_fixture": true,
+            "reuse_provenance_dir": "${artifact_dir}/id-only",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "stage_counter_only": true,
+            "owner_payload_shape": "toasted",
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        apply_artifact_dir_templates(&mut config);
+        let SuiteStep::DistannLocalMultinode(step) = &config.steps[0] else {
+            panic!("expected DistANN local multinode step");
+        };
+        assert_eq!(
+            step.artifact_dir.as_deref(),
+            Some(Path::new(
+                "reviews/task-224/002-locality-attribution/artifacts/run/toasted"
+            ))
+        );
+        assert_eq!(
+            step.reuse_provenance_dir.as_deref(),
+            Some(Path::new(
+                "reviews/task-224/002-locality-attribution/artifacts/run/id-only"
+            ))
+        );
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--distann-stage-counters".into()));
+        assert!(command.contains(&"--stage-counter-only".into()));
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--owner-payload-shape", "toasted"] }));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control payload_shape=toasted arm=physical stage=materialize_owner_binary_send_work scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n\
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=control payload_shape=toasted arm=physical metric=owner_external_toast_values scans=50 value=500 mean_per_scan=10.0\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].1.get("payload_shape").map(String::as_str),
+            Some("toasted")
+        );
+        assert_eq!(
+            rows[1].1.get("metric").map(String::as_str),
+            Some("owner_external_toast_values")
         );
     }
 

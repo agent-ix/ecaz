@@ -21,6 +21,8 @@ use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use pgrx::spi::OwnedPreparedStatement;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use pgrx::AnyElement;
 use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use sha2::{Digest, Sha256};
@@ -592,6 +594,30 @@ mod cache_tests {
         };
         assert_eq!(route.roster_endpoint_spec(), "secret:DISTANN_NODE_SEVEN");
         assert!(!route.roster_endpoint_spec().contains("do-not-forward"));
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn owner_tid_profile_measures_block_dispersion_and_rank_displacement() {
+        let nodes = [(2, 2), (1, 1), (2, 1), (1, 2)]
+            .into_iter()
+            .map(|(block_number, offset_number)| {
+                let mut node = DistannNodeTuple::empty();
+                node.heap_tid = ItemPointer {
+                    block_number,
+                    offset_number,
+                };
+                node
+            })
+            .collect::<Vec<_>>();
+
+        let profile = owner_tid_profile(&nodes);
+        assert_eq!(profile.requested_tids, 4);
+        assert_eq!(profile.distinct_heap_blocks, 2);
+        assert_eq!(profile.max_rows_per_heap_block, 2);
+        assert_eq!(profile.block_sort_displaced_rows, 3);
+        assert_eq!(profile.block_sort_displacement_total, 6);
+        assert_eq!(profile.block_sort_displacement_max, 3);
     }
 }
 
@@ -2298,9 +2324,12 @@ impl RetainedGenerationScan {
         use_typed_locator: bool,
         use_packed_payload: bool,
         owner_heap_tids: Option<&[ItemPointer]>,
+        profile_owner_locality: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         let _ = owner_heap_tids;
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let _ = profile_owner_locality;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
         let expected: [u8; 32] = expected_schema_fingerprint.try_into().map_err(|_| {
@@ -2393,6 +2422,19 @@ impl RetainedGenerationScan {
         } else {
             duration_ns(lookup_started.elapsed())
         };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let locality_profile_enabled = profile_owner_locality;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if locality_profile_enabled && use_packed_payload {
+            return Err(DistannExpandError::BadInput(
+                "Task 224 owner locality profiling requires the production bytea[] payload shape"
+                    .to_owned(),
+            ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let tid_profile = locality_profile_enabled
+            .then(|| owner_tid_profile(&nodes))
+            .unwrap_or_default();
         if nodes.is_empty() {
             return Ok(PhysicalPayloadBatch {
                 rows: Vec::new(),
@@ -2400,7 +2442,7 @@ impl RetainedGenerationScan {
                 telemetry: OwnerMaterializationTelemetry {
                     validate_ns,
                     node_lookup_ns,
-                    payload_sql_ns: 0,
+                    ..OwnerMaterializationTelemetry::default()
                 },
             });
         }
@@ -2409,7 +2451,9 @@ impl RetainedGenerationScan {
         let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
             .map_err(DistannExpandError::GenerationMissing)?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        let sql_builder = if use_packed_payload {
+        let sql_builder = if locality_profile_enabled {
+            super::remote_endpoint::build_profiled_payload_sql
+        } else if use_packed_payload {
             super::remote_endpoint::build_packed_payload_sql
         } else {
             super::remote_endpoint::build_payload_sql
@@ -2456,7 +2500,15 @@ impl RetainedGenerationScan {
             hasher.update(sql.as_bytes());
             hasher.finalize().into()
         };
-        let payloads = Spi::connect(|client| {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if locality_profile_enabled {
+            payload_send_profile_start();
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let total_buffer_before = owner_buffer_usage_snapshot();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let payload_spi_started = Instant::now();
+        let payloads_result = Spi::connect(|client| {
             #[cfg(feature = "distann-head-attribution-benchmark")]
             let rows = if use_cached_payload_plan {
                 let mut plans = self.owner_payload_plans.borrow_mut();
@@ -2604,12 +2656,29 @@ impl RetainedGenerationScan {
                 }
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()
-        })?;
+        });
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let payload_spi_ns = duration_ns(payload_spi_started.elapsed());
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let total_buffer = if locality_profile_enabled {
+            owner_buffer_usage_delta(owner_buffer_usage_snapshot(), total_buffer_before)
+        } else {
+            OwnerBufferUsage::default()
+        };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let send_profile = if locality_profile_enabled {
+            payload_send_profile_finish()
+        } else {
+            PayloadBinarySendProfile::default()
+        };
+        let payloads = payloads_result?;
         if payloads.len() != nodes.len() {
             return Err(DistannExpandError::Internal(
                 "physical payload response count mismatch".to_owned(),
             ));
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let response_construct_started = Instant::now();
         let rows = nodes
             .into_iter()
             .zip(payloads)
@@ -2626,6 +2695,8 @@ impl RetainedGenerationScan {
             })
             .collect();
         #[cfg(feature = "distann-head-attribution-benchmark")]
+        let response_construct_ns = duration_ns(response_construct_started.elapsed());
+        #[cfg(feature = "distann-head-attribution-benchmark")]
         let payload_sql_ns = duration_ns(payload_sql_started.elapsed());
         Ok(PhysicalPayloadBatch {
             rows,
@@ -2634,6 +2705,22 @@ impl RetainedGenerationScan {
                 validate_ns,
                 node_lookup_ns,
                 payload_sql_ns,
+                payload_spi_ns,
+                binary_send_ns: send_profile.send_ns,
+                response_construct_ns,
+                requested_tids: tid_profile.requested_tids,
+                distinct_heap_blocks: tid_profile.distinct_heap_blocks,
+                max_rows_per_heap_block: tid_profile.max_rows_per_heap_block,
+                block_sort_displaced_rows: tid_profile.block_sort_displaced_rows,
+                block_sort_displacement_total: tid_profile.block_sort_displacement_total,
+                block_sort_displacement_max: tid_profile.block_sort_displacement_max,
+                total_buffer,
+                send_buffer: send_profile.buffer,
+                projected_values: send_profile.projected_values,
+                external_toast_values: send_profile.external_toast_values,
+                stored_bytes: send_profile.stored_bytes,
+                logical_bytes: send_profile.logical_bytes,
+                binary_send_bytes: send_profile.binary_send_bytes,
             },
         })
     }
@@ -2656,7 +2743,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false, false, None)
+        .materialize_payloads(&[], &[], &expected, false, false, false, None, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -2687,16 +2774,277 @@ struct PhysicalPayloadBatch {
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct OwnerMaterializationTelemetry {
     validate_ns: u64,
     node_lookup_ns: u64,
     payload_sql_ns: u64,
+    payload_spi_ns: u64,
+    binary_send_ns: u64,
+    response_construct_ns: u64,
+    requested_tids: u64,
+    distinct_heap_blocks: u64,
+    max_rows_per_heap_block: u64,
+    block_sort_displaced_rows: u64,
+    block_sort_displacement_total: u64,
+    block_sort_displacement_max: u64,
+    total_buffer: OwnerBufferUsage,
+    send_buffer: OwnerBufferUsage,
+    projected_values: u64,
+    external_toast_values: u64,
+    stored_bytes: u64,
+    logical_bytes: u64,
+    binary_send_bytes: u64,
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 fn duration_ns(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug, Clone, Copy, Default)]
+struct OwnerBufferUsage {
+    shared_blks_hit: u64,
+    shared_blks_read: u64,
+    shared_blk_read_ns: u64,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug, Clone, Copy, Default)]
+struct OwnerTidProfile {
+    requested_tids: u64,
+    distinct_heap_blocks: u64,
+    max_rows_per_heap_block: u64,
+    block_sort_displaced_rows: u64,
+    block_sort_displacement_total: u64,
+    block_sort_displacement_max: u64,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn owner_tid_profile(nodes: &[DistannNodeTuple]) -> OwnerTidProfile {
+    let mut block_counts = HashMap::<u32, u64>::new();
+    let mut physical_order = nodes
+        .iter()
+        .enumerate()
+        .map(|(rank, node)| {
+            *block_counts.entry(node.heap_tid.block_number).or_default() += 1;
+            (
+                node.heap_tid.block_number,
+                node.heap_tid.offset_number,
+                rank,
+            )
+        })
+        .collect::<Vec<_>>();
+    physical_order.sort_unstable();
+    let mut displaced_rows = 0_u64;
+    let mut displacement_total = 0_u64;
+    let mut displacement_max = 0_u64;
+    for (physical_rank, (_, _, request_rank)) in physical_order.into_iter().enumerate() {
+        let displacement = u64::try_from(physical_rank.abs_diff(request_rank)).unwrap_or(u64::MAX);
+        displaced_rows = displaced_rows.saturating_add(u64::from(displacement != 0));
+        displacement_total = displacement_total.saturating_add(displacement);
+        displacement_max = displacement_max.max(displacement);
+    }
+    OwnerTidProfile {
+        requested_tids: u64::try_from(nodes.len()).unwrap_or(u64::MAX),
+        distinct_heap_blocks: u64::try_from(block_counts.len()).unwrap_or(u64::MAX),
+        max_rows_per_heap_block: block_counts.values().copied().max().unwrap_or(0),
+        block_sort_displaced_rows: displaced_rows,
+        block_sort_displacement_total: displacement_total,
+        block_sort_displacement_max: displacement_max,
+    }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn owner_buffer_usage_snapshot() -> pg_sys::BufferUsage {
+    // PostgreSQL owns this backend-local aggregate. A copy before and after a
+    // bounded operation is the same mechanism executor instrumentation uses.
+    unsafe { pg_sys::pgBufferUsage }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn nonnegative_i64_delta(after: i64, before: i64) -> u64 {
+    u64::try_from(after.saturating_sub(before).max(0)).unwrap_or(u64::MAX)
+}
+
+#[cfg(all(feature = "distann-head-attribution-benchmark", unix))]
+fn instr_time_delta_ns(after: pg_sys::instr_time, before: pg_sys::instr_time) -> u64 {
+    // PostgreSQL's Unix instr_time representation is clock_gettime nanoseconds.
+    nonnegative_i64_delta(after.ticks, before.ticks)
+}
+
+#[cfg(all(feature = "distann-head-attribution-benchmark", not(unix)))]
+fn instr_time_delta_ns(_after: pg_sys::instr_time, _before: pg_sys::instr_time) -> u64 {
+    // The benchmark fixtures are Unix. Avoid publishing platform-specific raw
+    // ticks as nanoseconds on an unsupported host.
+    0
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn owner_buffer_usage_delta(
+    after: pg_sys::BufferUsage,
+    before: pg_sys::BufferUsage,
+) -> OwnerBufferUsage {
+    OwnerBufferUsage {
+        shared_blks_hit: nonnegative_i64_delta(after.shared_blks_hit, before.shared_blks_hit),
+        shared_blks_read: nonnegative_i64_delta(after.shared_blks_read, before.shared_blks_read),
+        shared_blk_read_ns: instr_time_delta_ns(
+            after.shared_blk_read_time,
+            before.shared_blk_read_time,
+        ),
+    }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Default)]
+struct PayloadBinarySendProfile {
+    send_ns: u64,
+    buffer: OwnerBufferUsage,
+    projected_values: u64,
+    external_toast_values: u64,
+    stored_bytes: u64,
+    logical_bytes: u64,
+    binary_send_bytes: u64,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+struct ProfileSendInfo {
+    send_flinfo: pg_sys::FmgrInfo,
+    typlen: i16,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+thread_local! {
+    static PAYLOAD_PROFILE_SENDERS: RefCell<HashMap<pg_sys::Oid, ProfileSendInfo>> =
+        RefCell::new(HashMap::new());
+    static ACTIVE_PAYLOAD_SEND_PROFILE: RefCell<Option<PayloadBinarySendProfile>> =
+        const { RefCell::new(None) };
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn payload_send_profile_start() {
+    ACTIVE_PAYLOAD_SEND_PROFILE.with(|profile| {
+        *profile.borrow_mut() = Some(PayloadBinarySendProfile::default());
+    });
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn payload_send_profile_finish() -> PayloadBinarySendProfile {
+    ACTIVE_PAYLOAD_SEND_PROFILE
+        .with(|profile| profile.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn ensure_profile_send_info(type_oid: pg_sys::Oid) -> i16 {
+    PAYLOAD_PROFILE_SENDERS.with(|senders| {
+        let mut senders = senders.borrow_mut();
+        let entry = senders.entry(type_oid).or_insert_with(|| {
+            let mut send_oid = pg_sys::InvalidOid;
+            let mut is_varlena = false;
+            unsafe { pg_sys::getTypeBinaryOutputInfo(type_oid, &mut send_oid, &mut is_varlena) };
+            if send_oid == pg_sys::InvalidOid {
+                pgrx::error!("ec_distann Task 224 profiler: type lacks binary send function");
+            }
+            let mut send_flinfo = pg_sys::FmgrInfo::default();
+            unsafe { pg_sys::fmgr_info_cxt(send_oid, &mut send_flinfo, pg_sys::TopMemoryContext) };
+            ProfileSendInfo {
+                send_flinfo,
+                typlen: unsafe { pg_sys::get_typlen(type_oid) },
+            }
+        });
+        entry.typlen
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+unsafe fn varlena_is_external_ondisk(datum: pg_sys::Datum) -> bool {
+    let pointer = datum.cast_mut_ptr::<u8>();
+    if pointer.is_null() {
+        return false;
+    }
+    #[cfg(target_endian = "little")]
+    const EXTERNAL_HEADER: u8 = 0x01;
+    #[cfg(target_endian = "big")]
+    const EXTERNAL_HEADER: u8 = 0x80;
+    const VARTAG_ONDISK: u8 = 18;
+    unsafe { *pointer == EXTERNAL_HEADER && *pointer.add(1) == VARTAG_ONDISK }
+}
+
+/// Task 224 feature-only polymorphic sender. The SQL caller supplies exactly
+/// the same non-NULL datum that the production `typsend` call would receive.
+/// Only `SendFunctionCall` is charged to `binary_send_ns`; wrapper and cache
+/// overhead remain visible in the enclosing payload-SPI residual.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_profile_binary_send(value: AnyElement) -> Vec<u8> {
+    let datum = value.datum();
+    let type_oid = value.oid();
+    let typlen = ensure_profile_send_info(type_oid);
+    let (stored_bytes, logical_bytes, external_toast) = if typlen == -1 {
+        (
+            unsafe { pg_sys::toast_datum_size(datum) as u64 },
+            unsafe { pg_sys::toast_raw_datum_size(datum) as u64 },
+            unsafe { varlena_is_external_ondisk(datum) },
+        )
+    } else if typlen >= 0 {
+        let bytes = u64::try_from(typlen).unwrap_or(0);
+        (bytes, bytes, false)
+    } else {
+        let bytes = unsafe {
+            std::ffi::CStr::from_ptr(datum.cast_mut_ptr::<core::ffi::c_char>())
+                .to_bytes_with_nul()
+                .len()
+        };
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        (bytes, bytes, false)
+    };
+    let buffer_before = owner_buffer_usage_snapshot();
+    let started = Instant::now();
+    let sent = PAYLOAD_PROFILE_SENDERS.with(|senders| {
+        let mut senders = senders.borrow_mut();
+        let info = senders
+            .get_mut(&type_oid)
+            .expect("Task 224 sender cache entry disappeared");
+        unsafe { pg_sys::SendFunctionCall(&mut info.send_flinfo, datum) }
+    });
+    let send_ns = duration_ns(started.elapsed());
+    let send_buffer = owner_buffer_usage_delta(owner_buffer_usage_snapshot(), buffer_before);
+    if sent.is_null() {
+        pgrx::error!("ec_distann Task 224 profiler: binary send returned NULL");
+    }
+    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(sent.cast()) }.to_vec();
+    unsafe { pg_sys::pfree(sent.cast()) };
+    ACTIVE_PAYLOAD_SEND_PROFILE.with(|profile| {
+        let mut profile = profile.borrow_mut();
+        let Some(profile) = profile.as_mut() else {
+            return;
+        };
+        profile.send_ns = profile.send_ns.saturating_add(send_ns);
+        profile.buffer.shared_blks_hit = profile
+            .buffer
+            .shared_blks_hit
+            .saturating_add(send_buffer.shared_blks_hit);
+        profile.buffer.shared_blks_read = profile
+            .buffer
+            .shared_blks_read
+            .saturating_add(send_buffer.shared_blks_read);
+        profile.buffer.shared_blk_read_ns = profile
+            .buffer
+            .shared_blk_read_ns
+            .saturating_add(send_buffer.shared_blk_read_ns);
+        profile.projected_values = profile.projected_values.saturating_add(1);
+        profile.external_toast_values = profile
+            .external_toast_values
+            .saturating_add(u64::from(external_toast));
+        profile.stored_bytes = profile.stored_bytes.saturating_add(stored_bytes);
+        profile.logical_bytes = profile.logical_bytes.saturating_add(logical_bytes);
+        profile.binary_send_bytes = profile
+            .binary_send_bytes
+            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+    });
+    bytes
 }
 
 pub(crate) fn local_traversal_replica_chunk(
@@ -4567,6 +4915,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 false,
                 false,
                 None,
+                false,
             )
         })
         .map(|batch| batch.rows)
@@ -4610,6 +4959,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     owner_heap_blocks: Vec<i64>,
     owner_heap_offsets: Vec<i32>,
     use_expanded_locator: bool,
+    profile_owner_locality: bool,
 ) -> TableIterator<
     'static,
     (
@@ -4624,6 +4974,26 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         name!(owner_node_lookup_ns, i64),
         name!(owner_payload_sql_ns, i64),
         name!(payload_bytes, i64),
+        name!(owner_payload_spi_ns, i64),
+        name!(owner_binary_send_ns, i64),
+        name!(owner_response_construct_ns, i64),
+        name!(owner_requested_tids, i64),
+        name!(owner_distinct_heap_blocks, i64),
+        name!(owner_max_rows_per_heap_block, i64),
+        name!(owner_block_sort_displaced_rows, i64),
+        name!(owner_block_sort_displacement_total, i64),
+        name!(owner_block_sort_displacement_max, i64),
+        name!(owner_total_shared_blks_hit, i64),
+        name!(owner_total_shared_blks_read, i64),
+        name!(owner_total_shared_blk_read_ns, i64),
+        name!(owner_send_shared_blks_hit, i64),
+        name!(owner_send_shared_blks_read, i64),
+        name!(owner_send_shared_blk_read_ns, i64),
+        name!(owner_projected_values, i64),
+        name!(owner_external_toast_values, i64),
+        name!(owner_stored_bytes, i64),
+        name!(owner_logical_bytes, i64),
+        name!(owner_binary_send_bytes, i64),
     ),
 > {
     let total_started = Instant::now();
@@ -4673,6 +5043,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             use_typed_locator,
             use_packed_payload,
             owner_heap_tids.as_deref(),
+            profile_owner_locality,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -4694,6 +5065,41 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let owner_node_lookup_ns = i64::try_from(owner_node_lookup_ns).unwrap_or(i64::MAX);
     let owner_payload_sql_ns = i64::try_from(owner_payload_sql_ns).unwrap_or(i64::MAX);
     let payload_bytes = i64::try_from(payload_bytes).unwrap_or(i64::MAX);
+    let owner_payload_spi_ns = i64::try_from(batch.telemetry.payload_spi_ns).unwrap_or(i64::MAX);
+    let owner_binary_send_ns = i64::try_from(batch.telemetry.binary_send_ns).unwrap_or(i64::MAX);
+    let owner_response_construct_ns =
+        i64::try_from(batch.telemetry.response_construct_ns).unwrap_or(i64::MAX);
+    let owner_requested_tids = i64::try_from(batch.telemetry.requested_tids).unwrap_or(i64::MAX);
+    let owner_distinct_heap_blocks =
+        i64::try_from(batch.telemetry.distinct_heap_blocks).unwrap_or(i64::MAX);
+    let owner_max_rows_per_heap_block =
+        i64::try_from(batch.telemetry.max_rows_per_heap_block).unwrap_or(i64::MAX);
+    let owner_block_sort_displaced_rows =
+        i64::try_from(batch.telemetry.block_sort_displaced_rows).unwrap_or(i64::MAX);
+    let owner_block_sort_displacement_total =
+        i64::try_from(batch.telemetry.block_sort_displacement_total).unwrap_or(i64::MAX);
+    let owner_block_sort_displacement_max =
+        i64::try_from(batch.telemetry.block_sort_displacement_max).unwrap_or(i64::MAX);
+    let owner_total_shared_blks_hit =
+        i64::try_from(batch.telemetry.total_buffer.shared_blks_hit).unwrap_or(i64::MAX);
+    let owner_total_shared_blks_read =
+        i64::try_from(batch.telemetry.total_buffer.shared_blks_read).unwrap_or(i64::MAX);
+    let owner_total_shared_blk_read_ns =
+        i64::try_from(batch.telemetry.total_buffer.shared_blk_read_ns).unwrap_or(i64::MAX);
+    let owner_send_shared_blks_hit =
+        i64::try_from(batch.telemetry.send_buffer.shared_blks_hit).unwrap_or(i64::MAX);
+    let owner_send_shared_blks_read =
+        i64::try_from(batch.telemetry.send_buffer.shared_blks_read).unwrap_or(i64::MAX);
+    let owner_send_shared_blk_read_ns =
+        i64::try_from(batch.telemetry.send_buffer.shared_blk_read_ns).unwrap_or(i64::MAX);
+    let owner_projected_values =
+        i64::try_from(batch.telemetry.projected_values).unwrap_or(i64::MAX);
+    let owner_external_toast_values =
+        i64::try_from(batch.telemetry.external_toast_values).unwrap_or(i64::MAX);
+    let owner_stored_bytes = i64::try_from(batch.telemetry.stored_bytes).unwrap_or(i64::MAX);
+    let owner_logical_bytes = i64::try_from(batch.telemetry.logical_bytes).unwrap_or(i64::MAX);
+    let owner_binary_send_bytes =
+        i64::try_from(batch.telemetry.binary_send_bytes).unwrap_or(i64::MAX);
     TableIterator::new(batch.rows.into_iter().map(move |row| {
         (
             row.0,
@@ -4707,6 +5113,26 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             owner_node_lookup_ns,
             owner_payload_sql_ns,
             payload_bytes,
+            owner_payload_spi_ns,
+            owner_binary_send_ns,
+            owner_response_construct_ns,
+            owner_requested_tids,
+            owner_distinct_heap_blocks,
+            owner_max_rows_per_heap_block,
+            owner_block_sort_displaced_rows,
+            owner_block_sort_displacement_total,
+            owner_block_sort_displacement_max,
+            owner_total_shared_blks_hit,
+            owner_total_shared_blks_read,
+            owner_total_shared_blk_read_ns,
+            owner_send_shared_blks_hit,
+            owner_send_shared_blks_read,
+            owner_send_shared_blk_read_ns,
+            owner_projected_values,
+            owner_external_toast_values,
+            owner_stored_bytes,
+            owner_logical_bytes,
+            owner_binary_send_bytes,
         )
     }))
 }
@@ -6073,6 +6499,9 @@ impl PhysicalGenerationScan {
                     owner_heap_tids: _locators,
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_expanded_locator: candidate,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    profile_owner_locality:
+                        super::options::benchmark_owner_locality_profile(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;

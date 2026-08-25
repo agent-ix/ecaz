@@ -188,6 +188,13 @@ pub struct LocalMultinodePg18Args {
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
     pub distann_stage_counters: bool,
+    /// Task 224 owner heap/TOAST locality attribution projection. Suite steps
+    /// reuse one fixture to run all four registered shapes.
+    #[arg(
+        long,
+        value_parser = ["id-only", "narrow-scalar", "vector-bearing", "toasted"]
+    )]
+    pub owner_payload_shape: Option<String>,
     /// Task 184 suite-driven semantic matrix for eager versus ranked-window
     /// materialization. Requires two otherwise-identical benchmark variants
     /// with batch sizes zero and ten.
@@ -662,6 +669,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
+    }
+    if args.owner_payload_shape.is_some()
+        && (!args.physical_benchmark || !args.distann_stage_counters)
+    {
+        bail!("--owner-payload-shape requires --physical-benchmark and --distann-stage-counters");
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
@@ -1947,7 +1959,8 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         args.dim
     };
-    let correctness_column = if args.materialization_correctness {
+    let owner_locality_fixture = args.owner_payload_shape.is_some();
+    let correctness_column = if args.materialization_correctness || owner_locality_fixture {
         ", payload_note text"
     } else {
         ""
@@ -2015,12 +2028,16 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             rows = args.rows,
         )
     };
-    let correctness_fixture = if coordinator && args.materialization_correctness {
+    let correctness_fixture = if coordinator
+        && (args.materialization_correctness || owner_locality_fixture)
+    {
         // Keep the benchmark/query vector non-null. A correctness-only payload
         // column provides both genuine NULL datums and forced, uncompressed
-        // out-of-line varlena datums in the immutable row tier without changing
-        // ordinary fixtures. EXTERNAL + >12 KiB cannot remain inline on an 8 KiB
-        // heap page; the DO block asserts every premise before index capture.
+        // out-of-line varlena datums in the immutable row tier. Task 224 uses
+        // the same fixture for all four projection shapes so the toasted arm
+        // can reuse the generation built by the id-only arm. EXTERNAL + >12
+        // KiB cannot remain inline on an 8 KiB heap page; the DO block asserts
+        // every premise before index capture.
         "ALTER TABLE dm ALTER COLUMN payload_note SET STORAGE EXTERNAL;
          UPDATE dm
             SET payload_note = CASE WHEN id % 2 = 0 THEN NULL
@@ -2306,6 +2323,15 @@ fn append_payload_projection_guc(args: &mut Vec<String>, arm: &str, enabled: boo
         args.extend([
             "--session-guc".into(),
             "ec_distann.benchmark_payload_projection=off".into(),
+        ]);
+    }
+}
+
+fn append_owner_payload_locality_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.benchmark_owner_locality_profile=on".into(),
         ]);
     }
 }
@@ -8059,7 +8085,11 @@ async fn run_physical_benchmarks(
             ));
         }
 
-        let latency_log = log_dir.join(format!("{arm}-{variant}-latency.log"));
+        let payload_shape_arg = (arm == "physical")
+            .then_some(args.owner_payload_shape.as_deref())
+            .flatten();
+        let payload_shape = payload_shape_arg.unwrap_or("default").replace('-', "_");
+        let latency_log = log_dir.join(format!("{arm}-{variant}-{payload_shape}-latency.log"));
         let mut latency_args = common.clone();
         latency_args.extend([
             "bench".into(),
@@ -8104,6 +8134,12 @@ async fn run_physical_benchmarks(
             for guc in &args.bench_session_gucs {
                 latency_args.extend(["--session-guc".into(), guc.clone()]);
             }
+        }
+        if let Some(payload_shape_arg) = payload_shape_arg {
+            latency_args.extend([
+                "--distann-payload-shape".into(),
+                payload_shape_arg.to_owned(),
+            ]);
         }
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
@@ -8154,6 +8190,11 @@ async fn run_physical_benchmarks(
         append_packed_payload_guc(&mut latency_args, arm, packed_payload);
         append_expanded_locator_guc(&mut latency_args, arm, expanded_locator);
         append_payload_projection_guc(&mut latency_args, arm, payload_projection);
+        append_owner_payload_locality_guc(
+            &mut latency_args,
+            arm,
+            args.owner_payload_shape.is_some(),
+        );
         append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
         append_sharded_head_guc(
             &mut latency_args,
@@ -8214,7 +8255,7 @@ async fn run_physical_benchmarks(
                         eyre!("crown stats omitted fused_first_round_requested_ids")
                     })?;
                 lines.push(format!(
-                    "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
+                    "physical_benchmark_crown_stats scale={scale} variant={variant} payload_shape={payload_shape} arm={arm} {stats}"
                 ));
             }
             validate_crown_activation(
@@ -8268,7 +8309,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} payload_shape={payload_shape} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -8294,17 +8335,17 @@ async fn run_physical_benchmarks(
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
             let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
-            if stage_rows.len() != 37 * expected_counter_groups {
+            if stage_rows.len() != 40 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann stage rows ({} concurrency groups), got {}",
-                    37 * expected_counter_groups,
+                    40 * expected_counter_groups,
                     expected_counter_groups,
                     stage_rows.len()
                 );
             }
             // Reconcile the first concurrency group; all groups are retained
             // in the packet output below for the latency sweep evidence.
-            let attribution_stage_rows = &stage_rows[..37];
+            let attribution_stage_rows = &stage_rows[..40];
             let remote_expand = attribution_stage_mean(attribution_stage_rows, "remote_expand")?;
             let remote_components = [
                 "traversal_connection_ready",
@@ -8343,7 +8384,7 @@ async fn run_physical_benchmarks(
                 (traversal_components - traversal_total).abs() / traversal_total.max(f64::EPSILON);
             let reconciliation_pass = remote_error <= 0.05 && traversal_error <= 0.10;
             lines.push(format!(
-                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} traversal_replica={traversal_replica} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
+                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} payload_shape={payload_shape} traversal_replica={traversal_replica} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
             ));
             if !reconciliation_pass {
                 bail!(
@@ -8352,30 +8393,30 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} payload_shape={payload_shape} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 33 server-side work metrics
+            // The extension exposes 50 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 34 * expected_counter_groups {
+            if work_rows.len() != 51 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    34 * expected_counter_groups,
+                    51 * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} payload_shape={payload_shape} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
