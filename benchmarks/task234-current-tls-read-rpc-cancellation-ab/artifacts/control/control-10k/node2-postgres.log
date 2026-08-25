@@ -1,0 +1,27 @@
+2026-08-25 10:21:10.742 PDT [117142] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:21:10.757 PDT [117142] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:21:10.757 PDT [117142] LOG:  listening on IPv4 address "127.0.0.1", port 44411
+2026-08-25 10:21:10.761 PDT [117142] LOG:  listening on IPv4 address "127.0.0.2", port 44411
+2026-08-25 10:21:10.767 PDT [117148] LOG:  database system was shut down at 2026-08-25 10:21:09 PDT
+2026-08-25 10:21:10.779 PDT [117142] LOG:  database system is ready to accept connections
+2026-08-25 10:22:12.901 PDT [117755] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:12.901 PDT [117755] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:16.511 PDT [118064] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:16.511 PDT [118064] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:38.261 PDT [118691] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:38.261 PDT [118691] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:41.583 PDT [118717] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:41.583 PDT [118717] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:44.527 PDT [118720] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:44.528 PDT [118720] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:45.036 PDT [118731] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:45.036 PDT [118731] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:45.053 PDT [117362] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:22:45.053 PDT [117362] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:22:45.655 PDT [117142] LOG:  received fast shutdown request
+2026-08-25 10:22:45.679 PDT [117142] LOG:  aborting any active transactions
+2026-08-25 10:22:45.681 PDT [117142] LOG:  background worker "logical replication launcher" (PID 117151) exited with exit code 1
+2026-08-25 10:22:45.681 PDT [117146] LOG:  shutting down
+2026-08-25 10:22:45.684 PDT [117146] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:22:45.915 PDT [117146] LOG:  checkpoint complete: wrote 10526 buffers (64.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.049 s, sync=0.154 s, total=0.234 s; sync files=283, longest=0.022 s, average=0.001 s; distance=72696 kB, estimate=72696 kB; lsn=0/5E528F8, redo lsn=0/5E528F8
+2026-08-25 10:22:45.941 PDT [117142] LOG:  database system is shut down
