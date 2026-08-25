@@ -4,8 +4,12 @@ Status: **implementation and 25-cell PG18 fault matrix complete on the Task 234
 branches; closeout is NOT DONE and must not merge pending outside disposition**
 (2026-08-25). The original candidate regressed mean latency by 12.8% at 50k
 and 17.5% at 100k; the best screened all-success fast path still regressed
-7.1% at 50k against the reverse-order control. The code/evidence integration
-remains outside `main`; Task 237 and Task 228 stay blocked on this disposition.
+7.1% at 50k against the reverse-order control. Those arms used pre-Task-236
+base `de28655a` and candidate `5e003f221`; current main now includes the
+accepted secure-TLS transport. Reintegrate the Task 234 semantics onto exact
+current main, preserve Task 236, and rerun the relevant PG18 fault and
+performance gates before requesting a product tradeoff ruling. Task 237 and
+Task 228 stay blocked on this disposition.
 Priority: P0 distributed-read correctness/operations.
 
 ## Why
@@ -46,6 +50,9 @@ partial or stale results.
 3. Fault validation uses PG18 and the `ecaz dev distann-multicluster` surface;
    any repeated missing fault mode is added to that CLI rather than a one-off
    script.
+4. Final closeout is rebuilt and measured on the accepted Task 236 TLS/secret
+   substrate. The pre-TLS `de28655a`/`5e003f221` A/B is retained as historical
+   negative evidence, not treated as the current production disposition.
 
 ## Required implementation
 
@@ -123,4 +130,3 @@ partial or stale results.
 - NFR-014; NFR-020
 - Tasks 209, 214, 228, 235, 236, and 237
 - `src/am/ec_distann/remote_transport.rs`
-
