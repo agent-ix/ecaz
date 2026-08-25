@@ -1,9 +1,11 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **ready for its own entry-gate disposition; Task 223 review-closed
-STOP** (updated 2026-08-25). Priority: P2 latency. Task 223's accepted
-whole-bucket ceiling releases this task and supplies a conservative upper
-bound for the heap/TOAST subset; Task 224 must record its own gate outcome.
+Status: **plan packet 001 review-open; 100k locality attribution pending; no
+candidate authorized** (updated 2026-08-25). Priority: P2 latency. Task 223 is
+review-closed STOP and releases this task. Its accepted 0.514999 ms
+whole-bucket ceiling settles the production id-only arm, but narrow,
+vector-bearing, and externally toasted projections still require Task 224's
+own measured gate. Plan: `reviews/task-224/001-plan/`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.
@@ -65,4 +67,3 @@ block-batched detoast/binary-send work.
 
 - Tasks 222 and 223
 - Roadmap MAT-25 / MAT-26
-
