@@ -1893,11 +1893,40 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
         .map_err(|_| {
             "EC_REMOTE_WRITE remote_sql_failure: prepared transaction scan failed".to_owned()
         })?;
-    let mut results = Vec::with_capacity(prepared_rows.len());
+    let mut prepared_gids = HashSet::with_capacity(prepared_rows.len());
     for row in prepared_rows {
-        let gid = row.try_get::<_, String>("gid").map_err(|_| {
+        prepared_gids.insert(row.try_get::<_, String>("gid").map_err(|_| {
             "EC_REMOTE_WRITE remote_decode_failure: prepared gid decode failed".to_owned()
+        })?);
+    }
+    let index_oid_text = u32::from(index_oid).to_string();
+    let node_id_value = i32::try_from(node_id)
+        .map_err(|_| format!("EC_REMOTE_WRITE: node id {node_id} exceeds int4"))?;
+    let intent_rows = client
+        .query(
+            "SELECT gid FROM ec_distann_remote_prepared_xact_intent
+              WHERE index_oid = $1::text::oid AND node_id = $2
+                AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended')
+              ORDER BY created_at, gid",
+            &[&index_oid_text, &node_id_value],
+        )
+        .map_err(|_| {
+            "EC_REMOTE_WRITE remote_sql_failure: nonterminal intent scan failed".to_owned()
         })?;
+    let mut gids = prepared_gids.iter().cloned().collect::<Vec<_>>();
+    for row in intent_rows {
+        let gid = row.try_get::<_, String>("gid").map_err(|_| {
+            "EC_REMOTE_WRITE remote_decode_failure: intent gid decode failed".to_owned()
+        })?;
+        if !prepared_gids.contains(&gid) {
+            gids.push(gid);
+        }
+    }
+    gids.sort();
+    let mut results = Vec::with_capacity(gids.len());
+    for gid in gids {
+        maybe_check_for_interrupts();
+        let prepared = prepared_gids.contains(&gid);
         let Some(parts) = parse_physical_prepared_gid(&gid) else {
             results.push(format!("{gid}:unparseable:skipped"));
             continue;
@@ -1920,61 +1949,50 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
             results.push(format!("{gid}:{intent}:{disposition}"));
             continue;
         };
-        let command = if commit {
-            "COMMIT PREPARED"
-        } else {
-            "ROLLBACK PREPARED"
-        };
-        match client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid))) {
-            Ok(()) => {
-                let final_state = if commit {
-                    "commit_local"
-                } else {
-                    "rollback_local"
-                };
-                if intent == "missing_intent" {
-                    client
-                        .execute(
-                            "INSERT INTO ec_distann_remote_prepared_xact_intent \
-                             (index_oid, node_id, served_epoch, xid, gid, intent_state) \
-                             VALUES ($1::oid, $2, $3, $4, $5, $6) \
-                             ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
-                                 updated_at = clock_timestamp()",
-                            &[
-                                &u32::from(index_oid),
-                                &node_id,
-                                &(parts.served_epoch as i64),
-                                &i64::try_from(parts.xid).map_err(|_| {
-                                    "EC_REMOTE_WRITE: coordinator full xid exceeds bigint"
-                                        .to_owned()
-                                })?,
-                                &gid,
-                                &final_state,
-                            ],
-                        )
-                        .map_err(|_| {
-                            "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed"
-                                .to_owned()
-                        })?;
-                } else {
-                    client
-                        .execute(
-                            "UPDATE ec_distann_remote_prepared_xact_intent \
-                             SET intent_state = $2, updated_at = clock_timestamp() WHERE gid = $1",
-                            &[&gid, &final_state],
-                        )
-                        .map_err(|_| {
-                            "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed"
-                                .to_owned()
-                        })?;
-                }
-                results.push(format!("{gid}:{intent}:{}", final_state));
+        let action = if commit { "commit" } else { "rollback" };
+        if prepared {
+            let command = if commit {
+                "COMMIT PREPARED"
+            } else {
+                "ROLLBACK PREPARED"
+            };
+            if client
+                .batch_execute(&format!("{command} {}", quote_sql_literal(&gid)))
+                .is_err()
+            {
+                results.push(format!(
+                    "{gid}:{intent}:{action}_failed:outcome_unknown:operator_retry"
+                ));
+                continue;
             }
-            Err(_) => results.push(format!(
-                "{gid}:{intent}:{}_failed:remote_sql_failure",
-                if commit { "commit" } else { "rollback" }
-            )),
         }
+        let final_state = if commit {
+            "commit_local"
+        } else {
+            "rollback_local"
+        };
+        client
+            .execute(
+                "INSERT INTO ec_distann_remote_prepared_xact_intent \
+                 (index_oid, node_id, served_epoch, xid, gid, intent_state) \
+                 VALUES ($1::text::oid, $2, $3, $4, $5, $6) \
+                 ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
+                     updated_at = clock_timestamp()",
+                &[
+                    &index_oid_text,
+                    &node_id_value,
+                    &(parts.served_epoch as i64),
+                    &i64::try_from(parts.xid).map_err(|_| {
+                        "EC_REMOTE_WRITE: coordinator full xid exceeds bigint".to_owned()
+                    })?,
+                    &gid,
+                    &final_state,
+                ],
+            )
+            .map_err(|_| {
+                "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed".to_owned()
+            })?;
+        results.push(format!("{gid}:{intent}:{final_state}:prepared={prepared}"));
     }
     Ok(results)
 }
