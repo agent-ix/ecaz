@@ -165,11 +165,15 @@ and DML evidence even if an earlier prototype STOPs or wins. The hybrid reruns
 the graph-layout × payload-layout factorial rather than inferring interaction
 from the isolated results.
 
-The production-transport sequence is Task 238 closeout, Task 234 outside
-disposition, Task 235 write/lifecycle hardening, and Task 237 error/EXPLAIN
-hardening. Task 236 already supplies the accepted TLS substrate. Task 228 runs
-only after Tasks 222–237 have reported, so its transport-share denominator
-reflects the selected layout and production security/cancellation semantics.
+The production-transport sequence has Task 238 closeout and Task 234's
+current-TLS implementation gates review-open. Task 234's secure 25-cell PG18
+matrix passes and its fresh 10k/50k/100k A/B is recall/storage neutral within
+measurement resolution with no latency regression; outside disposition is the
+remaining gate. Task 235 then owns write/lifecycle hardening and Task 237 owns
+error/EXPLAIN hardening. Task 236 already supplies the accepted TLS substrate.
+Task 228 runs only after Tasks 222–237 have reported, so its transport-share
+denominator reflects the selected layout and production
+security/cancellation semantics.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
