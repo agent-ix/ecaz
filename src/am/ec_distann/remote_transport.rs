@@ -555,9 +555,15 @@ fn finalize_read_batch<T>(
             failures: results.iter().filter(|result| result.is_err()).count(),
         };
     });
-    let first_error = results
+    let Some(first_error) = results
         .iter()
-        .find_map(|result| result.as_ref().err().cloned());
+        .find_map(|result| result.as_ref().err().cloned())
+    else {
+        // Successful traversal/materialization batches are the hot path. Do
+        // not rescan owners or construct an eviction set when every owner
+        // completed cleanly.
+        return results;
+    };
     let evictions = results
         .iter()
         .enumerate()
@@ -572,10 +578,10 @@ fn finalize_read_batch<T>(
     for key in evictions {
         connections.remove(&key);
     }
-    if let Some(error) = first_error {
-        return results.into_iter().map(|_| Err(error.clone())).collect();
-    }
     results
+        .into_iter()
+        .map(|_| Err(first_error.clone()))
+        .collect()
 }
 
 fn finalize_read_call<T>(
