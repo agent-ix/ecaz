@@ -339,12 +339,7 @@ fn visibility_retry_allowed(
     Ok(current_graph_tuple_exists(generation.graph_store_relid, missing_vec_id).unwrap_or(false))
 }
 
-fn record_retry_attribution(
-    epoch: u64,
-    node_ids: &[u32],
-    vec_ids: &[u64],
-    missing_vec_id: u64,
-) {
+fn record_retry_attribution(epoch: u64, node_ids: &[u32], vec_ids: &[u64], missing_vec_id: u64) {
     // This unlogged relation belongs to diagnostic fixtures, not the
     // extension schema. Production retries must remain correct when the
     // attribution surface is absent.
@@ -356,10 +351,8 @@ fn record_retry_attribution(
     let relation_exists = unsafe {
         let namespace_oid = pg_sys::get_namespace_oid(c"public".as_ptr(), true);
         namespace_oid != pg_sys::InvalidOid
-            && pg_sys::get_relname_relid(
-                c"ec_distann_retry_attribution".as_ptr(),
-                namespace_oid,
-            ) != pg_sys::InvalidOid
+            && pg_sys::get_relname_relid(c"ec_distann_retry_attribution".as_ptr(), namespace_oid)
+                != pg_sys::InvalidOid
     };
     if !relation_exists {
         return;
@@ -591,10 +584,11 @@ mod cache_tests {
             node_id: 7,
             is_local: false,
             remote_index_regclass: "public.items_idx".to_owned(),
-            endpoint: super::super::node_registry::ResolvedConninfoSecret::from_test_secret_reference(
-                "DISTANN_NODE_SEVEN",
-                "host=db.example user=alice password=do-not-forward sslmode=require".to_owned(),
-            ),
+            endpoint:
+                super::super::node_registry::ResolvedConninfoSecret::from_test_secret_reference(
+                    "DISTANN_NODE_SEVEN",
+                    "host=db.example user=alice password=do-not-forward sslmode=require".to_owned(),
+                ),
         };
         assert_eq!(route.roster_endpoint_spec(), "secret:DISTANN_NODE_SEVEN");
         assert!(!route.roster_endpoint_spec().contains("do-not-forward"));
@@ -1174,15 +1168,14 @@ fn physical_owner_routes_for_owner_insert(
     let mut routes = Vec::with_capacity(descriptor.roster.len());
     for (ordinal, entry) in descriptor.roster.iter().enumerate() {
         let is_local = entry.node_id == local_node_id;
-        let endpoint = if let Some(secret_reference) =
-            configured[ordinal].conninfo.strip_prefix("secret:")
-        {
-            super::node_registry::resolve_conninfo_secret(secret_reference)?
-        } else {
-            super::node_registry::ResolvedConninfoSecret::from_legacy_conninfo(
-                configured[ordinal].conninfo.clone(),
-            )
-        };
+        let endpoint =
+            if let Some(secret_reference) = configured[ordinal].conninfo.strip_prefix("secret:") {
+                super::node_registry::resolve_conninfo_secret(secret_reference)?
+            } else {
+                super::node_registry::ResolvedConninfoSecret::from_legacy_conninfo(
+                    configured[ordinal].conninfo.clone(),
+                )
+            };
         routes.push(PhysicalOwnerRoute {
             roster_ordinal: ordinal,
             node_id: entry.node_id,
@@ -2710,10 +2703,7 @@ fn maybe_delay_read_rpc_for_test(rpc: &str) {
     }
     let delay_seconds = delay_ms as f64 / 1_000.0;
     Spi::run(&format!("SELECT pg_sleep({delay_seconds})")).unwrap_or_else(|error| {
-        DistannExpandError::Internal(format!(
-            "Task 234 {rpc} delay fault failed: {error}"
-        ))
-        .raise()
+        DistannExpandError::Internal(format!("Task 234 {rpc} delay fault failed: {error}")).raise()
     });
 }
 

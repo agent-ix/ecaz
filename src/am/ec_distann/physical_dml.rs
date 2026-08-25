@@ -1000,7 +1000,13 @@ fn roster_spec_for_routes(
 ) -> Result<String, String> {
     routes
         .iter()
-        .map(|route| Ok(format!("{}@{}", route.node_id, route.roster_endpoint_spec())))
+        .map(|route| {
+            Ok(format!(
+                "{}@{}",
+                route.node_id,
+                route.roster_endpoint_spec()
+            ))
+        })
         .collect::<Result<Vec<_>, String>>()
         .map(|entries| entries.join(";"))
 }

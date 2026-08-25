@@ -92,10 +92,7 @@ impl std::fmt::Debug for RemotePoolKey {
 fn remote_pool_key(work_identity: String, conninfo: &str) -> RemotePoolKey {
     RemotePoolKey {
         work_identity,
-        security_fingerprint: remote_security_fingerprint(
-            conninfo,
-            RemoteTlsPolicy::DistannSecure,
-        ),
+        security_fingerprint: remote_security_fingerprint(conninfo, RemoteTlsPolicy::DistannSecure),
     }
 }
 
@@ -233,9 +230,8 @@ fn parse_remote_config(
     conninfo: &str,
     error_prefix: &str,
 ) -> Result<(ParsedRemoteConninfo, tokio_postgres::Config), String> {
-    let parsed = parse_remote_conninfo(conninfo, RemoteTlsPolicy::DistannSecure).map_err(|error| {
-        format!("{error_prefix}: {}", error.category())
-    })?;
+    let parsed = parse_remote_conninfo(conninfo, RemoteTlsPolicy::DistannSecure)
+        .map_err(|error| format!("{error_prefix}: {}", error.category()))?;
     let mut config = parsed
         .base_conninfo()
         .parse::<tokio_postgres::Config>()
@@ -399,17 +395,9 @@ async fn ensure_physical_statements(
         .filter(|key| !connections[*key].prepared_statements.contains_key(sql))
         .cloned()
         .collect::<Vec<_>>();
-    let prepared = join_owner_futures(
-        stale
-            .iter()
-            .map(|key| {
-                prepare_physical_statement(
-                    &connections[key].client,
-                    &connections[key].tls_config,
-                    sql,
-                )
-            }),
-    )
+    let prepared = join_owner_futures(stale.iter().map(|key| {
+        prepare_physical_statement(&connections[key].client, &connections[key].tls_config, sql)
+    }))
     .await;
     for (key, statement) in stale.into_iter().zip(prepared) {
         connections
@@ -483,8 +471,13 @@ async fn open_remote_connection(
     let tls_config = parsed.tls_config().clone();
     let endpoint_fingerprint = parsed.endpoint_fingerprint();
     let (client, task) = if tls_config.no_tls() {
-        let (client, connection) =
-            match await_remote(connect_timeout(), None, config.connect(tokio_postgres::NoTls)).await {
+        let (client, connection) = match await_remote(
+            connect_timeout(),
+            None,
+            config.connect(tokio_postgres::NoTls),
+        )
+        .await
+        {
             Ok(connection) => connection,
             Err(RemoteAwaitError::Remote(_)) => {
                 return Err(format!("{error_prefix}: participant transport failed"));
@@ -506,31 +499,31 @@ async fn open_remote_connection(
         let connector = tls_config
             .connector()
             .map_err(|error| format!("{error_prefix}: {}", error.category()))?;
-        let (client, connection) = match await_remote(
-            connect_timeout(),
-            None,
-            config.connect(connector),
-        )
-        .await
-        {
-            Ok(connection) => connection,
-            Err(RemoteAwaitError::Remote(_)) => {
-                return Err(format!("{error_prefix}: secure participant transport failed"));
-            }
-            Err(RemoteAwaitError::TimedOut) => {
-                return Err(format!("{error_prefix}: secure participant connection timed out"));
-            }
-            Err(RemoteAwaitError::Interrupted) => {
-                return Err(format!("{error_prefix}: secure participant connection interrupted"));
-            }
-        };
+        let (client, connection) =
+            match await_remote(connect_timeout(), None, config.connect(connector)).await {
+                Ok(connection) => connection,
+                Err(RemoteAwaitError::Remote(_)) => {
+                    return Err(format!(
+                        "{error_prefix}: secure participant transport failed"
+                    ));
+                }
+                Err(RemoteAwaitError::TimedOut) => {
+                    return Err(format!(
+                        "{error_prefix}: secure participant connection timed out"
+                    ));
+                }
+                Err(RemoteAwaitError::Interrupted) => {
+                    return Err(format!(
+                        "{error_prefix}: secure participant connection interrupted"
+                    ));
+                }
+            };
         let task = tokio::spawn(async move {
             let _ = connection.await;
         });
         (client, task)
     };
-    if let Err(error) =
-        configure_remote_statement_timeout(&client, &tls_config, error_prefix).await
+    if let Err(error) = configure_remote_statement_timeout(&client, &tls_config, error_prefix).await
     {
         task.abort();
         return Err(error);
@@ -647,17 +640,13 @@ async fn ensure_pooled_connections(
         })
         .map(|(key, _)| key.clone())
         .collect::<Vec<_>>();
-    let refreshed = join_owner_futures(
-        stale
-            .iter()
-            .map(|key| {
-                configure_remote_statement_timeout(
-                    &connections[key].client,
-                    &connections[key].tls_config,
-                    error_prefix,
-                )
-            }),
-    )
+    let refreshed = join_owner_futures(stale.iter().map(|key| {
+        configure_remote_statement_timeout(
+            &connections[key].client,
+            &connections[key].tls_config,
+            error_prefix,
+        )
+    }))
     .await;
     for result in refreshed {
         result?;
@@ -697,17 +686,13 @@ async fn ensure_scan_sessions(
         .filter(|(key, identity)| connections[*key].applied_identity.as_ref() != Some(*identity))
         .map(|(key, identity)| (key.clone(), identity.clone()))
         .collect::<Vec<_>>();
-    let configured = join_owner_futures(
-        stale
-            .iter()
-            .map(|(key, identity)| {
-                configure_scan_identity(
-                    &connections[key].client,
-                    &connections[key].tls_config,
-                    identity,
-                )
-            }),
-    )
+    let configured = join_owner_futures(stale.iter().map(|(key, identity)| {
+        configure_scan_identity(
+            &connections[key].client,
+            &connections[key].tls_config,
+            identity,
+        )
+    }))
     .await;
     for result in configured {
         result?;
@@ -871,9 +856,7 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
     } else {
         "ec_distann physical insert remote prepared rollback callback"
     };
-    let Ok(mut client) = connect_distann_postgres(
-        &conninfo, node_id, context,
-    ) else {
+    let Ok(mut client) = connect_distann_postgres(&conninfo, node_id, context) else {
         return;
     };
     let command = if commit {
@@ -1334,12 +1317,9 @@ pub(crate) fn remote_physical_backlink(
                 Some(request.target_vec_id),
             )
             .await?;
-            client
-                .batch_execute("BEGIN")
-                .await
-                .map_err(|_| {
-                    "EC_REMOTE_WRITE remote_sql_failure: backlink begin failed".to_owned()
-                })?;
+            client.batch_execute("BEGIN").await.map_err(|_| {
+                "EC_REMOTE_WRITE remote_sql_failure: backlink begin failed".to_owned()
+            })?;
             client
                 .batch_execute(&format!(
                     "SET ec_distann.debug_disable_append_when_room = {}",
@@ -1451,10 +1431,9 @@ fn physical_intent_state_remote(
         )
         .map_err(|_| "EC_REMOTE_WRITE remote_sql_failure: intent lookup failed".to_owned())?
         .map(|row| {
-            row.try_get::<_, String>("intent_state")
-                .map_err(|_| {
-                    "EC_REMOTE_WRITE remote_decode_failure: intent state decode failed".to_owned()
-                })
+            row.try_get::<_, String>("intent_state").map_err(|_| {
+                "EC_REMOTE_WRITE remote_decode_failure: intent state decode failed".to_owned()
+            })
         })
         .transpose()
 }
@@ -1501,11 +1480,9 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
         })?;
     let mut results = Vec::with_capacity(prepared_rows.len());
     for row in prepared_rows {
-        let gid = row
-            .try_get::<_, String>("gid")
-            .map_err(|_| {
-                "EC_REMOTE_WRITE remote_decode_failure: prepared gid decode failed".to_owned()
-            })?;
+        let gid = row.try_get::<_, String>("gid").map_err(|_| {
+            "EC_REMOTE_WRITE remote_decode_failure: prepared gid decode failed".to_owned()
+        })?;
         let Some(parts) = parse_physical_prepared_gid(&gid) else {
             results.push(format!("{gid}:unparseable:skipped"));
             continue;
@@ -3405,10 +3382,7 @@ pub(super) fn remote_expand_batch(
     let conn_keys: Vec<RemotePoolKey> = requests
         .iter()
         .map(|request| {
-            remote_pool_key(
-                format!("scan:{}", request.target_node_id),
-                request.conninfo,
-            )
+            remote_pool_key(format!("scan:{}", request.target_node_id), request.conninfo)
         })
         .collect();
     let epoch_strs: Vec<String> = requests
@@ -4110,10 +4084,7 @@ mod tests {
         }
         let endpoint = [7_u8; 32];
         assert!(pool_entry_is_superseded(
-            &first,
-            &endpoint,
-            &rotated,
-            &endpoint,
+            &first, &endpoint, &rotated, &endpoint,
         ));
         assert!(!pool_entry_is_superseded(
             &first,

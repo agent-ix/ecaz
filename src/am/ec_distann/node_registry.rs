@@ -15,9 +15,6 @@ use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
 use sha2::{Digest, Sha256};
 
-use crate::am::common::remote_postgres_tls::{
-    remote_security_fingerprint, RemoteTlsPolicy,
-};
 use super::canonical_wire::{fixed_digest, is_rfc4122_v4_uuid};
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{
@@ -25,6 +22,7 @@ use super::generation_descriptor::{
 };
 use super::generation_store::{control_compatibility_digest, open_control_index};
 use super::remote_transport::connect_distann_postgres;
+use crate::am::common::remote_postgres_tls::{remote_security_fingerprint, RemoteTlsPolicy};
 
 struct ControlRegistrationIdentity {
     logical_index_uuid: Uuid,
@@ -134,10 +132,7 @@ impl ResolvedConninfoSecret {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_test_secret_reference(
-        secret_reference: &str,
-        raw_conninfo: String,
-    ) -> Self {
+    pub(crate) fn from_test_secret_reference(secret_reference: &str, raw_conninfo: String) -> Self {
         resolved_conninfo_secret(Some(secret_reference), raw_conninfo)
     }
 }
@@ -212,7 +207,9 @@ fn ec_distann_test_set_conninfo_secret(conninfo_secret_name: String, conninfo: S
     validate_secret_reference(&conninfo_secret_name)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     TEST_CONNINFO_SECRET_OVERRIDES.with(|overrides| {
-        overrides.borrow_mut().insert(conninfo_secret_name, conninfo);
+        overrides
+            .borrow_mut()
+            .insert(conninfo_secret_name, conninfo);
     });
 }
 
@@ -376,12 +373,8 @@ fn remote_control_identity(
     remote_index_regclass: &str,
     node_id: u32,
 ) -> Result<ControlRegistrationIdentity, String> {
-    let mut client = connect_distann_postgres(
-        conninfo,
-        node_id,
-        "ec_distann node registration",
-    )
-    .map_err(|_| "EC_NODE_DESCRIPTOR: remote control connection failed".to_owned())?;
+    let mut client = connect_distann_postgres(conninfo, node_id, "ec_distann node registration")
+        .map_err(|_| "EC_NODE_DESCRIPTOR: remote control connection failed".to_owned())?;
     let extension_schema = client
         .query_opt(
             "SELECT pg_catalog.quote_ident(n.nspname)
@@ -865,6 +858,9 @@ mod tests {
             rotated.secret_identity_fingerprint()
         );
         assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
-        assert_eq!(rotated.conninfo(), "host=127.0.0.1 user=second sslmode=disable");
+        assert_eq!(
+            rotated.conninfo(),
+            "host=127.0.0.1 user=second sslmode=disable"
+        );
     }
 }

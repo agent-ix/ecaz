@@ -1147,9 +1147,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             );
         }
         if node.node_id == 1 {
-            if let Some(fault) = args
-                .remote_socket_fault
-                .or(args.tls_security_matrix.then_some(RemoteSocketFaultArg::Reset))
+            if let Some(fault) = args.remote_socket_fault.or(args
+                .tls_security_matrix
+                .then_some(RemoteSocketFaultArg::Reset))
             {
                 let peer = format!("tcp:127.0.0.1:{}", nodes[1].port);
                 let marker = remote_fault_marker.display().to_string();
@@ -1303,10 +1303,7 @@ fn quote_conninfo_path(path: &Path) -> Result<String> {
     ))
 }
 
-fn secure_remote_conninfo(
-    port: u16,
-    fixture: &SecureRemoteTransportFixture,
-) -> Result<String> {
+fn secure_remote_conninfo(port: u16, fixture: &SecureRemoteTransportFixture) -> Result<String> {
     secure_remote_conninfo_with(
         "127.0.0.1",
         port,
@@ -1359,9 +1356,7 @@ async fn require_ssl_enabled_postgres(pgbin: &Path) -> Result<()> {
     if !output.status.success()
         || !String::from_utf8_lossy(&output.stdout).contains("--with-openssl")
     {
-        bail!(
-            "--secure-remote-transport requires a PG18 build configured with --with-openssl"
-        );
+        bail!("--secure-remote-transport requires a PG18 build configured with --with-openssl");
     }
     Ok(())
 }
@@ -9107,7 +9102,9 @@ async fn drive_physical_fixture(
             .split(',')
             .any(|feature| feature == "pg-test")
     {
-        bail!("the requested diagnostic matrix requires an extension built with the pg_test feature");
+        bail!(
+            "the requested diagnostic matrix requires an extension built with the pg_test feature"
+        );
     }
     crate::ecaz_println!(
         "[distann-multicluster] physical_setup_start rows={} nodes={}",

@@ -77,7 +77,10 @@ impl fmt::Debug for RemoteTlsConfig {
         formatter
             .debug_struct("RemoteTlsConfig")
             .field("sslmode", &self.sslmode)
-            .field("sslrootcert", &self.sslrootcert.as_ref().map(|_| "[configured]"))
+            .field(
+                "sslrootcert",
+                &self.sslrootcert.as_ref().map(|_| "[configured]"),
+            )
             .field("sslcert", &self.sslcert.as_ref().map(|_| "[configured]"))
             .field("sslkey", &self.sslkey.as_ref().map(|_| "[configured]"))
             .finish()
@@ -96,8 +99,14 @@ impl fmt::Debug for ParsedRemoteConninfo {
         formatter
             .debug_struct("ParsedRemoteConninfo")
             .field("tls_config", &self.tls_config)
-            .field("endpoint_fingerprint", &hex::encode(self.endpoint_fingerprint))
-            .field("security_fingerprint", &hex::encode(self.security_fingerprint))
+            .field(
+                "endpoint_fingerprint",
+                &hex::encode(self.endpoint_fingerprint),
+            )
+            .field(
+                "security_fingerprint",
+                &hex::encode(self.security_fingerprint),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -197,10 +206,7 @@ pub(crate) fn parse_remote_conninfo(
     Ok(parsed)
 }
 
-pub(crate) fn remote_security_fingerprint(
-    conninfo: &str,
-    policy: RemoteTlsPolicy,
-) -> [u8; 32] {
+pub(crate) fn remote_security_fingerprint(conninfo: &str, policy: RemoteTlsPolicy) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"ecaz-remote-postgres-security-v1\0");
     hasher.update([policy as u8]);
@@ -250,16 +256,15 @@ pub(crate) fn connect_loopback_postgres(
     config: postgres::Config,
 ) -> Result<postgres::Client, RemoteTlsError> {
     validate_loopback_plaintext_config(&config)?;
-    config
-        .connect(postgres::NoTls)
-        .map_err(|_| connect_error())
+    config.connect(postgres::NoTls).map_err(|_| connect_error())
 }
 
-fn validate_loopback_plaintext_config(
-    config: &postgres::Config,
-) -> Result<(), RemoteTlsError> {
+fn validate_loopback_plaintext_config(config: &postgres::Config) -> Result<(), RemoteTlsError> {
     if config.get_hosts().is_empty()
-        || config.get_hosts().iter().any(|host| !is_loopback_host(host))
+        || config
+            .get_hosts()
+            .iter()
+            .any(|host| !is_loopback_host(host))
     {
         return Err(RemoteTlsError::new(
             REMOTE_TLS_PLAINTEXT_FORBIDDEN,
@@ -406,18 +411,11 @@ fn apply_conninfo_pair(
     Ok(())
 }
 
-fn parse_sslmode(
-    value: &str,
-    policy: RemoteTlsPolicy,
-) -> Result<RemoteSslMode, RemoteTlsError> {
+fn parse_sslmode(value: &str, policy: RemoteTlsPolicy) -> Result<RemoteSslMode, RemoteTlsError> {
     match (policy, value) {
         (_, "disable") => Ok(RemoteSslMode::Disable),
-        (RemoteTlsPolicy::SpireCompatibility, "allow" | "prefer") => {
-            Ok(RemoteSslMode::Prefer)
-        }
-        (RemoteTlsPolicy::DistannSecure, "allow" | "prefer") => {
-            Err(unsupported_option_error())
-        }
+        (RemoteTlsPolicy::SpireCompatibility, "allow" | "prefer") => Ok(RemoteSslMode::Prefer),
+        (RemoteTlsPolicy::DistannSecure, "allow" | "prefer") => Err(unsupported_option_error()),
         (_, "require") => Ok(RemoteSslMode::Require),
         (_, "verify-ca") => Err(unsupported_option_error()),
         (_, "verify-full") => Ok(RemoteSslMode::VerifyFull),
@@ -443,7 +441,10 @@ fn validate_policy(
             .map_err(|_| conninfo_error())?;
         if policy == RemoteTlsPolicy::DistannSecure
             && (config.get_hosts().is_empty()
-                || config.get_hosts().iter().any(|host| !is_loopback_host(host)))
+                || config
+                    .get_hosts()
+                    .iter()
+                    .any(|host| !is_loopback_host(host)))
         {
             return Err(RemoteTlsError::new(
                 REMOTE_TLS_PLAINTEXT_FORBIDDEN,
