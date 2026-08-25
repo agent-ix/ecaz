@@ -1,13 +1,14 @@
 # Task 235: ec_distann Write and Lifecycle RPC Cancellation Hardening
 
-Status: **bounded transport implemented; packet 002 review-open; PG18 2PC and
-lifecycle fault/recovery matrices pending** (updated 2026-08-25). Checkpoint
-`7584c1bf3` bounds async DML/intent/transaction-control and lifecycle phases,
-evicts every failed write session, uses epoch-qualified coordinator XIDs, and
-makes coordinator-local `pg_xact_status` authoritative for prepared recovery;
-`reviews/task-235/002-bounded-write-transport/` contains the phase inventory
-and 17/17 focused unit result. Packets 003/004 and outside review remain open.
-Priority: P0 distributed-write correctness/recovery.
+Status: **implementation and secure PG18 evidence complete; packets 003/004
+review-open; outside verdict pending** (updated 2026-08-25). Checkpoint
+`b871d5481` passes the release+`pg_test` verify-full mutual-TLS matrix with 23
+fault/recovery scenarios and 107 records plus 19/19 focused transport tests.
+Packets `reviews/task-235/003-2pc-lifecycle-fault-matrix/` and
+`reviews/task-235/004-operator-recovery-closeout/` contain the clean-head
+evidence and operator disposition. Task 235 is not complete until an outside
+reviewer accepts both packets. Priority: P0 distributed-write
+correctness/recovery.
 
 ## Why
 
@@ -116,21 +117,26 @@ deterministic recovery action for every uncertain phase.
 
 ## Current checkpoint (2026-08-25)
 
-Packet 002 is review-open on the Task 234 current-TLS substrate. All async
-write/lifecycle statements now share the bounded deadline, PostgreSQL
-interrupt, CancelRequest, outcome taxonomy, and mandatory-eviction contract.
-Blocking commit/abort callbacks and the explicit reaper also carry connect,
-statement, and TCP user timeouts. Recovery no longer treats an ambiguously
-acknowledged `commit_intended` row as the commit decision: the coordinator's
-epoch-qualified full xid and `pg_xact_status` determine commit versus rollback,
-and unavailable status stops for operator action.
-The reaper reconciles both prepared GIDs and nonterminal intent GIDs, so a lost
-prepared-decision acknowledgement or terminal audit update converges on a
-later invocation while missing intent rows remain explicit.
+Packets 003 and 004 are review-open at `b871d5481` on the Task 234 current-TLS
+substrate. All async write/lifecycle statements share the bounded deadline,
+PostgreSQL interrupt, CancelRequest, outcome taxonomy, and mandatory-eviction
+contract. Blocking commit/abort callbacks and the explicit reaper carry
+connect, statement, and TCP user timeouts. Recovery follows the coordinator's
+epoch-qualified full xid and `pg_xact_status`; unavailable status stops with
+`operator_required` and never guesses from intent state or age.
 
-This is not a completion disposition. The phase-by-phase PG18 multicluster
-fault matrix, duplicate/partial recovery, restart, prepared-slot saturation,
-and NFR-014 operator closeout remain required in packets 003/004.
+The final three-node PG18 release+`pg_test` matrix uses verify-full mutual TLS,
+client certificates, and plaintext rejection. It passed exactly 23 scenarios:
+eight lifecycle replay boundaries, one status-unavailable operator STOP, and
+fourteen write/recovery cells covering mutation, prepare, commit/rollback,
+coordinator/owner death and restart, partial completion, missing intent,
+prepared-slot saturation, and routed tombstone retry. Every case converged to
+the asserted source/owner/intent/prepared/lifecycle state and duplicate
+recovery emitted no actions. Focused transport tests passed 19/19.
+
+This is an implementation/evidence-complete review request, not a completion
+disposition. Acceptance item 4 and task closeout remain pending an outside
+reviewer's verdict on packets 003 and 004.
 
 ## References
 
