@@ -10421,7 +10421,12 @@ async fn task235_attempt_insert(
             .await
             .wrap_err("draining Task 235 coordinator error state")?;
     }
-    let error = outcome.err().map(|error| error.to_string());
+    let error = outcome.err().map(|error| {
+        error
+            .as_db_error()
+            .map(|database_error| database_error.message().to_owned())
+            .unwrap_or_else(|| error.to_string())
+    });
     drop(client);
     tokio::time::timeout(Duration::from_secs(2), connection_task)
         .await
@@ -10514,6 +10519,326 @@ async fn task235_terminate_coordinator_after_prepare(
         }
         Err(error) => Ok(error.to_string()),
     }
+}
+
+async fn task235_terminate_owner_during_mutation(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<String> {
+    let (client, connection_task) = task235_fault_client(
+        socket_dir,
+        &nodes[0],
+        Some("endpoint_mutation_after_apply_delay"),
+        5_000,
+    )
+    .await?;
+    let client = Arc::new(client);
+    let insert_client = Arc::clone(&client);
+    let insert_sql = task235_insert_sql(args, candidate);
+    let insert = tokio::spawn(async move { insert_client.execute(&insert_sql, &[]).await });
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 owner-death candidate is outside the roster"))?;
+    let (killer, killer_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let killer_task = tokio::spawn(async move { killer_connection.await });
+    let started = Instant::now();
+    let owner_pid = loop {
+        let row = killer
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE datname = current_database() AND state = 'active'
+                    AND query LIKE '%ec_distann_apply_physical_insert%'
+                    AND pid <> pg_backend_pid()
+                  ORDER BY query_start LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            break row.get::<_, i32>(0);
+        }
+        if started.elapsed() >= Duration::from_secs(3) {
+            insert.abort();
+            connection_task.abort();
+            killer_task.abort();
+            bail!("Task 235 owner-death cell did not observe the delayed endpoint mutation");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let terminated = killer
+        .query_one("SELECT pg_terminate_backend($1)", &[&owner_pid])
+        .await?
+        .get::<_, bool>(0);
+    killer_task.abort();
+    if !terminated {
+        insert.abort();
+        connection_task.abort();
+        bail!("Task 235 owner endpoint backend rejected termination");
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] task235_write_fault_boundary cell=owner_backend_death_during_mutation owner_node={} owner_pid={} terminated=true",
+        owner_node.node_id,
+        owner_pid,
+    );
+    let outcome = tokio::time::timeout(Duration::from_secs(5), insert)
+        .await
+        .wrap_err("waiting for Task 235 owner-death insert")?
+        .wrap_err("joining Task 235 owner-death insert")?;
+    let error = outcome
+        .err()
+        .ok_or_else(|| eyre!("Task 235 owner-death insert unexpectedly committed"))?;
+    client
+        .batch_execute("SELECT 1")
+        .await
+        .wrap_err("draining Task 235 coordinator after owner backend death")?;
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 owner-death coordinator client")?
+        .wrap_err("joining Task 235 owner-death coordinator client")?
+        .wrap_err("Task 235 owner-death coordinator connection failed while closing")?;
+    Ok(error.to_string())
+}
+
+async fn task235_restart_owner_with_prepared(
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<()> {
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 restart candidate is outside the roster"))?;
+    let mut stop = Command::new(pg_ctl);
+    stop.arg("-w")
+        .arg("-D")
+        .arg(&owner_node.data_dir)
+        .arg("-m")
+        .arg("immediate")
+        .arg("stop")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    run_status(stop)
+        .await
+        .wrap_err("crashing Task 235 prepared owner")?;
+    restart_physical_node(pg_ctl, socket_dir, owner_node, nodes).await?;
+    let prepared_after_restart = task235_prepared_xact_count(socket_dir, nodes).await?;
+    if prepared_after_restart == 0 {
+        bail!("Task 235 owner restart lost the prepared transaction recovery fence");
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] task235_write_fault_boundary cell=after_prepare_before_ack owner_restart=true owner_node={} prepared_after_restart={prepared_after_restart}",
+        owner_node.node_id,
+    );
+    Ok(())
+}
+
+fn task235_safe_gid(gid: &str) -> bool {
+    gid.starts_with("ec_distann_insert_")
+        && gid
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+async fn task235_commit_one_backlink_prepared(
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<String> {
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_opt(
+                "SELECT p.gid
+                   FROM pg_prepared_xacts p
+                   JOIN ec_distann_remote_prepared_xact_intent i ON i.gid = p.gid
+                  WHERE p.database = current_database()
+                    AND p.gid LIKE 'ec_distann_insert_%'
+                    AND i.tracked_vec_id IS DISTINCT FROM $1
+                  ORDER BY p.gid LIMIT 1",
+                &[&candidate.vec_id],
+            )
+            .await?;
+        if let Some(row) = row {
+            let gid = row.get::<_, String>(0);
+            if !task235_safe_gid(&gid) {
+                connection_task.abort();
+                bail!("Task 235 partial completion selected an unsafe prepared GID");
+            }
+            client
+                .batch_execute(&format!("COMMIT PREPARED '{gid}'"))
+                .await?;
+            connection_task.abort();
+            return Ok(gid);
+        }
+        connection_task.abort();
+    }
+    bail!("Task 235 partial completion found no prepared backlink")
+}
+
+async fn task235_delete_one_prepared_intent(socket_dir: &Path, nodes: &[Node]) -> Result<String> {
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_opt(
+                "SELECT p.gid
+                   FROM pg_prepared_xacts p
+                   JOIN ec_distann_remote_prepared_xact_intent i ON i.gid = p.gid
+                  WHERE p.database = current_database()
+                    AND p.gid LIKE 'ec_distann_insert_%'
+                  ORDER BY p.gid LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            let gid = row.get::<_, String>(0);
+            let deleted = client
+                .execute(
+                    "DELETE FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+                    &[&gid],
+                )
+                .await?;
+            connection_task.abort();
+            if deleted != 1 {
+                bail!("Task 235 intent-loss cell did not delete exactly one owner intent");
+            }
+            return Ok(gid);
+        }
+        connection_task.abort();
+    }
+    bail!("Task 235 intent-loss cell found no prepared intent")
+}
+
+async fn task235_fill_prepared_slots(socket_dir: &Path, node: &Node) -> Result<Vec<String>> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let maximum = client
+        .query_one(
+            "SELECT current_setting('max_prepared_transactions')::integer",
+            &[],
+        )
+        .await?
+        .get::<_, i32>(0);
+    let occupied = client
+        .query_one("SELECT count(*)::integer FROM pg_prepared_xacts", &[])
+        .await?
+        .get::<_, i32>(0);
+    if maximum <= occupied {
+        connection_task.abort();
+        bail!("Task 235 saturation precondition has no free prepared slots");
+    }
+    let mut gids = Vec::new();
+    for slot in occupied..maximum {
+        let gid = format!("task235_saturation_node{}_slot{slot}", node.node_id);
+        client
+            .batch_execute(&format!("BEGIN; PREPARE TRANSACTION '{gid}'"))
+            .await?;
+        gids.push(gid);
+    }
+    connection_task.abort();
+    Ok(gids)
+}
+
+async fn task235_clear_prepared_slots(
+    socket_dir: &Path,
+    node: &Node,
+    gids: &[String],
+) -> Result<()> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    for gid in gids {
+        if !gid
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            connection_task.abort();
+            bail!("Task 235 saturation cleanup rejected an unsafe GID");
+        }
+        client
+            .batch_execute(&format!("ROLLBACK PREPARED '{gid}'"))
+            .await?;
+    }
+    connection_task.abort();
+    Ok(())
+}
+
+async fn task235_prepared_slot_saturation_cell(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    ordinal: u32,
+) -> Result<Vec<String>> {
+    let candidate = task235_write_candidate(ordinal, nodes.len(), 1)?;
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 saturation candidate is outside the roster"))?;
+    let dummy_gids = task235_fill_prepared_slots(socket_dir, owner_node).await?;
+    let attempt =
+        task235_attempt_insert(args, socket_dir, &nodes[0], &candidate, None, false).await;
+    let cleanup = task235_clear_prepared_slots(socket_dir, owner_node, &dummy_gids).await;
+    let error = attempt?
+        .ok_or_else(|| eyre!("Task 235 prepared-slot saturation unexpectedly committed"))?;
+    cleanup?;
+    if !error.contains("prepared_slots_exhausted_hint_increase_max_prepared_transactions") {
+        bail!("Task 235 saturation error lacked the stable readiness hint: {error}");
+    }
+    let before = task235_write_snapshot(socket_dir, nodes, &candidate).await?;
+    task235_assert_snapshot(
+        "prepared_slot_saturation",
+        &before,
+        false,
+        false,
+        Some(false),
+        Some(true),
+    )?;
+    let (after, recovery, recovery_attempts) = task235_recover_until_terminal(
+        "prepared_slot_saturation",
+        socket_dir,
+        nodes,
+        &candidate,
+        false,
+        false,
+    )
+    .await?;
+    task235_assert_snapshot(
+        "prepared_slot_saturation",
+        &after,
+        false,
+        false,
+        Some(false),
+        Some(false),
+    )?;
+    let duplicate = task235_reap_all(socket_dir, nodes).await?;
+    if !duplicate.is_empty() {
+        bail!("Task 235 saturation duplicate recovery was not empty: {duplicate:?}");
+    }
+    let mut lines = vec![format!(
+        "task235_write_fault cell=prepared_slot_saturation pass=true owner_node={} filled_slots={} stable_hint=true source=0 owner=0 before_nonterminal={} recovery_attempts={} recovery_reports={} duplicate_actions=0",
+        owner_node.node_id,
+        dummy_gids.len(),
+        before.nonterminal_intents,
+        recovery_attempts,
+        recovery.len(),
+    )];
+    for report in recovery {
+        lines.push(format!(
+            "task235_write_recovery cell=prepared_slot_saturation report={report}"
+        ));
+    }
+    Ok(lines)
 }
 
 fn task235_safe_relation_name(value: &str) -> bool {
@@ -10788,6 +11113,7 @@ fn task235_assert_snapshot(
 
 async fn run_task235_write_fault_matrix(
     args: &LocalMultinodePg18Args,
+    pg_ctl: &Path,
     socket_dir: &Path,
     nodes: &[Node],
 ) -> Result<Vec<String>> {
@@ -10805,6 +11131,13 @@ async fn run_task235_write_fault_matrix(
         (
             "after_mutation_before_prepare",
             Some("after_endpoint_mutation_error"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "owner_backend_death_during_mutation",
+            Some("endpoint_mutation_after_apply_delay"),
             false,
             true,
             false,
@@ -10838,6 +11171,20 @@ async fn run_task235_write_fault_matrix(
             true,
         ),
         (
+            "one_owner_partial_commit",
+            Some("before_commit_prepared_skip"),
+            false,
+            false,
+            true,
+        ),
+        (
+            "missing_intent_recovery",
+            Some("before_commit_prepared_skip"),
+            false,
+            false,
+            true,
+        ),
+        (
             "before_rollback_prepared",
             Some("before_rollback_prepared_skip"),
             true,
@@ -10865,8 +11212,14 @@ async fn run_task235_write_fault_matrix(
             candidate.owner_ordinal,
         );
         let error = if cell == "after_prepare_before_ack" {
-            Some(
+            let error =
                 task235_terminate_coordinator_after_prepare(args, socket_dir, nodes, &candidate)
+                    .await?;
+            task235_restart_owner_with_prepared(pg_ctl, socket_dir, nodes, &candidate).await?;
+            Some(error)
+        } else if cell == "owner_backend_death_during_mutation" {
+            Some(
+                task235_terminate_owner_during_mutation(args, socket_dir, nodes, &candidate)
                     .await?,
             )
         } else {
@@ -10875,10 +11228,32 @@ async fn run_task235_write_fault_matrix(
         if expect_error != error.is_some() {
             bail!("Task 235 {cell} unexpected insert outcome: error={error:?}");
         }
+        let recovery_requirement = match cell {
+            "one_owner_partial_commit" => {
+                let gid =
+                    task235_commit_one_backlink_prepared(socket_dir, nodes, &candidate).await?;
+                crate::ecaz_println!(
+                    "[distann-multicluster] task235_write_fault_boundary cell={cell} partial_gid={gid} decision_applied=true acknowledgement_lost=true"
+                );
+                Some((gid, "commit_local:prepared=false"))
+            }
+            "missing_intent_recovery" => {
+                let gid = task235_delete_one_prepared_intent(socket_dir, nodes).await?;
+                crate::ecaz_println!(
+                    "[distann-multicluster] task235_write_fault_boundary cell={cell} deleted_intent_gid={gid}"
+                );
+                Some((gid, "missing_intent:commit_local:prepared=true"))
+            }
+            _ => None,
+        };
         let before = task235_write_snapshot(socket_dir, nodes, &candidate).await?;
         let expect_prepared = matches!(
             cell,
-            "after_precommit_intent" | "before_commit_prepared" | "before_rollback_prepared"
+            "after_precommit_intent"
+                | "before_commit_prepared"
+                | "one_owner_partial_commit"
+                | "missing_intent_recovery"
+                | "before_rollback_prepared"
         );
         let prepared_expectation = (cell != "after_prepare_before_ack").then_some(expect_prepared);
         // Every faulted path has already written at least one independent
@@ -10903,6 +11278,16 @@ async fn run_task235_write_fault_matrix(
             final_commit,
         )
         .await?;
+        if let Some((gid, required)) = recovery_requirement {
+            let matching = recovery
+                .iter()
+                .any(|report| report.contains(&gid) && report.contains(required));
+            if !matching {
+                bail!(
+                    "Task 235 {cell} recovery did not report required disposition {required} for {gid}: {recovery:?}"
+                );
+            }
+        }
         task235_assert_snapshot(
             cell,
             &after,
@@ -10933,6 +11318,7 @@ async fn run_task235_write_fault_matrix(
             ));
         }
     }
+    lines.extend(task235_prepared_slot_saturation_cell(args, socket_dir, nodes, 100).await?);
     Ok(lines)
 }
 
@@ -11290,7 +11676,7 @@ async fn drive_physical_fixture(
         return Ok(());
     }
     if args.write_lifecycle_fault_matrix {
-        let lines = run_task235_write_fault_matrix(args, socket_dir, nodes).await?;
+        let lines = run_task235_write_fault_matrix(args, pg_ctl, socket_dir, nodes).await?;
         let body = lines.join("\n") + "\n";
         fs::write(
             log_dir.join("task235-write-lifecycle-fault-matrix.log"),

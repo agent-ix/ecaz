@@ -116,6 +116,17 @@ async fn maybe_pause_debug_write_phase(phase: &str) -> Result<(), RemoteWriteFai
     }
 }
 
+fn task235_endpoint_session_fault_sql() -> String {
+    super::options::debug_write_fault_delay_ms("endpoint_mutation_after_apply_delay")
+        .map(|delay_ms| {
+            format!(
+                "; SET ec_distann.debug_write_fault_phase = 'endpoint_mutation_after_apply_delay'; \
+                 SET ec_distann.debug_write_fault_delay_ms = {delay_ms}"
+            )
+        })
+        .unwrap_or_default()
+}
+
 #[derive(Debug)]
 struct RemoteWriteFailure {
     message: String,
@@ -1573,12 +1584,13 @@ pub(crate) fn remote_physical_insert(
                         "session_setup",
                         RemoteWriteOutcome::DefinitelyNotApplied,
                         client.batch_execute(&format!(
-                            "SET ec_distann.debug_disable_append_when_room = {}",
+                            "SET ec_distann.debug_disable_append_when_room = {}{}",
                             if super::options::debug_disable_append_when_room() {
                                 "on"
                             } else {
                                 "off"
-                            }
+                            },
+                            task235_endpoint_session_fault_sql(),
                         )),
                     )
                     .await?;
@@ -1733,6 +1745,18 @@ pub(crate) fn remote_physical_tombstone(
                         client.batch_execute("BEGIN"),
                     )
                     .await?;
+                    let task235_session_fault = task235_endpoint_session_fault_sql();
+                    if !task235_session_fault.is_empty() {
+                        bounded_write_phase(
+                            client,
+                            tls_config,
+                            "EC_DELETE_ROUTE",
+                            "session_setup",
+                            RemoteWriteOutcome::DefinitelyNotApplied,
+                            client.batch_execute(&task235_session_fault),
+                        )
+                        .await?;
+                    }
                     let mutation = bounded_write_phase(
                         client,
                         tls_config,
@@ -1833,12 +1857,13 @@ pub(crate) fn remote_physical_backlink(
                         "session_setup",
                         RemoteWriteOutcome::DefinitelyNotApplied,
                         client.batch_execute(&format!(
-                            "SET ec_distann.debug_disable_append_when_room = {}",
+                            "SET ec_distann.debug_disable_append_when_room = {}{}",
                             if super::options::debug_disable_append_when_room() {
                                 "on"
                             } else {
                                 "off"
-                            }
+                            },
+                            task235_endpoint_session_fault_sql(),
                         )),
                     )
                     .await?;
