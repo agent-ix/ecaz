@@ -1,0 +1,24 @@
+2026-08-24 01:51:17.159 PDT [1074073] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 01:51:17.171 PDT [1074073] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 01:51:17.171 PDT [1074073] LOG:  listening on IPv4 address "127.0.0.1", port 43112
+2026-08-24 01:51:17.181 PDT [1074079] LOG:  database system was shut down at 2026-08-24 01:51:16 PDT
+2026-08-24 01:51:17.192 PDT [1074073] LOG:  database system is ready to accept connections
+2026-08-24 01:56:49.962 PDT [1074077] LOG:  checkpoint starting: time
+2026-08-24 01:57:45.786 PDT [1074077] LOG:  checkpoint complete: wrote 493 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=55.731 s, sync=0.062 s, total=55.824 s; sync files=272, longest=0.002 s, average=0.001 s; distance=4123 kB, estimate=4123 kB; lsn=0/1B5B480, redo lsn=0/1B5B3F0
+2026-08-24 02:04:49.653 PDT [1086935] LOG:  skipping vacuum of "_ecdz_row_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:04:49.653 PDT [1086935] LOG:  skipping vacuum of "_ecdz_graph_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:05:22.920 PDT [1087756] LOG:  skipping vacuum of "_ecdz_row_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:05:22.920 PDT [1087756] LOG:  skipping vacuum of "_ecdz_graph_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:06:29.506 PDT [1087890] LOG:  skipping vacuum of "_ecdz_row_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:06:29.506 PDT [1087890] LOG:  skipping vacuum of "_ecdz_graph_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:06:45.063 PDT [1074077] LOG:  checkpoint starting: wal
+2026-08-24 02:07:35.926 PDT [1087942] LOG:  skipping vacuum of "_ecdz_row_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:07:35.926 PDT [1087942] LOG:  skipping vacuum of "_ecdz_graph_17804_71717171717141718171717171717171" --- lock not available
+2026-08-24 02:11:15.220 PDT [1074077] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.891 s, sync=0.053 s, total=270.157 s; sync files=62, longest=0.019 s, average=0.001 s; distance=532451 kB, estimate=532451 kB; lsn=0/2FEC9A60, redo lsn=0/22354318
+2026-08-24 02:15:58.349 PDT [1074073] LOG:  received fast shutdown request
+2026-08-24 02:15:58.370 PDT [1074073] LOG:  aborting any active transactions
+2026-08-24 02:15:58.371 PDT [1074073] LOG:  background worker "logical replication launcher" (PID 1074082) exited with exit code 1
+2026-08-24 02:15:58.375 PDT [1074077] LOG:  shutting down
+2026-08-24 02:15:58.379 PDT [1074077] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 02:15:58.446 PDT [1074077] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 13 recycled; write=0.004 s, sync=0.009 s, total=0.071 s; sync files=14, longest=0.004 s, average=0.001 s; distance=224767 kB, estimate=501683 kB; lsn=0/2FED3FD8, redo lsn=0/2FED3FD8
+2026-08-24 02:15:58.470 PDT [1074073] LOG:  database system is shut down
