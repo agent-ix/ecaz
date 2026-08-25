@@ -10,7 +10,7 @@ seq: 01
 
 # Task 235 bounded write/lifecycle transport checkpoint
 
-Please review code checkpoint `ed32ae6df83ea94b6f1e8436dbaa6db6d376ce8e`.
+Please review code checkpoint `7584c1bf3fc14569b9bfc7928d6a18e2a15728d5`.
 
 This slice removes the unbounded async gaps around the already-bounded
 physical endpoint call. `BEGIN`, session setup, endpoint mutation,
@@ -42,6 +42,13 @@ epoch-qualified full xid, and the reaper asks coordinator-local
 - unavailable/truncated status -> stop as operator-required, never infer from
   age or intent state.
 
+Recovery enumerates the union of owner `pg_prepared_xacts` and nonterminal
+intent GIDs. This closes the lost-decision-ack window: if prepared resolution
+succeeded but its response or terminal audit update was lost, the next run sees
+the still-nonterminal intent, confirms the coordinator outcome, and converges
+the row to `commit_local`/`rollback_local`. A prepared GID with a missing intent
+is also detected and resolved from coordinator status rather than guessed.
+
 The packet-local phase inventory records every call family and the remaining
 runtime evidence owed by packets 003/004. This is not a closeout request:
 phase-by-phase PG18 multicluster fault injection, duplicate recovery, partial
@@ -58,4 +65,3 @@ Validation at this checkpoint:
 Please focus review on the outcome taxonomy, mandatory eviction, full-xid
 identity, `pg_xact_status` decision authority, callback bounds, and whether any
 write/lifecycle call family is absent from the inventory.
-
