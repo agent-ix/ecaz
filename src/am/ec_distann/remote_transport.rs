@@ -2001,6 +2001,9 @@ fn coordinator_xid_status(xid: u64) -> Result<CoordinatorXactStatus, String> {
     // Full XIDs are cluster-local. This query must run through coordinator
     // SPI, not the owner connection. NULL is intentionally Unknown: CLOG may
     // have been truncated, and recovery must not infer a decision from age.
+    if super::options::debug_write_fault_selected("coordinator_xid_status_unknown") {
+        return Ok(CoordinatorXactStatus::Unknown);
+    }
     let status = Spi::get_one_with_args::<String>(
         "SELECT pg_catalog.pg_xact_status($1::text::xid8)",
         &[xid.to_string().into()],

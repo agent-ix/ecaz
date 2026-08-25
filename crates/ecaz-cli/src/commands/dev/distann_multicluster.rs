@@ -11396,6 +11396,715 @@ fn task235_assert_snapshot(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Task235GenerationStatus {
+    state: String,
+    relations_present: i64,
+}
+
+async fn task235_generation_statuses(
+    socket_dir: &Path,
+    nodes: &[Node],
+    build_id: &str,
+) -> Result<Vec<Task235GenerationStatus>> {
+    let mut statuses = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_one(
+                "WITH live AS (
+                     SELECT state, row_tier_relid, graph_store_relid, directory_relid
+                       FROM ec_distann_generation
+                      WHERE index_oid = 'dm_idx'::regclass::oid
+                        AND build_id = $1::text::uuid
+                 )
+                 SELECT COALESCE(
+                            (SELECT state FROM live),
+                            (SELECT 'Reclaimed' FROM ec_distann_generation_reclaim
+                              WHERE index_oid = 'dm_idx'::regclass::oid
+                                AND build_id = $1::text::uuid),
+                            (SELECT 'CancelledReclaimed'
+                               FROM ec_distann_cancelled_generation_reclaim
+                              WHERE index_oid = 'dm_idx'::regclass::oid
+                                AND build_id = $1::text::uuid),
+                            'Missing'),
+                        COALESCE((
+                            SELECT count(*)::bigint FROM pg_class c, live
+                             WHERE c.oid IN (
+                                 live.row_tier_relid,
+                                 live.graph_store_relid,
+                                 live.directory_relid)
+                        ), 0)",
+                &[&build_id],
+            )
+            .await?;
+        statuses.push(Task235GenerationStatus {
+            state: row.get(0),
+            relations_present: row.get(1),
+        });
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), connection_task)
+            .await
+            .wrap_err("closing Task 235 lifecycle status client")?
+            .wrap_err("joining Task 235 lifecycle status client")?
+            .wrap_err("Task 235 lifecycle status connection failed while closing")?;
+    }
+    Ok(statuses)
+}
+
+fn task235_status_labels(statuses: &[Task235GenerationStatus]) -> String {
+    statuses
+        .iter()
+        .map(|status| format!("{}:{}", status.state, status.relations_present))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn task235_assert_generation_statuses(
+    cell: &str,
+    statuses: &[Task235GenerationStatus],
+    expected_state: &str,
+    expected_relations: i64,
+) -> Result<()> {
+    if statuses.iter().any(|status| {
+        status.state != expected_state || status.relations_present != expected_relations
+    }) {
+        bail!(
+            "Task 235 {cell} generation status mismatch: expected={expected_state}:{expected_relations} actual={}",
+            task235_status_labels(statuses)
+        );
+    }
+    Ok(())
+}
+
+async fn task235_set_lifecycle_fault(
+    client: &tokio_postgres::Client,
+    fault: Option<&str>,
+) -> Result<()> {
+    if let Some(fault) = fault {
+        client
+            .execute(
+                "SELECT set_config('ec_distann.debug_write_fault_phase', $1, false)",
+                &[&fault],
+            )
+            .await?;
+    } else {
+        client
+            .batch_execute(
+                "RESET ec_distann.debug_write_fault_phase;
+                 SET ec_distann.debug_write_fault_delay_ms = 0;",
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+async fn task235_expect_lifecycle_fault(
+    client: &tokio_postgres::Client,
+    sql: &str,
+    phase: &str,
+) -> Result<String> {
+    let error = client
+        .batch_execute(sql)
+        .await
+        .expect_err("Task 235 lifecycle fault must fail the coordinator call");
+    let message = error
+        .as_db_error()
+        .map(|database_error| database_error.message().to_owned())
+        .unwrap_or_else(|| error.to_string());
+    if !message.contains(&format!("phase={phase}"))
+        || !message.contains("outcome=definitely_applied")
+        || !message.contains("injected_task235_fault")
+    {
+        bail!("Task 235 {phase} returned an unexpected fault: {message}");
+    }
+    client
+        .batch_execute("SELECT 1")
+        .await
+        .wrap_err_with(|| format!("draining Task 235 {phase} fault"))?;
+    Ok(message)
+}
+
+async fn task235_begin_build(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_begin_epoch_build(
+                 'dm_idx'::regclass, $1::bigint, $2::text::uuid)",
+            &[&epoch, &build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_build_epoch(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_build_epoch(
+                 'dm_idx'::regclass, $1::bigint, $2::text::uuid)",
+            &[&epoch, &build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_registration_state(
+    client: &tokio_postgres::Client,
+    build_id: &str,
+) -> Result<String> {
+    Ok(client
+        .query_one(
+            "SELECT COALESCE((
+                 SELECT state FROM ec_distann_build_registration
+                  WHERE index_oid = 'dm_idx'::regclass::oid
+                    AND build_id = $1::text::uuid), 'Missing')",
+            &[&build_id],
+        )
+        .await?
+        .get(0))
+}
+
+async fn task235_abort_build(client: &tokio_postgres::Client, build_id: &str) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_abort_epoch_build(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_prepare_publish(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    task235_begin_build(client, epoch, build_id).await?;
+    task235_build_epoch(client, epoch, build_id).await?;
+    client
+        .execute(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_recover_publish(client: &tokio_postgres::Client, build_id: &str) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_publish_state(
+    client: &tokio_postgres::Client,
+    build_id: &str,
+) -> Result<(String, String, bool)> {
+    let row = client
+        .query_one(
+            "SELECT
+                 COALESCE((SELECT decision_state FROM ec_distann_publish_decision
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 COALESCE((SELECT state FROM ec_distann_build_registration
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 EXISTS(SELECT 1 FROM ec_distann_active_epoch
+                         WHERE build_id = $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok((row.get(0), row.get(1), row.get(2)))
+}
+
+async fn task235_operator_status_stop_cell(
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let (coordinator, coordinator_task) =
+        task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
+    let roster = nodes
+        .iter()
+        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+        .collect::<Vec<_>>()
+        .join(";");
+    coordinator
+        .execute(
+            "SELECT set_config('ec_distann.roster', $1, false),
+                    set_config('ec_distann.local_node_id', '1', false)",
+            &[&roster],
+        )
+        .await?;
+    let identity = coordinator
+        .query_one(
+            "SELECT 'dm_idx'::regclass::oid::text,
+                    (SELECT epoch FROM ec_distann_active_epoch
+                      WHERE index_oid = 'dm_idx'::regclass::oid),
+                    pg_current_xact_id()::text",
+            &[],
+        )
+        .await?;
+    let index_oid = identity.get::<_, String>(0);
+    let served_epoch = identity.get::<_, i64>(1);
+    let xid = identity.get::<_, String>(2).parse::<i64>()?;
+    let gid = format!(
+        "ec_distann_insert_{}_1_2_{}_{}_999999",
+        index_oid, served_epoch, xid
+    );
+
+    let owner_node = &nodes[1];
+    let (owner, owner_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let owner_task = tokio::spawn(async move { owner_connection.await });
+    owner
+        .execute(
+            "INSERT INTO ec_distann_remote_prepared_xact_intent
+                 (index_oid, node_id, served_epoch, xid, gid, intent_state)
+             VALUES ($1::text::oid, 2, $2, $3, $4, 'prepare_requested')",
+            &[&index_oid, &served_epoch, &xid, &gid],
+        )
+        .await?;
+
+    task235_set_lifecycle_fault(&coordinator, Some("coordinator_xid_status_unknown")).await?;
+    let first = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let second = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let required = format!("{gid}:prepare_requested:xid_status_unknown:operator_required");
+    if first != vec![required.clone()] || second != vec![required.clone()] {
+        bail!(
+            "Task 235 status-unavailable recovery did not STOP deterministically: first={first:?} second={second:?}"
+        );
+    }
+    let state_while_unknown = owner
+        .query_one(
+            "SELECT intent_state,
+                    EXISTS(SELECT 1 FROM pg_prepared_xacts WHERE gid = $1)
+               FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+            &[&gid],
+        )
+        .await?;
+    if state_while_unknown.get::<_, String>(0) != "prepare_requested"
+        || state_while_unknown.get::<_, bool>(1)
+    {
+        bail!("Task 235 status-unavailable STOP mutated owner recovery state");
+    }
+
+    task235_set_lifecycle_fault(&coordinator, None).await?;
+    let recovered = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let expected_recovery = format!("{gid}:prepare_requested:commit_local:prepared=false");
+    if recovered != vec![expected_recovery] {
+        bail!(
+            "Task 235 status-unavailable recovery did not converge after status returned: {recovered:?}"
+        );
+    }
+    let duplicate = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    if !duplicate.is_empty() {
+        bail!("Task 235 status-unavailable duplicate recovery was not empty: {duplicate:?}");
+    }
+    let terminal = owner
+        .query_one(
+            "SELECT intent_state FROM ec_distann_remote_prepared_xact_intent
+              WHERE gid = $1",
+            &[&gid],
+        )
+        .await?
+        .get::<_, String>(0);
+    if terminal != "commit_local" {
+        bail!("Task 235 status-unavailable recovery ended in {terminal}");
+    }
+    owner
+        .execute(
+            "DELETE FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+            &[&gid],
+        )
+        .await?;
+    drop(owner);
+    tokio::time::timeout(Duration::from_secs(2), owner_task)
+        .await
+        .wrap_err("closing Task 235 status-stop owner client")?
+        .wrap_err("joining Task 235 status-stop owner client")?
+        .wrap_err("Task 235 status-stop owner connection failed while closing")?;
+    drop(coordinator);
+    tokio::time::timeout(Duration::from_secs(2), coordinator_task)
+        .await
+        .wrap_err("closing Task 235 status-stop coordinator client")?
+        .wrap_err("joining Task 235 status-stop coordinator client")?
+        .wrap_err("Task 235 status-stop coordinator connection failed while closing")?;
+    Ok(vec![format!(
+        "task235_operator_recovery cell=xid_status_unavailable_stop pass=true gid={gid} repeated_stop=true intent_while_unknown=prepare_requested prepared_while_unknown=false operator_required=true authoritative_status_returned=committed final_intent=commit_local duplicate_actions=0"
+    )])
+}
+
+async fn task235_run_lifecycle_fault_matrix(
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let (client, connection_task) = task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
+    let mut lines = Vec::new();
+
+    let build_cells = [
+        (
+            "handoff_begin",
+            2_i64,
+            "23500001-0000-4000-8000-000000000001",
+        ),
+        (
+            "handoff_stage",
+            4_i64,
+            "23500002-0000-4000-8000-000000000002",
+        ),
+        (
+            "handoff_seal",
+            6_i64,
+            "23500003-0000-4000-8000-000000000003",
+        ),
+    ];
+    for (cell_ordinal, (phase, epoch, build_id)) in build_cells.into_iter().enumerate() {
+        let cell = phase;
+        task235_begin_build(&client, epoch, build_id).await?;
+        let fault = format!("after_{phase}_error");
+        task235_set_lifecycle_fault(&client, Some(&fault)).await?;
+        let sql = format!(
+            "SELECT ec_distann_build_epoch('dm_idx'::regclass, {epoch}, '{build_id}'::uuid)"
+        );
+        let _message = task235_expect_lifecycle_fault(&client, &sql, phase).await?;
+        let partial = task235_generation_statuses(socket_dir, nodes, build_id).await?;
+        if partial
+            .iter()
+            .all(|status| status.state == "Missing" || status.state == "Ready")
+        {
+            bail!(
+                "Task 235 {cell} did not preserve a partial replay surface: {}",
+                task235_status_labels(&partial)
+            );
+        }
+        if task235_registration_state(&client, build_id).await? != "Registered" {
+            bail!("Task 235 {cell} registration did not remain Registered after fault");
+        }
+        task235_set_lifecycle_fault(&client, None).await?;
+        task235_abort_build(&client, build_id).await?;
+        task235_abort_build(&client, build_id).await?;
+        let aborted = task235_generation_statuses(socket_dir, nodes, build_id).await?;
+        task235_assert_generation_statuses(cell, &aborted, "Missing", 0)?;
+        let registration = task235_registration_state(&client, build_id).await?;
+        if registration != "Aborted" {
+            bail!("Task 235 {cell} registration ended in {registration}, expected Aborted");
+        }
+        let replacement_build = format!(
+            "2350010{}-0000-4000-8000-00000000010{}",
+            cell_ordinal + 1,
+            cell_ordinal + 1,
+        );
+        let replacement_epoch = epoch + 1;
+        task235_begin_build(&client, replacement_epoch, &replacement_build).await?;
+        task235_build_epoch(&client, replacement_epoch, &replacement_build).await?;
+        task235_build_epoch(&client, replacement_epoch, &replacement_build).await?;
+        let replacement_ready =
+            task235_generation_statuses(socket_dir, nodes, &replacement_build).await?;
+        task235_assert_generation_statuses(cell, &replacement_ready, "Ready", 3)?;
+        task235_abort_build(&client, &replacement_build).await?;
+        task235_abort_build(&client, &replacement_build).await?;
+        let replacement_final =
+            task235_generation_statuses(socket_dir, nodes, &replacement_build).await?;
+        task235_assert_generation_statuses(cell, &replacement_final, "Missing", 0)?;
+        lines.push(format!(
+            "task235_lifecycle_fault cell={cell} fault={fault} pass=true partial_states={} recovery_action=abort_then_new_build aborted_states={} replacement_ready={} replacement_final={} registration=Aborted duplicate_build=true duplicate_abort=true relations_after=0",
+            task235_status_labels(&partial),
+            task235_status_labels(&aborted),
+            task235_status_labels(&replacement_ready),
+            task235_status_labels(&replacement_final),
+        ));
+    }
+
+    let abort_build = "23500004-0000-4000-8000-000000000004";
+    task235_begin_build(&client, 8, abort_build).await?;
+    task235_build_epoch(&client, 8, abort_build).await?;
+    task235_set_lifecycle_fault(&client, Some("after_handoff_abort_error")).await?;
+    let abort_sql =
+        format!("SELECT ec_distann_abort_epoch_build('dm_idx'::regclass, '{abort_build}'::uuid)");
+    let _message = task235_expect_lifecycle_fault(&client, &abort_sql, "handoff_abort").await?;
+    let abort_partial = task235_generation_statuses(socket_dir, nodes, abort_build).await?;
+    if !abort_partial.iter().any(|status| status.state == "Missing")
+        || !abort_partial.iter().any(|status| status.state == "Ready")
+        || task235_registration_state(&client, abort_build).await? != "Ready"
+    {
+        bail!(
+            "Task 235 handoff_abort did not expose the expected partial state: {}",
+            task235_status_labels(&abort_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_abort_build(&client, abort_build).await?;
+    task235_abort_build(&client, abort_build).await?;
+    let abort_final = task235_generation_statuses(socket_dir, nodes, abort_build).await?;
+    task235_assert_generation_statuses("handoff_abort", &abort_final, "Missing", 0)?;
+    lines.push(format!(
+        "task235_lifecycle_fault cell=handoff_abort fault=after_handoff_abort_error pass=true partial_states={} final_states={} registration=Aborted duplicate_abort=true relations_after=0",
+        task235_status_labels(&abort_partial),
+        task235_status_labels(&abort_final),
+    ));
+
+    let publish_build = "23500005-0000-4000-8000-000000000005";
+    task235_prepare_publish(&client, 9, publish_build).await?;
+    task235_set_lifecycle_fault(&client, Some("after_epoch_publish_error")).await?;
+    let publish_sql = format!(
+        "SELECT ec_distann_recover_epoch_publish('dm_idx'::regclass, '{publish_build}'::uuid)"
+    );
+    let _message = task235_expect_lifecycle_fault(&client, &publish_sql, "epoch_publish").await?;
+    let publish_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    let publish_partial_state = task235_publish_state(&client, publish_build).await?;
+    if publish_partial_state != ("Pending".to_owned(), "Decided".to_owned(), false)
+        || !publish_partial
+            .iter()
+            .any(|status| status.state == "Published")
+        || !publish_partial.iter().any(|status| status.state == "Ready")
+    {
+        bail!(
+            "Task 235 epoch_publish partial state mismatch: coordinator={publish_partial_state:?} owners={}",
+            task235_status_labels(&publish_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    let publish_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("epoch_publish", &publish_final, "Published", 3)?;
+    let publish_final_state = task235_publish_state(&client, publish_build).await?;
+    if publish_final_state != ("Applied".to_owned(), "Published".to_owned(), true) {
+        bail!("Task 235 epoch_publish did not converge: {publish_final_state:?}");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=epoch_publish fault=after_epoch_publish_error pass=true partial_states={} partial_decision=Pending retry_states={} final_decision=Applied active=true duplicate_recovery=true",
+        task235_status_labels(&publish_partial),
+        task235_status_labels(&publish_final),
+    ));
+
+    let retirement_build = "23500006-0000-4000-8000-000000000006";
+    task235_prepare_publish(&client, 10, retirement_build).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    let activated = task235_publish_state(&client, retirement_build).await?;
+    if activated != ("Activated".to_owned(), "Published".to_owned(), true) {
+        bail!("Task 235 predecessor retirement did not reach Activated: {activated:?}");
+    }
+    task235_set_lifecycle_fault(&client, Some("after_predecessor_retirement_error")).await?;
+    let retirement_sql = format!(
+        "SELECT ec_distann_recover_epoch_publish('dm_idx'::regclass, '{retirement_build}'::uuid)"
+    );
+    let _message =
+        task235_expect_lifecycle_fault(&client, &retirement_sql, "predecessor_retirement").await?;
+    let predecessor_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    if !predecessor_partial
+        .iter()
+        .any(|status| status.state == "Retired")
+        || !predecessor_partial
+            .iter()
+            .any(|status| status.state == "Published")
+        || task235_publish_state(&client, retirement_build).await?.0 != "Activated"
+    {
+        bail!(
+            "Task 235 predecessor_retirement partial state mismatch: {}",
+            task235_status_labels(&predecessor_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    let predecessor_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("predecessor_retirement", &predecessor_final, "Retired", 3)?;
+    if task235_publish_state(&client, retirement_build).await?.0 != "Applied" {
+        bail!("Task 235 predecessor retirement decision did not become Applied");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=predecessor_retirement fault=after_predecessor_retirement_error pass=true partial_states={} final_states={} final_decision=Applied duplicate_recovery=true",
+        task235_status_labels(&predecessor_partial),
+        task235_status_labels(&predecessor_final),
+    ));
+
+    let predecessor_fingerprint = client
+        .query_one(
+            "SELECT epoch_fingerprint FROM ec_distann_publish_decision
+              WHERE build_id = $1::text::uuid",
+            &[&publish_build],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    client
+        .execute(
+            "SELECT ec_distann_retire_epoch('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    task235_set_lifecycle_fault(&client, Some("after_epoch_retire_apply_error")).await?;
+    let retire_sql = "SELECT ec_distann_recover_epoch_retire(
+         'dm_idx'::regclass,
+         (SELECT epoch_fingerprint FROM ec_distann_publish_decision
+           WHERE build_id = '23500005-0000-4000-8000-000000000005'::uuid))";
+    let _message =
+        task235_expect_lifecycle_fault(&client, retire_sql, "epoch_retire_apply").await?;
+    let retire_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    if !retire_partial
+        .iter()
+        .any(|status| status.state == "Reclaimed" && status.relations_present == 0)
+        || !retire_partial
+            .iter()
+            .any(|status| status.state == "Retired" && status.relations_present == 3)
+    {
+        bail!(
+            "Task 235 epoch_retire_apply partial state mismatch: {}",
+            task235_status_labels(&retire_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_retire('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_retire('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    let retire_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("epoch_retire_apply", &retire_final, "Reclaimed", 0)?;
+    let retire_state = client
+        .query_one(
+            "SELECT decision_state FROM ec_distann_retire_decision
+              WHERE epoch_fingerprint = $1::bytea",
+            &[&predecessor_fingerprint],
+        )
+        .await?
+        .get::<_, String>(0);
+    if retire_state != "Applied" {
+        bail!("Task 235 epoch retire decision ended in {retire_state}");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=epoch_retire_apply fault=after_epoch_retire_apply_error pass=true partial_states={} final_states={} decision=Applied duplicate_recovery=true relations_after=0",
+        task235_status_labels(&retire_partial),
+        task235_status_labels(&retire_final),
+    ));
+
+    let cancelled_build = "23500007-0000-4000-8000-000000000007";
+    task235_prepare_publish(&client, 11, cancelled_build).await?;
+    client
+        .execute(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid, 'task235_fault_matrix')",
+            &[&cancelled_build],
+        )
+        .await?;
+    task235_set_lifecycle_fault(&client, Some("after_cancelled_generation_reclaim_error")).await?;
+    let cancelled_sql = format!(
+        "SELECT ec_distann_recover_cancelled_publish('dm_idx'::regclass, '{cancelled_build}'::uuid)"
+    );
+    let _message =
+        task235_expect_lifecycle_fault(&client, &cancelled_sql, "cancelled_generation_reclaim")
+            .await?;
+    let cancelled_partial = task235_generation_statuses(socket_dir, nodes, cancelled_build).await?;
+    if !cancelled_partial
+        .iter()
+        .any(|status| status.state == "CancelledReclaimed" && status.relations_present == 0)
+        || !cancelled_partial
+            .iter()
+            .any(|status| status.state == "Ready" && status.relations_present == 3)
+    {
+        bail!(
+            "Task 235 cancelled_generation_reclaim partial state mismatch: {}",
+            task235_status_labels(&cancelled_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    client.batch_execute(&cancelled_sql).await?;
+    client.batch_execute(&cancelled_sql).await?;
+    let cancelled_final = task235_generation_statuses(socket_dir, nodes, cancelled_build).await?;
+    task235_assert_generation_statuses(
+        "cancelled_generation_reclaim",
+        &cancelled_final,
+        "CancelledReclaimed",
+        0,
+    )?;
+    let cancelled_state = client
+        .query_one(
+            "SELECT d.decision_state, r.state,
+                    d.cancellation_reclaimed_at IS NOT NULL
+               FROM ec_distann_publish_decision d
+               JOIN ec_distann_build_registration r USING (
+                    index_oid, logical_index_uuid, build_id)
+              WHERE d.build_id = $1::text::uuid",
+            &[&cancelled_build],
+        )
+        .await?;
+    let decision = cancelled_state.get::<_, String>(0);
+    let registration = cancelled_state.get::<_, String>(1);
+    let reclaimed = cancelled_state.get::<_, bool>(2);
+    if decision != "Cancelled" || registration != "Cancelled" || !reclaimed {
+        bail!(
+            "Task 235 cancelled recovery did not converge: decision={decision} registration={registration} reclaimed={reclaimed}"
+        );
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=cancelled_generation_reclaim fault=after_cancelled_generation_reclaim_error pass=true partial_states={} final_states={} decision=Cancelled registration=Cancelled reclaimed=true duplicate_recovery=true relations_after=0",
+        task235_status_labels(&cancelled_partial),
+        task235_status_labels(&cancelled_final),
+    ));
+
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 lifecycle coordinator client")?
+        .wrap_err("joining Task 235 lifecycle coordinator client")?
+        .wrap_err("Task 235 lifecycle coordinator connection failed while closing")?;
+    Ok(lines)
+}
+
 async fn run_task235_write_fault_matrix(
     args: &LocalMultinodePg18Args,
     pg_ctl: &Path,
@@ -11403,7 +12112,8 @@ async fn run_task235_write_fault_matrix(
     nodes: &[Node],
 ) -> Result<Vec<String>> {
     let target_owner = 1_usize;
-    let mut lines = Vec::new();
+    let mut lines = task235_run_lifecycle_fault_matrix(socket_dir, nodes).await?;
+    lines.extend(task235_operator_status_stop_cell(socket_dir, nodes).await?);
     let cells = [
         ("clean_commit", None, false, false, true),
         (
@@ -11963,6 +12673,17 @@ async fn drive_physical_fixture(
     }
     if args.write_lifecycle_fault_matrix {
         let lines = run_task235_write_fault_matrix(args, pg_ctl, socket_dir, nodes).await?;
+        let scenario_count = lines
+            .iter()
+            .filter(|line| {
+                line.starts_with("task235_lifecycle_fault ")
+                    || line.starts_with("task235_operator_recovery ")
+                    || line.starts_with("task235_write_fault ")
+            })
+            .count();
+        if scenario_count != 23 {
+            bail!("Task 235 matrix emitted {scenario_count} scenario records, expected 23");
+        }
         let body = lines.join("\n") + "\n";
         fs::write(
             log_dir.join("task235-write-lifecycle-fault-matrix.log"),
@@ -11972,7 +12693,7 @@ async fn drive_physical_fixture(
             crate::ecaz_println!("[distann-multicluster] {line}");
         }
         crate::ecaz_println!(
-            "[distann-multicluster] Task 235 write/lifecycle fault matrix PASS cells={}",
+            "[distann-multicluster] Task 235 write/lifecycle fault matrix PASS scenarios={scenario_count} records={}",
             lines.len()
         );
         return Ok(());
