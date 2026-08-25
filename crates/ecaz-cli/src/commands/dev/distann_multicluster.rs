@@ -10780,6 +10780,7 @@ async fn task235_prepared_slot_saturation_cell(
     socket_dir: &Path,
     nodes: &[Node],
     ordinal: u32,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let candidate = task235_write_candidate(ordinal, nodes.len(), 1)?;
     let owner_node = nodes
@@ -10811,6 +10812,7 @@ async fn task235_prepared_slot_saturation_cell(
         &candidate,
         false,
         false,
+        secure_transport_fixture,
     )
     .await?;
     task235_assert_snapshot(
@@ -10821,7 +10823,7 @@ async fn task235_prepared_slot_saturation_cell(
         Some(false),
         Some(false),
     )?;
-    let duplicate = task235_reap_all(socket_dir, nodes).await?;
+    let duplicate = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
     if !duplicate.is_empty() {
         bail!("Task 235 saturation duplicate recovery was not empty: {duplicate:?}");
     }
@@ -10845,6 +10847,7 @@ async fn task235_routed_tombstone_owner_death_cell(
     args: &LocalMultinodePg18Args,
     socket_dir: &Path,
     nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let (probe, probe_connection) =
         tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
@@ -10961,17 +10964,13 @@ async fn task235_routed_tombstone_owner_death_cell(
         )
         .await?
         .get::<_, Vec<u8>>(0);
-    let roster = nodes
-        .iter()
-        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
-        .collect::<Vec<_>>()
-        .join(";")
-        .replace('\'', "''");
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
     owner
-        .batch_execute(&format!(
-            "SET ec_distann.roster = '{roster}'; SET ec_distann.local_node_id = {}",
-            owner_node.node_id,
-        ))
+        .execute(
+            "SELECT set_config('ec_distann.roster', $1, false),
+                    set_config('ec_distann.local_node_id', $2, false)",
+            &[&roster, &owner_node.node_id.to_string()],
+        )
         .await?;
     let zero_query = vec![0.0_f32; usize::try_from(args.dim)?];
     let tombstoned = owner
@@ -11179,14 +11178,31 @@ async fn task235_write_snapshot(
     })
 }
 
-async fn task235_reap_all(socket_dir: &Path, nodes: &[Node]) -> Result<Vec<String>> {
-    let mut results = Vec::new();
-    let roster = nodes
+fn task235_recovery_roster(
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<String> {
+    nodes
         .iter()
-        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
-        .collect::<Vec<_>>()
-        .join(";")
-        .replace('\'', "''");
+        .map(|node| {
+            let route = match secure_transport_fixture {
+                Some(fixture) => secure_remote_conninfo(node.port, fixture)?,
+                None => conninfo(socket_dir, node.port),
+            };
+            Ok(format!("{}@{route}", node.node_id))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|routes| routes.join(";"))
+}
+
+async fn task235_reap_all(
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let mut results = Vec::new();
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
     for coordinator_node in nodes {
         let (coordinator, connection) = tokio_postgres::connect(
             &conninfo(socket_dir, coordinator_node.port),
@@ -11195,10 +11211,11 @@ async fn task235_reap_all(socket_dir: &Path, nodes: &[Node]) -> Result<Vec<Strin
         .await?;
         let connection_task = tokio::spawn(async move { connection.await });
         coordinator
-            .batch_execute(&format!(
-                "SET ec_distann.roster = '{roster}'; SET ec_distann.local_node_id = {}",
-                coordinator_node.node_id,
-            ))
+            .execute(
+                "SELECT set_config('ec_distann.roster', $1, false),
+                        set_config('ec_distann.local_node_id', $2, false)",
+                &[&roster, &coordinator_node.node_id.to_string()],
+            )
             .await?;
         for target_node in nodes {
             let row = coordinator
@@ -11227,13 +11244,14 @@ async fn task235_recover_until_terminal(
     candidate: &Task235WriteCandidate,
     source_applied: bool,
     owner_applied: bool,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<(Task235WriteSnapshot, Vec<String>, usize)> {
     let started = Instant::now();
     let mut reports = Vec::new();
     let mut attempts = 0_usize;
     loop {
         attempts += 1;
-        let attempt_reports = task235_reap_all(socket_dir, nodes).await?;
+        let attempt_reports = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
         reports.extend(attempt_reports);
         let snapshot = task235_write_snapshot(socket_dir, nodes, candidate).await?;
         // While the coordinator backend is still completing abort, the full
@@ -11528,14 +11546,11 @@ async fn task235_publish_state(
 async fn task235_operator_status_stop_cell(
     socket_dir: &Path,
     nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let (coordinator, coordinator_task) =
         task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
-    let roster = nodes
-        .iter()
-        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
-        .collect::<Vec<_>>()
-        .join(";");
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
     coordinator
         .execute(
             "SELECT set_config('ec_distann.roster', $1, false),
@@ -12003,10 +12018,13 @@ async fn run_task235_write_fault_matrix(
     pg_ctl: &Path,
     socket_dir: &Path,
     nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let target_owner = 1_usize;
     let mut lines = task235_run_lifecycle_fault_matrix(socket_dir, nodes).await?;
-    lines.extend(task235_operator_status_stop_cell(socket_dir, nodes).await?);
+    lines.extend(
+        task235_operator_status_stop_cell(socket_dir, nodes, secure_transport_fixture).await?,
+    );
     let cells = [
         ("clean_commit", None, false, false, true),
         (
@@ -12164,6 +12182,7 @@ async fn run_task235_write_fault_matrix(
             &candidate,
             final_commit,
             final_commit,
+            secure_transport_fixture,
         )
         .await?;
         if let Some((gid, required)) = recovery_requirement {
@@ -12184,7 +12203,7 @@ async fn run_task235_write_fault_matrix(
             Some(false),
             Some(false),
         )?;
-        let duplicate = task235_reap_all(socket_dir, nodes).await?;
+        let duplicate = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
         if !duplicate.is_empty() {
             bail!("Task 235 {cell} duplicate recovery was not idempotent: {duplicate:?}");
         }
@@ -12206,8 +12225,25 @@ async fn run_task235_write_fault_matrix(
             ));
         }
     }
-    lines.extend(task235_prepared_slot_saturation_cell(args, socket_dir, nodes, 100).await?);
-    lines.extend(task235_routed_tombstone_owner_death_cell(args, socket_dir, nodes).await?);
+    lines.extend(
+        task235_prepared_slot_saturation_cell(
+            args,
+            socket_dir,
+            nodes,
+            100,
+            secure_transport_fixture,
+        )
+        .await?,
+    );
+    lines.extend(
+        task235_routed_tombstone_owner_death_cell(
+            args,
+            socket_dir,
+            nodes,
+            secure_transport_fixture,
+        )
+        .await?,
+    );
     Ok(lines)
 }
 
@@ -12565,7 +12601,14 @@ async fn drive_physical_fixture(
         return Ok(());
     }
     if args.write_lifecycle_fault_matrix {
-        let lines = run_task235_write_fault_matrix(args, pg_ctl, socket_dir, nodes).await?;
+        let lines = run_task235_write_fault_matrix(
+            args,
+            pg_ctl,
+            socket_dir,
+            nodes,
+            secure_transport_fixture,
+        )
+        .await?;
         let scenario_count = lines
             .iter()
             .filter(|line| {
