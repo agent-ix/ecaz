@@ -233,6 +233,15 @@ pub(crate) fn connect_remote_postgres(
     if !connect_timeout.is_zero() {
         config.connect_timeout(connect_timeout);
     }
+    if statement_timeout_ms > 0 {
+        // Synchronous transaction callbacks and operator recovery use this
+        // blocking client. statement_timeout bounds server execution; the TCP
+        // user timeout also bounds an acknowledged write whose response can no
+        // longer make progress across a failed network path.
+        config.tcp_user_timeout(std::time::Duration::from_millis(
+            statement_timeout_ms.saturating_add(5_000),
+        ));
+    }
     let mut client = if parsed.tls_config().no_tls() {
         config
             .connect(postgres::NoTls)
