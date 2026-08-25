@@ -1,8 +1,13 @@
 # Task 222: ec_distann Qual-Aware Payload Projection
 
-Status: **implementation ready — plan revisions applied; packet 001 review
-closeout pending** (2026-08-23). Priority: P0 latency. Revised against
-`reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`.
+Status: **implementation and required 10k/50k/100k evidence complete; packet
+004 reviewer seq-03 findings addressed; packets 002-004 re-review-open**
+(2026-08-24). Priority: P0 latency. Candidate retained:
+the exact id-only mask preserves recall, ordered-result identity, and storage
+while improving warm mean latency by 33.33%-40.41%. Plan revisions applied
+against `reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`;
+closeout request: `reviews/task-222/004-full-scale-decision/request.md`.
+Reviewer cleanup commit: `06b59c4c6`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-28 and MAT-29. Origin: Task 218's production lazy-10 attribution and the
@@ -62,13 +67,16 @@ columns cannot be reconstructed correctly by all-column shipping.
   At `begin_custom_scan`, derive the typed mask from the now-final three trees:
   `plan.targetlist`, `plan.qual`, and `custom_exprs[0]` (the ORDER BY query-value
   expression), applying the serialized exemption only to the one matching
-  injected ordering expression. When the exact mask omits that vector, replace
-  the proven-unused expression with a typed NULL and rebuild the scan projection
-  during `BeginCustomScan`; merely leaving the expression to evaluate against
-  an unshipped NULL vector is unsafe. There is no separate recheck tree: EPQ and
-  multi-window qual rejection both re-evaluate `plan.qual`. Assert that
-  `custom_exprs[0]` is Const/Param-only and contains no relation Var; fail
-  closed to all columns if that invariant ever changes.
+  injected ordering expression. When the exact mask omits that vector, make an
+  executor-local shallow `CustomScan` copy plus a deep target-list copy,
+  replace the proven-unused expression in the private tree with a typed NULL,
+  and rebuild the scan projection during `BeginCustomScan`. Never mutate the
+  shared/cached plan tree. If copying or matching the one ordering entry fails,
+  recompute the exact mask with the vector retained; merely leaving the
+  expression to evaluate against an unshipped vector is unsafe. There is no
+  separate recheck tree: EPQ and multi-window qual rejection both re-evaluate
+  `plan.qual`. Assert that `custom_exprs[0]` is Const/Param-only and contains no
+  relation Var; fail closed to all columns if that invariant ever changes.
 - Export the result as a typed reusable API, not logic embedded in
   `build_payload_metadata`: `Exact(attnums)` versus
   `AllColumns(FallbackReason)`. Preserve the distinction even when an exact
@@ -95,6 +103,9 @@ columns cannot be reconstructed correctly by all-column shipping.
 - Emit requested attribute numbers, payload-column count, payload bytes, and
   the exact/all-columns variant plus fallback reason in benchmark-only
   evidence.
+- A benchmark-only control GUC may force `AllColumns`, but it must also disable
+  ordering projection elision so the control executes the historical
+  all-column plan rather than a hybrid plan.
 - Classify a true zero-payload/index-only path, but do not implement it unless
   every output and visibility value can be reconstructed without a row fetch.
   The row-tier fetch is also the tombstone/visibility check, so id-only output
@@ -146,6 +157,40 @@ NFR-021/NFR-022 conformance.
    tail regression.
 4. A useful candidate receives 10k/50k/100k recall, latency, and storage
    evidence; otherwise the task closes STOP without a matrix.
+
+## Outcome
+
+Implementation commit `c9f79be4a` completes the typed exact/all-columns mask,
+executor-private ordering-expression elision, fail-closed vector retention,
+system-column hard error, benchmark observability/control, and the P2 semantic
+matrix. CLI commit `f1351d2db` corrects variant fixture-reuse attestation so a
+suite variant with benchmark seed metadata can safely reuse its own fixture.
+Focused PG18 extension coverage and the focused CLI unit test pass; details are
+in packet 002.
+
+The isolated 100k gate in packet 003 advances: recall and ordered predictions
+are identical, warm mean improves 17.1 -> 10.7 ms (-37.43%), and payload bytes
+fall 123,076.8 -> 66.6 per scan. The required packet 004 matrix independently
+confirms the candidate at every scale:
+
+| Scale | Recall control / candidate | Warm mean control -> candidate | Payload bytes/scan control -> candidate |
+| --- | --- | --- | --- |
+| 10k | 0.9990 / 0.9990 | 14.7 -> 8.76 ms (-40.41%) | 121,624.72 -> 65.80 |
+| 50k | 0.9545 / 0.9545 | 16.8 -> 10.8 ms (-35.71%) | 123,842.80 -> 67.00 |
+| 100k | 0.9290 / 0.9290 | 17.4 -> 11.6 ms (-33.33%) | 123,103.44 -> 66.60 |
+
+Each scale has byte-identical ordered predictions, arm-identical storage, three
+owners with no non-owned/orphan/coordinator-resident payload, and admissible
+NFR-021/NFR-022 provenance. No implementation or measurement work remains;
+the task awaits an outside verdict on review-open packets 002-004 and is not
+self-marked review-closed.
+
+Productionization disposition: Task 222 ships the proved exact payload mask as
+the production default. That decision rests on byte-identical ordered results
+and identical recall at 10k, 50k, and 100k, rather than a recall-for-latency
+trade, so Task 219's recall-equivalence product-ruling clause is not engaged.
+If a query shape escapes the ordering-only proof, execution fails closed to
+all-column shipping, preserving the pre-Task-222 behavior.
 
 ## Required review packets
 
