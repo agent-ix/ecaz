@@ -1,0 +1,48 @@
+Script started on 2026-08-25 10:07:11-07:00 [<not executed on terminal>]
+
+   0: [91m--secure-remote-transport requires a PG18 build configured with --with-openssl[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m1419[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-08-25 10:07:11-07:00 [COMMAND_EXIT_CODE="1"]
+Script started on 2026-08-25 10:08:38-07:00 [<not executed on terminal>]
+[distann-multicluster] repo=/home/peter/dev/ecaz/.worktrees/task234-current-tls
+[distann-multicluster] pgbin=/home/peter/.ecaz/toolchains/pg18-ssl/bin
+[distann-multicluster] mode=physical owners=4 instances=4 coordinator_outside_roster=false secure_remote_transport=true base_port=44320 rows=2000 dim=16 graph_degree=32 build_shards=1 head_index_cap=4096 query_offset=0 queries=50
+[distann-multicluster] secure_remote_transport status=ready tls=verify-full client_auth=certificate plaintext_role=reject
+[distann-multicluster] release_profile_preflight status=passed nodes=4 unanimous=true extension_git_sha=f2104e84d26537973254bf6dcaed857a27be2bca extension_build_profile=release extension_features=distann-head-attribution-benchmark,pg-test,pg18 debug_override=true
+[distann-multicluster] physical_setup_start rows=2000 nodes=4
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+[distann-multicluster] physical_synthetic_unit_norm samples=32 dimensions=16 max_abs_error=0.000000017 tolerance=0.000010000 pass=true
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=542 rows=542 non_owned=0 orphans=0 graph_bytes=483328 row_bytes=147456 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=486 rows=486 non_owned=0 orphans=0 graph_bytes=434176 row_bytes=139264 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=460 rows=460 non_owned=0 orphans=0 graph_bytes=409600 row_bytes=131072 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=4 state=Ready records=512 rows=512 non_owned=0 orphans=0 graph_bytes=458752 row_bytes=139264 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=542 rows=542 non_owned=0 orphans=0 graph_bytes=483328 row_bytes=147456 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=486 rows=486 non_owned=0 orphans=0 graph_bytes=434176 row_bytes=139264 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=460 rows=460 non_owned=0 orphans=0 graph_bytes=409600 row_bytes=131072 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=4 state=Published records=512 rows=512 non_owned=0 orphans=0 graph_bytes=458752 row_bytes=139264 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=4 source_rows=2000
+
+   0: [91mTask 234 physical_head_search clean retry failed[0m
+   1: [91mdb error[0m
+   2: [91mERROR: [EC_REMOTE_TRANSPORT_RESET] EC_BUILD_INCOMPLETE: secure participant transport failed[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m10098[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-08-25 10:08:48-07:00 [COMMAND_EXIT_CODE="1"]
