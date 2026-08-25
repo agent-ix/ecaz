@@ -354,32 +354,31 @@ fn distann_stage_batch_fixture_with_entries(
         graph_degree: usize::from(descriptor.graph_degree),
         non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
     };
-    let (payload_bytes, embedding_bytes, generated_bytes) =
-        Spi::connect(|client| {
-            client
-                .select(
-                    "SELECT pg_catalog.textsend($1::text) AS payload_bytes,
+    let (payload_bytes, embedding_bytes, generated_bytes) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT pg_catalog.textsend($1::text) AS payload_bytes,
                             ecvector_send(
                                 encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)
                             ) AS embedding_bytes,
                             pg_catalog.textsend($2::text) AS generated_bytes",
-                    None,
-                    &[
-                        "captured payload".to_owned().into(),
-                        "captured payload:generated".to_owned().into(),
-                    ],
+                None,
+                &[
+                    "captured payload".to_owned().into(),
+                    "captured payload:generated".to_owned().into(),
+                ],
+            )
+            .expect("binary row payload should encode")
+            .map(|row| {
+                (
+                    row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["embedding_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["generated_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
                 )
-                .expect("binary row payload should encode")
-                .map(|row| {
-                    (
-                        row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
-                        row["embedding_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
-                        row["generated_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
-                    )
-                })
-                .next()
-                .expect("binary row payload should return one row")
-        });
+            })
+            .next()
+            .expect("binary row payload should return one row")
+    });
     let mut entries = Vec::with_capacity(entry_count);
     let mut first_vec_id = None;
     for entry_number in 0..entry_count {
@@ -3778,7 +3777,11 @@ fn test_distann_three_owner_physical_handoff() {
     let fallback_stats = client
         .query_one("SELECT * FROM ec_distann_crown_stats()", &[])
         .expect("crown fallback stats should be queryable");
-    assert_eq!(fallback_stats.get::<_, i64>(1), 0, "failed population stores no entries");
+    assert_eq!(
+        fallback_stats.get::<_, i64>(1),
+        0,
+        "failed population stores no entries"
+    );
     assert!(
         fallback_stats.get::<_, i64>(5) > 0,
         "failed population must record a crown fallback"
@@ -5955,13 +5958,12 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
     } else {
         create_distann_physical_generation_fixture(stem, build_marker)
     };
-    let (batch_digest, encoded_batch, _) =
-        distann_stage_batch_fixture_with_entries(
-            &generation,
-            0,
-            build_marker.wrapping_add(1),
-            row_count,
-        );
+    let (batch_digest, encoded_batch, _) = distann_stage_batch_fixture_with_entries(
+        &generation,
+        0,
+        build_marker.wrapping_add(1),
+        row_count,
+    );
     let owner_digest = distann_owner_digest_for_batch(&generation, &encoded_batch);
     begin_distann_physical_generation_count(&generation, row_count as i64, &owner_digest);
     stage_distann_physical_batch(&generation, 0, &batch_digest, &encoded_batch);
@@ -6235,8 +6237,7 @@ fn test_distann_physical_seed_detoast_memory_is_bounded() {
     let fingerprint_hex = hex::encode(&fixture.fingerprint);
     let graph_relation = canonical_index_locator(fixture.relations.1);
     assert_eq!(
-        Spi::get_one::<i64>(&format!("SELECT count(*) FROM {graph_relation}"))
-            .unwrap(),
+        Spi::get_one::<i64>(&format!("SELECT count(*) FROM {graph_relation}")).unwrap(),
         Some(ROWS as i64),
         "the regression graph must contain the intended row count"
     );
@@ -6259,13 +6260,185 @@ fn test_distann_physical_seed_detoast_memory_is_bounded() {
         ))
         .expect("physical seed benchmark call should succeed")
         .expect("physical seed benchmark count should exist");
-        assert_eq!(rows, 1, "the physical graph should yield one requested seed");
+        assert_eq!(
+            rows, 1,
+            "the physical graph should yield one requested seed"
+        );
     }
     let after = memory_bytes();
     let growth = after.saturating_sub(before);
     assert!(
         growth <= MAX_GROWTH_BYTES,
         "owner seed conversion retained {growth} bytes after {ITERATIONS} calls"
+    );
+}
+
+/// Task 227 callback coverage: the feature-only SQL surface must span the
+/// published physical-generation open, head seed selection, traversal, exact
+/// result ordering, and JSON return boundary in a real PG18 backend.
+#[cfg(feature = "pg_test")]
+#[pg_test]
+fn test_distann_query_trace_callback() {
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(
+        "EC_SPIRE_REMOTE_CONNINFO_DISTANN_QUERY_TRACE",
+        "host=/unused dbname=unused",
+    );
+    Spi::run(
+        "CREATE TABLE ec_distann_qt_source (
+             source_id uuid NOT NULL,
+             embedding ecvector(4) NOT NULL
+         );
+         INSERT INTO ec_distann_qt_source VALUES
+             ('11111111-1111-4111-8111-111111111111',
+              encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             ('22222222-2222-4222-8222-222222222222',
+              encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42));
+         CREATE INDEX ec_distann_qt_idx ON ec_distann_qt_source
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include',
+                   graph_degree = 4, neighbor_code_format = 'rabitq');
+         SELECT ec_distann_configure_participant_identity(
+             'ec_distann_qt_idx'::regclass, 'query-trace/node-17'
+         );
+         INSERT INTO ec_distann_node_descriptor (
+             index_oid, logical_index_uuid, roster_ordinal, node_id,
+             endpoint_identity, conninfo_secret_name, remote_index_regclass,
+             participant_logical_index_uuid, compatibility_digest, is_local
+         )
+         SELECT 'ec_distann_qt_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                'query-trace/node-17', 'DISTANN_QUERY_TRACE', canonical_index_regclass,
+                logical_index_uuid, compatibility_digest, true
+           FROM ec_distann_control_identity('ec_distann_qt_idx'::regclass)",
+    )
+    .expect("query trace physical-build fixture should create");
+    let build_id = "67676767-6767-4767-8767-676767676767";
+    Spi::run(&format!(
+        "SELECT ec_distann_begin_epoch_build('ec_distann_qt_idx'::regclass, 7, '{build_id}'::uuid);
+         SELECT ec_distann_build_epoch('ec_distann_qt_idx'::regclass, 7, '{build_id}'::uuid);
+         SELECT ec_distann_publish_epoch(
+             'ec_distann_qt_idx'::regclass, '{build_id}'::uuid,
+             (SELECT epoch_manifest FROM ec_distann_build_candidate
+               WHERE index_oid = 'ec_distann_qt_idx'::regclass::oid
+                 AND build_id = '{build_id}'::uuid),
+             (SELECT manifest_digest FROM ec_distann_build_candidate
+               WHERE index_oid = 'ec_distann_qt_idx'::regclass::oid
+                 AND build_id = '{build_id}'::uuid)
+         )"
+    ))
+    .expect("query trace physical generation should build and publish");
+    let fingerprint_hex = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT epoch_fingerprint FROM ec_distann_build_candidate
+          WHERE index_oid = 'ec_distann_qt_idx'::regclass::oid
+            AND build_id = '{build_id}'::uuid"
+    ))
+    .expect("query trace fingerprint lookup should run")
+    .map(hex::encode)
+    .expect("query trace fingerprint should exist");
+    Spi::run(
+        "SET LOCAL ec_distann.benchmark_head_search_width = 2;
+         SET LOCAL ec_distann.benchmark_head_seed_count = 2",
+    )
+    .expect("query trace fixture should use its complete two-row head");
+    let trace = Spi::get_one::<String>(&format!(
+        "SELECT ec_distann_physical_query_trace_at_fingerprint_benchmark(
+             'ec_distann_qt_idx'::regclass, decode('{}', 'hex'),
+             ARRAY[1.0, 0.0, 0.0, 0.0]::real[], 1
+         )::text",
+        fingerprint_hex
+    ))
+    .expect("query trace SQL call should succeed")
+    .expect("query trace should return JSON");
+    let trace: serde_json::Value =
+        serde_json::from_str(&trace).expect("query trace should be valid JSON");
+    assert_eq!(
+        trace["schema"],
+        serde_json::Value::String("ec_distann_query_trace_v1".to_owned())
+    );
+    assert_eq!(
+        trace["build_id"],
+        serde_json::Value::String(build_id.to_owned())
+    );
+    assert_eq!(trace["truncated"], serde_json::Value::Bool(false));
+    assert_eq!(trace["rounds_executed"], serde_json::Value::from(1));
+    assert_eq!(
+        trace["final_ids"].as_array().map(Vec::len),
+        Some(1),
+        "top_k=1 should return one stable locator"
+    );
+    let final_id = trace["final_ids"][0]
+        .as_str()
+        .expect("final trace id should be a string");
+    assert!(
+        trace["exact_rerank_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(final_id))),
+        "the final result must be contained in the exact-ranked input"
+    );
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_test]
+fn test_distann_graph_diagnostic_chunks() {
+    let fixture = create_distann_participant_lifecycle_fixture_with_rows(
+        "ec_distann_graph_diag_physical",
+        0x6c,
+        2,
+    );
+    publish_distann_participant(&fixture);
+    let fingerprint_hex = hex::encode(&fixture.fingerprint);
+    let physical = Spi::get_two::<i64, bool>(&format!(
+        "SELECT count(*)::bigint,
+                bool_and(owner_ordinal = 0 AND cardinality(neighbor_vec_ids) <= 256)
+           FROM ec_distann_physical_graph_diagnostic_chunk_benchmark(
+               '{}'::regclass, decode('{}', 'hex'), NULL, 4096
+           )",
+        fixture.generation.index_name, fingerprint_hex
+    ))
+    .expect("physical graph diagnostic should stream");
+    assert_eq!(physical, (Some(2), Some(true)));
+
+    Spi::run(
+        "CREATE TABLE ec_distann_graph_diag_mono_source (
+             id bigint,
+             embedding ecvector(4) NOT NULL
+         );
+         INSERT INTO ec_distann_graph_diag_mono_source VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42));
+         CREATE INDEX ec_distann_graph_diag_mono_idx
+             ON ec_distann_graph_diag_mono_source
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    )
+    .expect("monolithic graph diagnostic fixture should build");
+    let first = Spi::get_one::<i64>(
+        "SELECT vec_id
+           FROM ec_distann_graph_diagnostic_chunk_benchmark(
+               'ec_distann_graph_diag_mono_idx'::regclass, NULL, 1
+           )",
+    )
+    .expect("first monolithic graph diagnostic chunk should stream")
+    .expect("first monolithic graph diagnostic row should exist");
+    let second = Spi::get_one::<i64>(&format!(
+        "SELECT vec_id
+           FROM ec_distann_graph_diagnostic_chunk_benchmark(
+               'ec_distann_graph_diag_mono_idx'::regclass, {first}, 1
+           )"
+    ))
+    .expect("second monolithic graph diagnostic chunk should stream")
+    .expect("second monolithic graph diagnostic row should exist");
+    assert_ne!(first, second, "monolithic pagination must advance");
+    assert_eq!(
+        Spi::get_one::<i64>(
+            "SELECT count(*)::bigint
+               FROM ec_distann_graph_diagnostic_chunk_benchmark(
+                   'ec_distann_graph_diag_mono_idx'::regclass, NULL, 4096
+               )",
+        )
+        .expect("complete monolithic graph diagnostic should stream"),
+        Some(2)
     );
 }
 

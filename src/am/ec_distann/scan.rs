@@ -381,7 +381,10 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam_capacity);
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::seed_trace_start(
-        &seeds.iter().map(|seed| seed.vec_id).collect::<Vec<_>>(),
+        &seeds
+            .iter()
+            .map(|seed| (seed.vec_id, seed.dist))
+            .collect::<Vec<_>>(),
     );
     let mut origins: HashMap<u64, u32> = HashMap::with_capacity(beam_capacity);
     for (seed_index, seed) in seeds.iter().enumerate() {
@@ -473,6 +476,14 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             )));
         }
 
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::seed_trace_round_start(
+            counters.rounds_executed,
+            &batch,
+            limits.threshold,
+            limits.candidate_limit,
+        );
+
         if limits.threshold.is_some() {
             counters.pushdown_rounds_with_threshold += 1;
             #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -493,6 +504,20 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 batch.len()
             )));
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let trace_returned_ids = responses
+            .iter()
+            .map(|response| response.vec_id)
+            .collect::<Vec<_>>();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let trace_exact_inputs = responses
+            .iter()
+            .filter_map(|response| {
+                (!response.is_tombstone)
+                    .then(|| response.exact_dist.map(|dist| (response.vec_id, dist)))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
         counters.rounds_executed += 1;
         let owner_times = responses
             .iter()
@@ -629,6 +654,46 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
         if pushdown {
             retain_best_candidates(&mut beam, params.candidate_heap_limit);
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let mut retained = beam
+                .iter()
+                .filter(|candidate| !expanded.contains(&candidate.vec_id))
+                .map(|candidate| (candidate.vec_id, candidate.dist))
+                .collect::<Vec<_>>();
+            retained.sort_unstable_by(|left, right| {
+                left.1
+                    .total_cmp(&right.1)
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            let kth_exact_dist = if hits.len() >= params.top_k {
+                let mut exact = hits
+                    .iter()
+                    .map(|hit| (hit.vec_id, hit.exact_dist))
+                    .collect::<Vec<_>>();
+                exact.sort_unstable_by(|left, right| {
+                    left.1
+                        .total_cmp(&right.1)
+                        .then_with(|| left.0.cmp(&right.0))
+                });
+                exact.get(params.top_k - 1).map(|(_, dist)| *dist)
+            } else {
+                None
+            };
+            let round = counters
+                .rounds
+                .last()
+                .expect("completed traversal round has counters");
+            super::stage_counters::seed_trace_round_finish(
+                &trace_returned_ids,
+                &trace_exact_inputs,
+                &retained,
+                params.candidate_heap_limit,
+                kth_exact_dist,
+                round.request_bytes,
+                round.response_bytes,
+            );
+        }
     }
 
     if counters.records_expanded > expansion_budget {
@@ -643,6 +708,17 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             .total_cmp(&right.exact_dist)
             .then_with(|| left.vec_id.cmp(&right.vec_id))
     });
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::seed_trace_terminal(
+        &hits
+            .iter()
+            .map(|hit| (hit.vec_id, hit.exact_dist))
+            .collect::<Vec<_>>(),
+        params.top_k,
+        counters.rounds_executed,
+        counters.early_exit,
+        counters.beam_exhausted,
+    );
     Ok((hits, counters))
 }
 
@@ -846,6 +922,18 @@ mod tests {
         assert_eq!(trace.expanded_unique, 3);
         assert_eq!(trace.expanded_overlap, 1);
         assert!(trace.hit_origin_masks.contains(&3));
+        assert_eq!(trace.seed_code_dists, vec![-0.9, -0.8]);
+        assert_eq!(trace.rounds.len(), 2);
+        assert_eq!(trace.rounds[0].requested_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].returned_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].exact_input_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].retained_ids, vec![3]);
+        assert_eq!(trace.rounds[1].requested_ids, vec![3]);
+        assert_eq!(trace.exact_rerank_ids, vec![1, 2, 3]);
+        assert_eq!(trace.final_ids, vec![1, 2, 3]);
+        assert_eq!(trace.rounds_executed, 2);
+        assert!(trace.beam_exhausted);
+        assert!(!trace.truncated);
     }
 
     #[test]

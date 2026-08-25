@@ -1,0 +1,176 @@
+{
+  "schema": "ec_distann_task227_finite_rule_screen_v1",
+  "source_artifact": "reuse-run/diagnostic-reuse-rows-201-400/physical-residual-query-features.jsonl",
+  "source_sha256": "2ad616c50922c8e35b6c24ca74da40c47ddbc84c27285bbc8d0a9d55860c5655",
+  "query_prefix": "rows_201_400",
+  "query_offset": 200,
+  "queries": 200,
+  "top_k": 10,
+  "query_file_sha256": "a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782",
+  "query_slice_sha256": "a12a81111d586e78165a950962aa8667e2f95e700159fe86d83bba2b49a5ece9",
+  "generation_identity": "0200797e7ccf2576a229d4af60cdb23e1ffed5854a032066f2d37c623436b810c210",
+  "control_variant": "prod-bw4-rabitq",
+  "candidate_variant": "task226-bw8-rabitq",
+  "candidate_improvement_queries": 29,
+  "candidate_loss_queries": 3,
+  "all_query_paired_recall_delta": 0.027,
+  "quantile_method": "nearest-rank: sorted_values[ceil(p * n) - 1]",
+  "thresholds": {
+    "score_gap_p25": 0.027920216,
+    "frontier_churn_rate_p75": 0.40296296296296297,
+    "repeated_node_rate_p75": 0.375,
+    "remote_owner_requests_p75": 35,
+    "response_bytes_p75": 9032
+  },
+  "eligibility": {
+    "maximum_activation_fraction": 0.25,
+    "minimum_improvement_capture_fraction": 0.5,
+    "maximum_activated_loss_queries": "ceil(candidate_loss_queries * activation_fraction)",
+    "minimum_paired_bootstrap_ci95_low": 0
+  },
+  "bootstrap": {
+    "trials": 10000,
+    "seed": "0x9e3779b97f4a7c15",
+    "rng": "u64 xorshift: state ^= state << 7; state ^= state >> 9; state ^= state << 8",
+    "sample_index": "state % queries",
+    "ci95_indices_after_sort": [250, 9749]
+  },
+  "rules": [
+    {
+      "predicate": "frontier_churn_rate_gte_p75",
+      "activated_queries": 51,
+      "activation_fraction": 0.255,
+      "improvement_queries_captured": 9,
+      "improvement_capture_fraction": 0.3103448275862069,
+      "loss_queries_activated": 2,
+      "max_allowed_loss_queries": 1,
+      "simulated_paired_recall_delta": 0.0095,
+      "paired_bootstrap_ci95_low": 0.001,
+      "paired_bootstrap_ci95_high": 0.0195,
+      "gates": {
+        "activation": false,
+        "capture": false,
+        "loss": false,
+        "bootstrap": true
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "heap_saturated",
+      "activated_queries": 121,
+      "activation_fraction": 0.605,
+      "improvement_queries_captured": 18,
+      "improvement_capture_fraction": 0.6206896551724138,
+      "loss_queries_activated": 3,
+      "max_allowed_loss_queries": 2,
+      "simulated_paired_recall_delta": 0.0175,
+      "paired_bootstrap_ci95_low": 0.007,
+      "paired_bootstrap_ci95_high": 0.029,
+      "gates": {
+        "activation": false,
+        "capture": true,
+        "loss": false,
+        "bootstrap": true
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "remote_owner_requests_gte_p75",
+      "activated_queries": 53,
+      "activation_fraction": 0.265,
+      "improvement_queries_captured": 6,
+      "improvement_capture_fraction": 0.20689655172413793,
+      "loss_queries_activated": 3,
+      "max_allowed_loss_queries": 1,
+      "simulated_paired_recall_delta": 0.0055,
+      "paired_bootstrap_ci95_low": -0.0015,
+      "paired_bootstrap_ci95_high": 0.014,
+      "gates": {
+        "activation": false,
+        "capture": false,
+        "loss": false,
+        "bootstrap": false
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "repeated_node_rate_gte_p75",
+      "activated_queries": 51,
+      "activation_fraction": 0.255,
+      "improvement_queries_captured": 4,
+      "improvement_capture_fraction": 0.13793103448275862,
+      "loss_queries_activated": 0,
+      "max_allowed_loss_queries": 1,
+      "simulated_paired_recall_delta": 0.0035,
+      "paired_bootstrap_ci95_low": 0.0005,
+      "paired_bootstrap_ci95_high": 0.0075,
+      "gates": {
+        "activation": false,
+        "capture": false,
+        "loss": true,
+        "bootstrap": true
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "response_bytes_gte_p75",
+      "activated_queries": 51,
+      "activation_fraction": 0.255,
+      "improvement_queries_captured": 7,
+      "improvement_capture_fraction": 0.2413793103448276,
+      "loss_queries_activated": 2,
+      "max_allowed_loss_queries": 1,
+      "simulated_paired_recall_delta": 0.0055,
+      "paired_bootstrap_ci95_low": 0.0005,
+      "paired_bootstrap_ci95_high": 0.0115,
+      "gates": {
+        "activation": false,
+        "capture": false,
+        "loss": false,
+        "bootstrap": true
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "round_cap_reached",
+      "activated_queries": 0,
+      "activation_fraction": 0,
+      "improvement_queries_captured": 0,
+      "improvement_capture_fraction": 0,
+      "loss_queries_activated": 0,
+      "max_allowed_loss_queries": 0,
+      "simulated_paired_recall_delta": 0,
+      "paired_bootstrap_ci95_low": 0,
+      "paired_bootstrap_ci95_high": 0,
+      "gates": {
+        "activation": true,
+        "capture": false,
+        "loss": true,
+        "bootstrap": true
+      },
+      "eligible": false
+    },
+    {
+      "predicate": "score_gap_lte_p25",
+      "activated_queries": 50,
+      "activation_fraction": 0.25,
+      "improvement_queries_captured": 8,
+      "improvement_capture_fraction": 0.27586206896551724,
+      "loss_queries_activated": 1,
+      "max_allowed_loss_queries": 1,
+      "simulated_paired_recall_delta": 0.0075,
+      "paired_bootstrap_ci95_low": 0.0015,
+      "paired_bootstrap_ci95_high": 0.015,
+      "gates": {
+        "activation": true,
+        "capture": false,
+        "loss": true,
+        "bootstrap": true
+      },
+      "eligible": false
+    }
+  ],
+  "eligible_rule_count": 0,
+  "decision": "NO RELIABLE SIGNAL",
+  "next_step": "STOP before blind evaluation and runtime implementation"
+}

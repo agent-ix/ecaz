@@ -24,6 +24,8 @@ use tokio::sync::{Barrier, Mutex};
 
 use crate::commands::bench::latency::{monitor_backend_memory, rss_slope_kb_per_second};
 
+use super::distann_graph_diagnostic::{analyze_graph, GraphNode, GraphSeedSet};
+use super::distann_residual_attribution::{classify_residuals, ResidualAttributionInputs};
 use super::support::{
     default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
 };
@@ -122,6 +124,18 @@ pub struct LocalMultinodePg18Args {
     /// compact JSON trace per physical seed variant under --artifact-dir.
     #[arg(long, default_value_t = false)]
     pub gateway_trace: bool,
+    /// Task 227 benchmark-only per-query traversal/frontier/exact-result trace
+    /// over the selected evaluation query slice.
+    #[arg(long, default_value_t = false)]
+    pub query_trace: bool,
+    /// Task 227 read-only persisted-graph structure and seed-reachability
+    /// diagnostic for every physical owner and the monolithic control.
+    #[arg(long, default_value_t = false)]
+    pub graph_diagnostic: bool,
+    /// Task 227 join of query traces and persisted graph reachability to exact
+    /// truth. Requires the registered five diagnostic variants.
+    #[arg(long, default_value_t = false)]
+    pub residual_attribution: bool,
     /// Task 185 benchmark-only isolated attribution for each returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
@@ -292,6 +306,11 @@ pub struct LocalMultinodePg18Args {
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
+    /// Zero-based row offset into the staged query TSV. The fixture loads only
+    /// this exact slice, keeping recall, latency, and trace artifacts aligned
+    /// without copying query data into a review packet.
+    #[arg(long, default_value_t = 0)]
+    pub query_offset: u32,
     /// top-k for the recall comparison.
     #[arg(long, default_value_t = 10)]
     pub top_k: u32,
@@ -582,11 +601,32 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
     }
+    if args.queries == 0 {
+        bail!("--queries must be at least 1");
+    }
+    args.query_offset
+        .checked_add(args.queries)
+        .ok_or_else(|| eyre!("--query-offset + --queries overflows u32"))?;
+    if args.query_offset > 0 && args.corpus_prefix.is_none() {
+        bail!("--query-offset requires --corpus-prefix");
+    }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
+    }
+    if args.query_trace && !args.physical_benchmark {
+        bail!("--query-trace requires --physical-benchmark");
+    }
+    if args.graph_diagnostic && !args.physical_benchmark {
+        bail!("--graph-diagnostic requires --physical-benchmark");
+    }
+    if args.residual_attribution && (!args.query_trace || !args.graph_diagnostic) {
+        bail!("--residual-attribution requires --query-trace and --graph-diagnostic");
+    }
+    if args.residual_attribution && (args.skip_recall || args.stage_counter_only) {
+        bail!("--residual-attribution requires per-variant recall predictions");
     }
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
@@ -980,7 +1020,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={} query_offset={} queries={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -993,7 +1033,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.dim,
         args.graph_degree,
         args.build_shards,
-        args.head_index_cap
+        args.head_index_cap,
+        args.query_offset,
+        args.queries,
     );
 
     // initdb + start + extension on every node. Reuse deliberately skips
@@ -1201,6 +1243,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
             Ok(real_setup_sql(
                 &corpus_path,
                 &queries_path,
+                args.query_offset,
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
@@ -1282,6 +1325,7 @@ async fn preflight_synthetic_unit_norm(
 fn real_setup_sql(
     corpus_path: &Path,
     queries_path: &Path,
+    query_offset: u32,
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
@@ -1311,7 +1355,7 @@ fn real_setup_sql(
          COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');\n\
          INSERT INTO dm_queries\n\
            SELECT id, translate(vec, '[]', '{{}}')::real[]\n\
-           FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
+           FROM dmq_stage ORDER BY id OFFSET {query_offset} LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
            WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
@@ -1475,8 +1519,8 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');
              INSERT INTO dm_queries
              SELECT id, translate(vec, '[]', '{{}}')::real[]
-               FROM dmq_stage ORDER BY id LIMIT {};",
-            args.queries
+               FROM dmq_stage ORDER BY id OFFSET {} LIMIT {};",
+            args.query_offset, args.queries
         )
     } else {
         let synthetic_vector = synthetic_unit_vector_expr("g", args.dim);
@@ -1818,6 +1862,14 @@ fn append_sharded_head_guc(
             "--session-guc".into(),
             format!("ec_distann.head_replica_count={replicas}"),
         ]);
+    }
+}
+
+fn diagnostic_sharded_head_search_setting(local_head: bool) -> &'static str {
+    if local_head {
+        "off"
+    } else {
+        "on"
     }
 }
 
@@ -5889,6 +5941,138 @@ async fn run_coverage_memory_regression(
     Ok(line)
 }
 
+fn query_slice_sha256(bytes: &[u8], offset: u32, limit: u32) -> Result<String> {
+    let offset = usize::try_from(offset).wrap_err("query offset exceeds usize")?;
+    let limit = usize::try_from(limit).wrap_err("query limit exceeds usize")?;
+    let mut hasher = Sha256::new();
+    let mut selected = 0usize;
+    for line in bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .skip(offset)
+        .take(limit)
+    {
+        hasher.update(line);
+        selected += 1;
+    }
+    if selected != limit {
+        bail!("query slice is short: offset={offset} requested={limit} selected={selected}");
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+async fn fetch_physical_graph_diagnostic_nodes(
+    socket_dir: &Path,
+    nodes: &[Node],
+    epoch_fingerprint: &[u8],
+) -> Result<Vec<GraphNode>> {
+    const CHUNK_ROWS: i32 = 4096;
+    let epoch_fingerprint = epoch_fingerprint.to_vec();
+    let mut graph = Vec::new();
+    for (expected_owner, node) in nodes.iter().enumerate() {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await
+                .wrap_err_with(|| {
+                    format!("connecting to graph diagnostic owner {}", node.node_id)
+                })?;
+        let connection_task = tokio::spawn(connection);
+        let mut after = None::<i64>;
+        loop {
+            let rows = client
+                .query(
+                    "SELECT owner_ordinal, vec_id, is_tombstone, neighbor_vec_ids
+                       FROM ec_distann_physical_graph_diagnostic_chunk_benchmark(
+                           'public.dm_idx'::regclass, $1::bytea, $2::bigint, $3::integer
+                       )",
+                    &[&epoch_fingerprint, &after, &CHUNK_ROWS],
+                )
+                .await
+                .wrap_err_with(|| format!("streaming graph diagnostic owner {}", node.node_id))?;
+            if rows.is_empty() {
+                break;
+            }
+            let previous = after;
+            for row in rows {
+                let owner_ordinal = row.get::<_, i32>(0);
+                if owner_ordinal != i32::try_from(expected_owner).unwrap_or(i32::MAX) {
+                    connection_task.abort();
+                    bail!(
+                        "graph diagnostic owner {} returned ordinal {owner_ordinal}, expected {expected_owner}",
+                        node.node_id
+                    );
+                }
+                let signed_id = row.get::<_, i64>(1);
+                after = Some(signed_id);
+                graph.push(GraphNode {
+                    owner_ordinal: u32::try_from(owner_ordinal)
+                        .wrap_err("negative graph diagnostic owner ordinal")?,
+                    vec_id: u64::from_le_bytes(signed_id.to_le_bytes()),
+                    tombstone: row.get(2),
+                    neighbors: row
+                        .get::<_, Vec<i64>>(3)
+                        .into_iter()
+                        .map(|neighbor| u64::from_le_bytes(neighbor.to_le_bytes()))
+                        .collect(),
+                });
+            }
+            if after == previous {
+                connection_task.abort();
+                bail!(
+                    "graph diagnostic owner {} pagination did not advance",
+                    node.node_id
+                );
+            }
+        }
+        connection_task.abort();
+    }
+    Ok(graph)
+}
+
+async fn fetch_monolithic_graph_diagnostic_nodes(
+    coordinator: &tokio_postgres::Client,
+    single_index: &str,
+) -> Result<Vec<GraphNode>> {
+    const CHUNK_ROWS: i32 = 4096;
+    let mut graph = Vec::new();
+    let mut after = None::<i64>;
+    loop {
+        let rows = coordinator
+            .query(
+                &format!(
+                    "SELECT owner_ordinal, vec_id, is_tombstone, neighbor_vec_ids
+                       FROM ec_distann_graph_diagnostic_chunk_benchmark(
+                           '{single_index}'::regclass, $1::bigint, $2::integer
+                       )"
+                ),
+                &[&after, &CHUNK_ROWS],
+            )
+            .await
+            .wrap_err("streaming monolithic graph diagnostic")?;
+        if rows.is_empty() {
+            break;
+        }
+        let previous = after;
+        for row in rows {
+            let signed_id = row.get::<_, i64>(1);
+            after = Some(signed_id);
+            graph.push(GraphNode {
+                owner_ordinal: 0,
+                vec_id: u64::from_le_bytes(signed_id.to_le_bytes()),
+                tombstone: row.get(2),
+                neighbors: row
+                    .get::<_, Vec<i64>>(3)
+                    .into_iter()
+                    .map(|neighbor| u64::from_le_bytes(neighbor.to_le_bytes()))
+                    .collect(),
+            });
+        }
+        if after == previous {
+            bail!("monolithic graph diagnostic pagination did not advance");
+        }
+    }
+    Ok(graph)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -5953,6 +6137,51 @@ async fn run_physical_benchmarks(
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
     };
+    if args.residual_attribution {
+        if corpus_contract_is_not_frozen(args) {
+            bail!(
+                "--residual-attribution requires ec_real_100k, q200, offset 0/200, k10, head4096, and L32"
+            );
+        }
+        let required = [
+            ("prod-bw4-rabitq", "persisted_head", 4, "rabitq"),
+            ("task226-bw8-rabitq", "persisted_head", 8, "rabitq"),
+            (
+                "prod-bw4-exact-neighbor",
+                "persisted_head",
+                4,
+                "exact_neighbor",
+            ),
+            ("owner-bw4-rabitq", "owner_scan", 4, "rabitq"),
+            (
+                "owner-bw4-exact-neighbor",
+                "owner_scan",
+                4,
+                "exact_neighbor",
+            ),
+        ];
+        for (name, strategy, expected_beam, score_mode) in required {
+            let variant = seed_variants
+                .iter()
+                .find(|variant| variant.name == name)
+                .ok_or_else(|| eyre!("--residual-attribution is missing variant {name}"))?;
+            if variant.strategy != strategy
+                || variant.beam_width.unwrap_or(beam_width) != expected_beam
+                || variant.hop_rounds.unwrap_or(hop_rounds) != 100
+                || variant.neighbor_score_mode != score_mode
+                || variant.head_search_width != 32
+                || variant.head_seed_count != 32
+                || variant.materialization_batch_size != 10
+                || variant.owner_payload_plan_cache
+                || variant.traversal_replica
+                || variant.typed_locator
+                || variant.packed_payload
+                || variant.expanded_locator
+            {
+                bail!("--residual-attribution variant {name} violates its frozen shape");
+            }
+        }
+    }
     let explicit_seed_controls = args.seed_strategy.is_some()
         || args.head_search_width.is_some()
         || args.head_seed_count.is_some()
@@ -6049,6 +6278,32 @@ async fn run_physical_benchmarks(
             "gateway attribution requires an extension built with distann-head-attribution-benchmark"
         );
     }
+    if args.query_trace
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_query_trace_benchmark(regclass,real[],integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "query trace requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
+    if args.graph_diagnostic
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_graph_diagnostic_chunk_benchmark(regclass,bytea,bigint,integer)') IS NOT NULL AND to_regprocedure('ec_distann_graph_diagnostic_chunk_benchmark(regclass,bigint,integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "graph diagnostic requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
     if args.head_policy.is_some() && !has_head_policy_provenance {
         bail!("Task 181 head policy requires extension head-policy provenance helper");
     }
@@ -6095,6 +6350,64 @@ async fn run_physical_benchmarks(
     }
 
     let single_build_ms = if args.stage_counter_only || args.skip_single_control {
+        0
+    } else if args.reuse_fixture {
+        let relations = coordinator
+            .query_one(
+                &format!(
+                    "SELECT to_regclass('{single_corpus}') IS NOT NULL,
+                            to_regclass('{single_queries}') IS NOT NULL,
+                            to_regclass('{single_index}') IS NOT NULL"
+                ),
+                &[],
+            )
+            .await?;
+        if !(relations.get::<_, bool>(0)
+            && relations.get::<_, bool>(1)
+            && relations.get::<_, bool>(2))
+        {
+            bail!("--reuse-fixture is missing the attested monolithic control relations");
+        }
+        let counts = coordinator
+            .query_one(
+                &format!(
+                    "SELECT (SELECT count(*)::bigint FROM {single_corpus}),
+                            (SELECT count(*)::bigint FROM {single_queries})"
+                ),
+                &[],
+            )
+            .await?;
+        let expected_source_count = published.iter().map(|row| row.records).sum::<i64>();
+        let single_source_count = counts.get::<_, i64>(0);
+        let single_query_count = counts.get::<_, i64>(1);
+        if single_source_count != expected_source_count
+            || single_query_count != i64::from(args.queries)
+        {
+            bail!(
+                "--reuse-fixture monolithic control count mismatch: expected source/query {}/{}, observed {}/{}",
+                expected_source_count,
+                args.queries,
+                single_source_count,
+                single_query_count
+            );
+        }
+        let reloptions = coordinator
+            .query_one(
+                &format!(
+                    "SELECT coalesce(array_to_string(reloptions, ','), '')
+                       FROM pg_class WHERE oid = '{single_index}'::regclass"
+                ),
+                &[],
+            )
+            .await?
+            .get::<_, String>(0)
+            .replace(' ', "");
+        if !reloptions.contains(&format!("graph_degree={}", args.graph_degree))
+            || !reloptions.contains(&format!("head_index_cap={}", args.head_index_cap))
+            || !reloptions.contains("neighbor_code_format=rabitq")
+        {
+            bail!("--reuse-fixture monolithic control reloptions mismatch: {reloptions}");
+        }
         0
     } else {
         let single_started = Instant::now();
@@ -6157,7 +6470,11 @@ async fn run_physical_benchmarks(
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_corpus.tsv")))?;
     let truth_queries =
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
-    let query_sha256 = hex::encode(Sha256::digest(std::fs::read(&truth_queries)?));
+    let query_bytes = std::fs::read(&truth_queries)?;
+    let query_sha256 = hex::encode(Sha256::digest(&query_bytes));
+    let query_slice_sha256 = query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
+    let query_start = args.query_offset + 1;
+    let query_end = args.query_offset + args.queries;
     let truth_cache = nodes[0]
         .data_dir
         .parent()
@@ -6174,9 +6491,11 @@ async fn run_physical_benchmarks(
         "postgres".to_owned(),
     ];
     let mut lines = vec![format!(
-        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={}",
+        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={} query_offset={} query_rows={} query_slice_sha256={query_slice_sha256}",
         extension_preflight.nodes,
-        args.stage_counter_only
+        args.stage_counter_only,
+        args.query_offset,
+        args.queries,
     )];
     let mut task167_quality_gate_failed = false;
     if let Some(attestation) = production_head_attestation {
@@ -6200,7 +6519,8 @@ async fn run_physical_benchmarks(
         "training_prefix=none training_queries=0 training_file_sha256=none training_slice_sha256=none".to_owned()
     };
     lines.push(format!(
-        "physical_benchmark_landmark scale={scale} head_policy={attested_head_policy} evaluation_prefix=rows_1_200 evaluation_queries={} evaluation_query_sha256={query_sha256} {training_provenance} deterministic=true sample_cap={} construction_ms={build_ms}",
+        "physical_benchmark_landmark scale={scale} head_policy={attested_head_policy} evaluation_prefix=rows_{query_start}_{query_end} evaluation_query_offset={} evaluation_queries={} evaluation_query_sha256={query_sha256} evaluation_slice_sha256={query_slice_sha256} {training_provenance} deterministic=true sample_cap={} construction_ms={build_ms}",
+        args.query_offset,
         args.queries,
         args.head_index_cap,
     ));
@@ -6587,6 +6907,7 @@ async fn run_physical_benchmarks(
     benchmark_arms.sort_by_key(|arm| arm.9);
     let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
     let mut physical_distinct_recall = std::collections::BTreeMap::<String, f64>::new();
+    let mut query_trace_paths = std::collections::BTreeMap::<String, PathBuf>::new();
     let mut same_generation_identity: Option<String> = None;
 
     for (
@@ -6843,7 +7164,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 gateway trace")?;
@@ -6898,6 +7219,100 @@ async fn run_physical_benchmarks(
                     trace_path.display()
                 ));
             }
+            if arm == "physical" && args.query_trace {
+                let seed_strategy_sql = seed_strategy.replace('\'', "''");
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.top_k = 32;\n\
+                         SET ec_distann.benchmark_seed_mode = '{seed_strategy_sql}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        diagnostic_sharded_head_search_setting(args.local_head),
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 227 query trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH raw_traces AS (
+                                 SELECT q.id::bigint AS query_id,
+                                        ec_distann_physical_query_trace_benchmark(
+                                            'dm_idx'::regclass, q.source, 32
+                                        ) AS trace
+                                   FROM {physical_queries} q
+                                  ORDER BY q.id
+                                  LIMIT {}
+                             ), traces AS (
+                                 SELECT query_id,
+                                        jsonb_set(
+                                            jsonb_set(
+                                                trace,
+                                                '{{final_ids}}',
+                                                jsonb_path_query_array(
+                                                    trace,
+                                                    '$.final_ids[0 to {}]'
+                                                )
+                                            ),
+                                            '{{final_dists}}',
+                                            jsonb_path_query_array(
+                                                trace,
+                                                '$.final_dists[0 to {}]'
+                                            )
+                                        ) AS trace
+                                   FROM raw_traces
+                             )
+                             SELECT jsonb_build_object(
+                                 'schema', 'ec_distann_query_trace_file_v1',
+                                 'query_prefix', 'rows_{}_{}',
+                                 'query_offset', {},
+                                 'queries', count(*),
+                                 'query_file_sha256', '{}',
+                                 'query_slice_sha256', '{}',
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'trace', trace
+                                     ) ORDER BY query_id
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            args.queries,
+                            args.top_k.saturating_sub(1),
+                            args.top_k.saturating_sub(1),
+                            query_start,
+                            query_end,
+                            args.query_offset,
+                            query_sha256,
+                            query_slice_sha256,
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 227 query traces")?
+                    .get::<_, String>(0);
+                let trace_path = log_dir.join(format!("{arm}-{variant}-query-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!("writing Task 227 query trace {}", trace_path.display())
+                })?;
+                query_trace_paths.insert(variant.to_owned(), trace_path.clone());
+                lines.push(format!(
+                    "physical_benchmark_query_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_{query_start}_{query_end} query_offset={} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} query_file_sha256={query_sha256} query_slice_sha256={query_slice_sha256} output={}",
+                    args.query_offset,
+                    args.queries,
+                    args.top_k,
+                    trace_path.display()
+                ));
+            }
             if arm == "physical" && args.gateway_isolated_trace {
                 let isolated_seed_count =
                     args.gateway_isolated_seed_limit.unwrap_or(head_seed_count);
@@ -6925,7 +7340,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 isolated gateway trace")?;
@@ -7014,7 +7429,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 arbitrary-head trace")?;
@@ -7596,6 +8011,135 @@ async fn run_physical_benchmarks(
             head_ids.len()
         );
     }
+    let mut attribution_graph_nodes = None;
+    if args.graph_diagnostic {
+        if args.skip_single_control {
+            bail!("--graph-diagnostic requires the monolithic control");
+        }
+        let epoch_fingerprint = coordinator
+            .query_one(
+                "SELECT epoch_fingerprint
+                   FROM ec_distann_active_epoch
+                  WHERE index_oid = 'dm_idx'::regclass::oid",
+                &[],
+            )
+            .await
+            .wrap_err("reading graph diagnostic epoch fingerprint")?
+            .get::<_, Vec<u8>>(0);
+        let physical_graph =
+            fetch_physical_graph_diagnostic_nodes(socket_dir, nodes, &epoch_fingerprint).await?;
+        let mut physical_ids = HashSet::with_capacity(physical_graph.len());
+        if let Some(duplicate) = physical_graph
+            .iter()
+            .find(|node| !physical_ids.insert(node.vec_id))
+        {
+            bail!(
+                "graph diagnostic streamed duplicate physical vec_id {:016x}",
+                duplicate.vec_id
+            );
+        }
+        for (owner, topology) in published.iter().enumerate() {
+            let observed = physical_graph
+                .iter()
+                .filter(|node| node.owner_ordinal as usize == owner)
+                .count();
+            let expected = usize::try_from(topology.records).unwrap_or(usize::MAX);
+            if observed != expected {
+                bail!(
+                    "graph diagnostic owner {owner} streamed {observed} records, expected {expected}"
+                );
+            }
+        }
+        let monolithic_graph =
+            fetch_monolithic_graph_diagnostic_nodes(coordinator, &single_index).await?;
+        let mut monolithic_ids = HashSet::with_capacity(monolithic_graph.len());
+        if let Some(duplicate) = monolithic_graph
+            .iter()
+            .find(|node| !monolithic_ids.insert(node.vec_id))
+        {
+            bail!(
+                "graph diagnostic streamed duplicate monolithic vec_id {:016x}",
+                duplicate.vec_id
+            );
+        }
+        let expected_monolithic = usize::try_from(raw_vector_rows).unwrap_or(usize::MAX);
+        if monolithic_graph.len() != expected_monolithic {
+            bail!(
+                "monolithic graph diagnostic streamed {} records, expected {expected_monolithic}",
+                monolithic_graph.len()
+            );
+        }
+        let head_vec_ids = head_ids
+            .iter()
+            .map(|vec_id| u64::from_le_bytes(vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let mut seed_sets = vec![GraphSeedSet {
+            name: "persisted_head".to_owned(),
+            vec_ids: head_vec_ids.clone(),
+        }];
+        for owner in 0..nodes.len() {
+            let owner_ids = physical_graph
+                .iter()
+                .filter(|node| node.owner_ordinal as usize == owner)
+                .map(|node| node.vec_id)
+                .collect::<HashSet<_>>();
+            seed_sets.push(GraphSeedSet {
+                name: format!("persisted_head_owner_{owner}"),
+                vec_ids: head_vec_ids
+                    .iter()
+                    .filter(|vec_id| owner_ids.contains(vec_id))
+                    .copied()
+                    .collect(),
+            });
+        }
+        let artifact = serde_json::json!({
+            "schema": "ec_distann_graph_diagnostic_file_v1",
+            "scale": scale,
+            "physical_generation": {
+                "identity_kind": "epoch_fingerprint",
+                "identity": hex::encode(&epoch_fingerprint),
+                "parameters": {
+                    "owners": nodes.len(),
+                    "graph_degree": args.graph_degree,
+                    "head_index_cap": args.head_index_cap,
+                    "neighbor_code_format": "rabitq",
+                },
+            },
+            "monolithic_control": {
+                "index_name": single_index,
+                "identity_kind": "adjacency_sha256",
+                "parameters": {
+                    "graph_degree": args.graph_degree,
+                    "head_index_cap": args.head_index_cap,
+                    "neighbor_code_format": "rabitq",
+                    "distributed_control": false,
+                },
+                "index_bytes": single_index_bytes,
+                "source_bytes": single_source_bytes,
+            },
+            "physical": analyze_graph(&physical_graph, &seed_sets),
+            "monolithic": analyze_graph(
+                &monolithic_graph,
+                &[GraphSeedSet {
+                    name: "physical_persisted_head".to_owned(),
+                    vec_ids: head_vec_ids.clone(),
+                }],
+            ),
+        });
+        let path = log_dir.join("physical-graph-diagnostic.json");
+        fs::write(&path, serde_json::to_vec_pretty(&artifact)?)
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+        lines.push(format!(
+            "physical_benchmark_graph_diagnostic scale={scale} physical_records={} monolithic_records={} seed_sets={} output={}",
+            physical_graph.len(),
+            monolithic_graph.len(),
+            seed_sets.len(),
+            path.display()
+        ));
+        if args.residual_attribution {
+            attribution_graph_nodes = Some(physical_graph);
+        }
+    }
     let logical_id_by_vec_id = coordinator
         .query(
             &format!("SELECT id, source_id::text FROM {physical_corpus}"),
@@ -7611,6 +8155,46 @@ async fn run_physical_benchmarks(
             Ok((distann_vec_id_from_source_identity(&identity), logical_id))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+    if args.residual_attribution {
+        let attribution = classify_residuals(ResidualAttributionInputs {
+            query_offset: args.query_offset,
+            query_file_sha256: &query_sha256,
+            query_slice_sha256: &query_slice_sha256,
+            top_k: args.top_k as usize,
+            truth_cache_path: &truth_cache,
+            prediction_paths: &prediction_paths,
+            query_trace_paths: &query_trace_paths,
+            graph_nodes: attribution_graph_nodes
+                .as_deref()
+                .expect("residual attribution requires graph diagnostic"),
+            logical_id_by_vec_id: &logical_id_by_vec_id,
+        })?;
+        let rows_path = log_dir.join("physical-residual-attribution.jsonl");
+        let features_path = log_dir.join("physical-residual-query-features.jsonl");
+        let summary_path = log_dir.join("physical-residual-attribution-summary.json");
+        fs::write(&rows_path, attribution.jsonl()?)
+            .wrap_err_with(|| format!("writing {}", rows_path.display()))?;
+        fs::write(&features_path, attribution.query_features_jsonl()?)
+            .wrap_err_with(|| format!("writing {}", features_path.display()))?;
+        fs::write(&summary_path, attribution.summary_json()?)
+            .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+        lines.push(format!(
+            "physical_benchmark_residual_attribution scale={scale} queries={} missed_truth_neighbors={} unknown_truth_neighbors={} reconciliation_pass={} rows_output={} query_features_output={} summary_output={}",
+            args.queries,
+            attribution.missed_truth_neighbors(),
+            attribution.unknown_truth_neighbors(),
+            attribution.reconciliation_pass(),
+            rows_path.display(),
+            features_path.display(),
+            summary_path.display(),
+        ));
+        if !attribution.reconciliation_pass() {
+            bail!(
+                "Task 227 residual attribution has {} unknown truth neighbors; artifacts were written but reconciliation failed",
+                attribution.unknown_truth_neighbors()
+            );
+        }
+    }
     let logical_head_ids = head_ids
         .iter()
         .map(|vec_id| {
@@ -7915,16 +8499,67 @@ async fn run_physical_benchmarks(
     }
     for line in &mut lines {
         line.push_str(&format!(
-            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}"
+            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+            args.query_offset
         ));
     }
     Ok(lines)
+}
+
+fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
+    args.corpus_prefix.as_deref() != Some("ec_real_100k")
+        || args.coordinator_outside_roster
+        || args.queries != 200
+        || !matches!(args.query_offset, 0 | 200)
+        || args.top_k != 10
+        || args.head_index_cap != 4096
+        || args.candidate_heap_limit.unwrap_or(32) != 32
 }
 
 fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
     line.split_whitespace()
         .find_map(|field| field.strip_prefix(&format!("{key}=")))
         .map(ToOwned::to_owned)
+}
+
+fn reuse_provenance_runtime_shape(
+    benchmark_seed_variants: &[String],
+    seed_strategy: Option<&str>,
+    head_search_width: Option<u32>,
+    head_seed_count: Option<u32>,
+    neighbor_score_mode: Option<&str>,
+    beam_width: u32,
+) -> Result<(String, u32, u32, String)> {
+    let matrix_provenance = if benchmark_seed_variants.is_empty() {
+        None
+    } else {
+        parse_benchmark_seed_variants(benchmark_seed_variants)?
+            .into_iter()
+            .next()
+    };
+    let seed = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.strategy.as_str())
+        .or(seed_strategy)
+        .unwrap_or("head_sample_exact")
+        .to_owned();
+    let head_width = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.head_search_width)
+        .or(head_search_width)
+        .unwrap_or((beam_width * 2).max(32));
+    let head_count = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.head_seed_count)
+        .or(head_seed_count)
+        .unwrap_or(head_width);
+    let neighbor = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.neighbor_score_mode.as_str())
+        .or(neighbor_score_mode)
+        .unwrap_or("rabitq")
+        .to_owned();
+    Ok((seed, head_width, head_count, neighbor))
 }
 
 fn distann_vec_id_from_source_identity(identity: &[u8; 16]) -> i64 {
@@ -8000,13 +8635,17 @@ async fn validate_reused_physical_fixture(
         .ok_or_else(|| color_eyre::eyre::eyre!("reuse log has no physical build line"))?;
     let expected_sha = &extension_preflight.git_sha;
     let expected_profile = &extension_preflight.build_profile;
-    let expected_query_sha = {
+    let (expected_query_sha, expected_query_slice_sha) = {
         let staged_dir = args
             .staged_dir
             .clone()
             .unwrap_or(repo_root()?.join("data/staged-current"));
         let query_path = fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
-        hex::encode(Sha256::digest(fs::read(query_path)?))
+        let query_bytes = fs::read(query_path)?;
+        (
+            hex::encode(Sha256::digest(&query_bytes)),
+            query_slice_sha256(&query_bytes, args.query_offset, args.queries)?,
+        )
     };
     let expected_source_count = {
         let staged_dir = args
@@ -8017,13 +8656,19 @@ async fn validate_reused_physical_fixture(
         fs::read_to_string(corpus_path)?.lines().count() as i64
     };
     let beam_width = args.beam_width.unwrap_or(4);
-    let expected_seed = args.seed_strategy.as_deref().unwrap_or("head_sample_exact");
-    let expected_head_width = args.head_search_width.unwrap_or((beam_width * 2).max(32));
-    let expected_head_count = args.head_seed_count.unwrap_or(expected_head_width);
-    let expected_neighbor = args.neighbor_score_mode.as_deref().unwrap_or("rabitq");
+    let (expected_seed, expected_head_width, expected_head_count, expected_neighbor) =
+        reuse_provenance_runtime_shape(
+            &args.benchmark_seed_variants,
+            args.seed_strategy.as_deref(),
+            args.head_search_width,
+            args.head_seed_count,
+            args.neighbor_score_mode.as_deref(),
+            beam_width,
+        )?;
     let expected_head_cap = args.head_index_cap.to_string();
     let expected_head_width = expected_head_width.to_string();
     let expected_head_count = expected_head_count.to_string();
+    let expected_query_offset = args.query_offset.to_string();
     let checks = [
         ("scale", scale, benchmark_log_value(provenance, "scale")),
         (
@@ -8035,6 +8680,16 @@ async fn validate_reused_physical_fixture(
             "query_sha256",
             expected_query_sha.as_str(),
             benchmark_log_value(provenance, "query_sha256"),
+        ),
+        (
+            "query_offset",
+            expected_query_offset.as_str(),
+            benchmark_log_value(provenance, "query_offset"),
+        ),
+        (
+            "query_slice_sha256",
+            expected_query_slice_sha.as_str(),
+            benchmark_log_value(provenance, "query_slice_sha256"),
         ),
         (
             "extension_git_sha",
@@ -8053,7 +8708,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "seed_strategy",
-            expected_seed,
+            expected_seed.as_str(),
             benchmark_log_value(build, "seed_strategy"),
         ),
         (
@@ -8068,7 +8723,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "neighbor_score_mode",
-            expected_neighbor,
+            expected_neighbor.as_str(),
             benchmark_log_value(build, "neighbor_score_mode"),
         ),
         (
@@ -8273,6 +8928,24 @@ async fn drive_physical_fixture(
         .await?
         .trim()
         .parse::<i64>()?;
+    if args.corpus_prefix.is_some() {
+        let query_count = capture_psql(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            "SELECT count(*) FROM dm_queries",
+        )
+        .await?
+        .trim()
+        .parse::<u32>()?;
+        if query_count != args.queries {
+            bail!(
+                "staged query slice is short: offset={} requested={} loaded={query_count}",
+                args.query_offset,
+                args.queries
+            );
+        }
+    }
 
     let coordinator_conninfo = conninfo(socket_dir, nodes[0].port);
     let (coordinator, connection) =
@@ -12227,6 +12900,57 @@ mod tests {
         args: LocalMultinodePg18Args,
     }
 
+    #[test]
+    fn query_slice_digest_preserves_exact_selected_line_bytes() {
+        let digest = query_slice_sha256(b"a\nb\nc\nd\n", 1, 2).expect("slice hashes");
+        assert_eq!(
+            digest,
+            "bb9ead4c391dab4c05bd498dafac47a54f8b212625f2124a911202cc6ea61d27"
+        );
+    }
+
+    #[test]
+    fn query_slice_digest_rejects_short_slice() {
+        let error = query_slice_sha256(b"a\nb\n", 1, 2).expect_err("slice is short");
+        assert!(error.to_string().contains("selected=1"));
+    }
+
+    #[test]
+    fn real_setup_sql_loads_only_the_requested_query_slice() {
+        let sql = real_setup_sql(
+            Path::new("/staged/corpus.tsv"),
+            Path::new("/staged/queries.tsv"),
+            200,
+            200,
+            32,
+            4096,
+            1,
+            "stitched_bfs",
+            "",
+        );
+        assert!(sql.contains("ORDER BY id OFFSET 200 LIMIT 200"));
+    }
+
+    #[test]
+    fn diagnostic_replays_match_the_shipped_sharded_head_default() {
+        assert_eq!(diagnostic_sharded_head_search_setting(false), "on");
+        assert_eq!(diagnostic_sharded_head_search_setting(true), "off");
+    }
+
+    #[test]
+    fn reuse_provenance_exposes_the_exact_query_slice_identity() {
+        let line = "physical_benchmark_provenance scale=100k query_offset=200 \
+                    query_slice_sha256=a12a8111 corpus_prefix=ec_real_100k";
+        assert_eq!(
+            benchmark_log_value(line, "query_offset").as_deref(),
+            Some("200")
+        );
+        assert_eq!(
+            benchmark_log_value(line, "query_slice_sha256").as_deref(),
+            Some("a12a8111")
+        );
+    }
+
     fn provenance(
         node_id: u32,
         port: u16,
@@ -12532,6 +13256,27 @@ mod tests {
             parse_benchmark_seed_variants(&["eager:persisted_head:32:32:rabitq:0".to_owned()])
                 .expect("explicit eager variant parses");
         assert_eq!(eager[0].materialization_batch_size, 0);
+    }
+
+    #[test]
+    fn reuse_provenance_uses_the_first_registered_matrix_variant() {
+        let variants = [
+            "control:persisted_head:32:31:rabitq:10".to_owned(),
+            "oracle:owner_scan:64:63:exact_neighbor:10".to_owned(),
+        ];
+        let observed = reuse_provenance_runtime_shape(
+            &variants,
+            Some("owner_scan"),
+            Some(99),
+            Some(98),
+            Some("exact_neighbor"),
+            4,
+        )
+        .expect("matrix provenance resolves");
+        assert_eq!(
+            observed,
+            ("persisted_head".to_owned(), 32, 31, "rabitq".to_owned())
+        );
     }
 
     #[test]
