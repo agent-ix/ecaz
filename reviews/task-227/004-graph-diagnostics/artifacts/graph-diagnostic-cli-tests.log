@@ -1,0 +1,16 @@
+Script started on 2026-08-24 05:09:55-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.23s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-5b787553485bfb1e)
+
+running 4 tests
+test commands::bench::suite::tests::distann_graph_diagnostic_requires_monolithic_control ... ok
+test commands::bench::suite::tests::distann_graph_diagnostic_is_suite_addressable ... ok
+test commands::dev::distann_graph_diagnostic::tests::graph_diagnostic_is_deterministic_and_classifies_structure ... ok
+test commands::dev::distann_graph_diagnostic::tests::graph_diagnostic_handles_deep_chain_without_recursion ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 503 filtered out; finished in 0.31s
+
+
+Script done on 2026-08-24 05:10:45-07:00 [COMMAND_EXIT_CODE="0"]

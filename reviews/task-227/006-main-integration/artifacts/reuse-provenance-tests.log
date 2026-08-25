@@ -1,0 +1,14 @@
+Script started on 2026-08-24 20:09:41-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-main-integration)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.worktrees/task227-main-integration/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 58.80s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-5b787553485bfb1e)
+
+running 2 tests
+test commands::dev::distann_multicluster::tests::reuse_provenance_exposes_the_exact_query_slice_identity ... ok
+test commands::dev::distann_multicluster::tests::reuse_provenance_uses_the_first_registered_matrix_variant ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 528 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 20:10:40-07:00 [COMMAND_EXIT_CODE="0"]

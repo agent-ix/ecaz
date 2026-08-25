@@ -124,7 +124,8 @@ validity requirements.
 | 219 | Recall/latency Pareto default | **complete — review-closed ACCEPT** (2026-08-09) | retains BW4/H100/L32 and recall-equivalence; frontier verified against Task 215 run-r2; reopening trigger is a product ruling for a recall-sensitive regime, not new benchmarks |
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
-| 222 | Qual-aware payload projection | **implementation/evidence complete; final re-review open** (2026-08-24) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
+| 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
+| 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -402,6 +403,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
 | TRAV-30 | Routing-only gateway copies without full graph replication | **complete — review-closed ACCEPT in Task 210 packet 006** (2026-08-08). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is accepted, and no latency win is required for this conformance work. |
+| TRAV-31 | Current-production BW8/H100 transfer screen | **review-closed ACCEPT as useful non-default in Task 226** — passed 10k/50k/100k registered gates, while Task 219 retains the shipped BW4 default because recall changes and tails regress |
 
 ## Candidate ledger: graph construction and adaptive search
 
@@ -418,15 +420,15 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-07 | Higher build search list size | conditional build-quality A/B |
 | GRAPH-08 | Vamana alpha tuning | conditional build-quality A/B |
 | GRAPH-09 | Closure/stitch parameter tuning | conditional if shard stitching is implicated |
-| GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
+| GRAPH-10 | Connectivity and reachability audit | Task 227 complete; no physical-versus-monolithic structural deficit |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
 | GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
 | GRAPH-16 | Training-query-aware gateway augmentation | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
-| GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
-| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
+| GRAPH-17 | Query-difficulty adaptive search budget | Task 227 STOP; no reliable truth-free trigger among seven preregistered rules |
+| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | Task 227 complete; all 141 misses classify as traversal `budget_frontier` |
 
 ## Candidate ledger: codec and distance estimation
 

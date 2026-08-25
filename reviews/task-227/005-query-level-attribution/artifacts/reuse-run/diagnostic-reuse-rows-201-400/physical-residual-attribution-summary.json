@@ -1,0 +1,25 @@
+{
+  "schema": "ec_distann_residual_attribution_summary_v1",
+  "query_prefix": "rows_201_400",
+  "query_offset": 200,
+  "queries": 200,
+  "top_k": 10,
+  "query_file_sha256": "a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782",
+  "query_slice_sha256": "a12a81111d586e78165a950962aa8667e2f95e700159fe86d83bba2b49a5ece9",
+  "generation_identity": "0200797e7ccf2576a229d4af60cdb23e1ffed5854a032066f2d37c623436b810c210",
+  "registered_variants": [
+    "prod-bw4-rabitq",
+    "task226-bw8-rabitq",
+    "prod-bw4-exact-neighbor",
+    "owner-bw4-rabitq",
+    "owner-bw4-exact-neighbor"
+  ],
+  "truth_neighbors": 2000,
+  "missed_truth_neighbors": 141,
+  "classifications": {
+    "budget_frontier": 141
+  },
+  "unknown_truth_neighbors": 0,
+  "reconciliation_pass": true,
+  "task189_same_seed_approximate_ordering_trigger": false
+}

@@ -1,0 +1,15 @@
+Script started on 2026-08-24 02:54:49-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-5b787553485bfb1e)
+
+running 5 tests
+test commands::dev::distann_multicluster::tests::query_slice_digest_rejects_short_slice ... ok
+test commands::dev::distann_multicluster::tests::query_slice_digest_preserves_exact_selected_line_bytes ... ok
+test commands::bench::suite::tests::distann_query_slice_requires_real_corpus ... ok
+test commands::dev::distann_multicluster::tests::real_setup_sql_loads_only_the_requested_query_slice ... ok
+test commands::bench::suite::tests::distann_local_multinode_expands_staged_query_slice ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 497 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 02:54:49-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,84 @@
+Script started on 2026-08-24 09:20:55-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 18s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-899c9903a5aa366e)
+
+running 1 test
+test am::ec_distann::stage_counters::tests::query_trace_preserves_rerank_input_when_final_results_are_truncated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (/home/peter/.cargo-target/debug/deps/approx_score_study-854c33837c3d90b2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (/home/peter/.cargo-target/debug/deps/pgrx_embed_ecaz-3f7c27c145071bde)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (/home/peter/.cargo-target/debug/deps/simd_bench-0dfb648a14706660)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (/home/peter/.cargo-target/debug/deps/kani_item_pointer-84b5917cff3ba32a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-0553c3a2ceda7218)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (/home/peter/.cargo-target/debug/deps/proptest_page-7f6c9308a6edd99f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (/home/peter/.cargo-target/debug/deps/proptest_quant-c1df957bf3b1fc45)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (/home/peter/.cargo-target/debug/deps/recall_integration-7513fab6a5a064ef)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (/home/peter/.cargo-target/debug/deps/simd_diff-abd2d3e246278fc6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (/home/peter/.cargo-target/debug/deps/size_of_assertions-b074fd75fc7373ea)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-dff9e027abaea21c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (/home/peter/.cargo-target/debug/deps/wal_policy-c8929911c34c5d29)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 09:25:13-07:00 [COMMAND_EXIT_CODE="0"]

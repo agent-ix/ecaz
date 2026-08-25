@@ -1,0 +1,170 @@
+{
+  "name": "task226-current-head-bw8-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-226/002-current-head-100k/artifacts/run",
+  "defaults": { "pg": 18 },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "current-head-bw8-production-100k",
+      "tags": ["task226", "bw8", "production", "100k", "same-generation", "nfr022", "metrics_mode=benchmark"],
+      "artifact_dir": "${artifact_dir}/production-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task226-bw8-production-100k",
+      "nodes": 3,
+      "base_port": 43100,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "benchmark",
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "skip_single_control": true,
+      "skip_concurrency_drill": true,
+      "compact_artifacts": true,
+      "same_generation_recall_pair": "aa-control,aa-candidate",
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "aa-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-aa-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Current three-owner sharded BW4/H100 production control with fixed-4096 persisted head and lazy-10 materialization."
+          }
+        },
+        {
+          "name": "aa-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-aa-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Byte-identity A/A replay of the production control on the same immutable generation."
+          }
+        },
+        {
+          "name": "bw4-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-bw4-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Registered BW4/H100 release control immediately preceding the paired BW8 candidate."
+          }
+        },
+        {
+          "name": "bw8-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 8,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-bw8-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Only beam width changes from the adjacent BW4/H100 control; generation, head, L32, H100, scoring, and lazy-10 remain fixed."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "current-head-bw8-attribution-100k",
+      "tags": ["task226", "bw8", "attribution", "100k", "same-generation", "nfr022", "metrics_mode=full_metrics"],
+      "artifact_dir": "${artifact_dir}/attribution-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task226-bw8-attribution-100k",
+      "nodes": 3,
+      "base_port": 43110,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "full_metrics",
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "skip_single_control": true,
+      "skip_concurrency_drill": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "bw4-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-attribution-bw4-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Fresh full-metrics BW4/H100 attribution control; instrumented latency is diagnostic only."
+          }
+        },
+        {
+          "name": "bw8-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 8,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task226-attribution-bw8-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Fresh full-metrics BW8/H100 attribution arm; only beam width differs from its control."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -683,6 +683,17 @@ struct DistannLocalMultinodeStep {
     /// Task 185 feature-only physical seed gateway/basin provenance.
     #[serde(default)]
     gateway_trace: bool,
+    /// Task 227 bounded per-query traversal/frontier/exact-result trace over
+    /// the configured evaluation query slice.
+    #[serde(default)]
+    query_trace: bool,
+    /// Task 227 persisted-graph structure and seed-reachability diagnostic for
+    /// physical owners plus the monolithic control.
+    #[serde(default)]
+    graph_diagnostic: bool,
+    /// Task 227 truth-joined, query-level residual classification.
+    #[serde(default)]
+    residual_attribution: bool,
     /// Task 185 feature-only isolated attribution for every returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[serde(default)]
@@ -801,6 +812,10 @@ struct DistannLocalMultinodeStep {
     same_generation_recall_pair: Option<String>,
     #[serde(default)]
     queries: Option<u32>,
+    /// Zero-based row offset into the staged query TSV. The fixture loads only
+    /// `queries` rows starting here and records the exact slice digest.
+    #[serde(default)]
+    query_offset: Option<u32>,
     #[serde(default)]
     top_k: Option<u32>,
     #[serde(default)]
@@ -4180,6 +4195,26 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.queries == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set queries >= 1",
+                        step.name
+                    )
+                }
+                if step.query_offset.unwrap_or(0) > 0 && step.corpus_prefix.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} query_offset requires corpus_prefix",
+                        step.name
+                    )
+                }
+                if let (Some(offset), Some(queries)) = (step.query_offset, step.queries) {
+                    offset.checked_add(queries).ok_or_else(|| {
+                        eyre!(
+                            "distann-local-multinode step {:?} query_offset + queries overflows u32",
+                            step.name
+                        )
+                    })?;
+                }
                 if step
                     .head_index_cap
                     .is_some_and(|value| !(16..=1_048_576).contains(&value))
@@ -4664,6 +4699,98 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.query_trace && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} query_trace requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.graph_diagnostic && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} graph_diagnostic requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.graph_diagnostic && step.skip_single_control {
+                    bail!(
+                        "distann-local-multinode step {:?} graph_diagnostic requires the monolithic control",
+                        step.name
+                    )
+                }
+                if step.residual_attribution && (!step.query_trace || !step.graph_diagnostic) {
+                    bail!(
+                        "distann-local-multinode step {:?} residual_attribution requires query_trace and graph_diagnostic",
+                        step.name
+                    )
+                }
+                if step.residual_attribution {
+                    if step.skip_recall || step.stage_counter_only {
+                        bail!(
+                            "distann-local-multinode step {:?} residual_attribution requires per-variant recall predictions",
+                            step.name
+                        )
+                    }
+                    if step.corpus_prefix.as_deref() != Some("ec_real_100k")
+                        || step.coordinator_outside_roster
+                        || step.queries.unwrap_or(200) != 200
+                        || !matches!(step.query_offset.unwrap_or(0), 0 | 200)
+                        || step.top_k.unwrap_or(10) != 10
+                        || step.head_index_cap.unwrap_or(4096) != 4096
+                        || step.candidate_heap_limit.unwrap_or(32) != 32
+                    {
+                        bail!(
+                            "distann-local-multinode step {:?} residual_attribution requires the frozen 100k, q200, offset 0/200, k10, head4096, L32 contract",
+                            step.name
+                        )
+                    }
+                    let required = [
+                        ("prod-bw4-rabitq", "persisted_head", 4, "rabitq"),
+                        ("task226-bw8-rabitq", "persisted_head", 8, "rabitq"),
+                        (
+                            "prod-bw4-exact-neighbor",
+                            "persisted_head",
+                            4,
+                            "exact_neighbor",
+                        ),
+                        ("owner-bw4-rabitq", "owner_scan", 4, "rabitq"),
+                        (
+                            "owner-bw4-exact-neighbor",
+                            "owner_scan",
+                            4,
+                            "exact_neighbor",
+                        ),
+                    ];
+                    for (name, strategy, beam, score) in required {
+                        let variant = step
+                            .benchmark_seed_variants
+                            .iter()
+                            .find(|variant| variant.name == name)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "distann-local-multinode step {:?} residual_attribution is missing registered variant {name}",
+                                    step.name
+                                )
+                            })?;
+                        if variant.seed_strategy != strategy
+                            || variant.beam_width.unwrap_or(step.beam_width.unwrap_or(4)) != beam
+                            || variant.hop_rounds.unwrap_or(step.hop_rounds.unwrap_or(100)) != 100
+                            || variant.neighbor_score_mode != score
+                            || variant.head_search_width != 32
+                            || variant.head_seed_count != 32
+                            || variant.materialization_batch_size != 10
+                            || variant.owner_payload_plan_cache.unwrap_or(false)
+                            || variant.traversal_replica
+                            || variant.typed_locator
+                            || variant.packed_payload
+                            || variant.expanded_locator
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} residual_attribution variant {name} violates the frozen registered shape",
+                                step.name
+                            )
+                        }
+                    }
+                }
                 if step.gateway_isolated_trace && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} gateway_isolated_trace requires physical_benchmark",
@@ -5074,6 +5201,28 @@ impl SuiteStep {
                                     dir.join(format!("physical-{variant}-gateway-trace.json"))
                                 }));
                             }
+                            if step.query_trace {
+                                let variants = if step.benchmark_seed_variants.is_empty() {
+                                    vec!["production".to_owned()]
+                                } else {
+                                    step.benchmark_seed_variants
+                                        .iter()
+                                        .map(|variant| variant.name.clone())
+                                        .collect::<Vec<_>>()
+                                };
+                                artifacts.extend(variants.into_iter().map(|variant| {
+                                    dir.join(format!("physical-{variant}-query-trace.json"))
+                                }));
+                            }
+                            if step.graph_diagnostic {
+                                artifacts.push(dir.join("physical-graph-diagnostic.json"));
+                            }
+                            if step.residual_attribution {
+                                artifacts.push(dir.join("physical-residual-attribution.jsonl"));
+                                artifacts.push(dir.join("physical-residual-query-features.jsonl"));
+                                artifacts
+                                    .push(dir.join("physical-residual-attribution-summary.json"));
+                            }
                             if step.gateway_isolated_trace {
                                 let variants = if step.benchmark_seed_variants.is_empty() {
                                     vec!["production".to_owned()]
@@ -5132,6 +5281,19 @@ impl SuiteStep {
                             dir.join(format!("physical-{variant}-gateway-trace.json"))
                         }));
                     }
+                    if step.query_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-query-trace.json"))
+                        }));
+                    }
                     if step.gateway_isolated_trace {
                         let variants = if step.benchmark_seed_variants.is_empty() {
                             vec!["production".to_owned()]
@@ -5159,6 +5321,14 @@ impl SuiteStep {
                                 "physical-{variant}-gateway-head-candidate-trace.json"
                             ))
                         }));
+                    }
+                    if step.graph_diagnostic {
+                        artifacts.push(dir.join("physical-graph-diagnostic.json"));
+                    }
+                    if step.residual_attribution {
+                        artifacts.push(dir.join("physical-residual-attribution.jsonl"));
+                        artifacts.push(dir.join("physical-residual-query-features.jsonl"));
+                        artifacts.push(dir.join("physical-residual-attribution-summary.json"));
                     }
                 }
                 artifacts
@@ -5807,6 +5977,15 @@ fn expand_distann_local_multinode(
     if step.gateway_trace {
         args.push("--gateway-trace".into());
     }
+    if step.query_trace {
+        args.push("--query-trace".into());
+    }
+    if step.graph_diagnostic {
+        args.push("--graph-diagnostic".into());
+    }
+    if step.residual_attribution {
+        args.push("--residual-attribution".into());
+    }
     if step.gateway_isolated_trace {
         args.push("--gateway-isolated-trace".into());
     }
@@ -6093,6 +6272,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--queries",
         step.queries.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--query-offset",
+        step.query_offset.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -8291,6 +8475,201 @@ psql header noise\n\
                     "owner-oracle:owner_scan:32:32:rabitq:10:off:4:100:off",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_staged_query_slice() {
+        let raw = r#"{
+          "name": "distann-query-slice",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "diagnostic-rows-201-400",
+            "physical_benchmark": true,
+            "artifact_dir": "reviews/task-227/003-query-trace/artifacts/run",
+            "corpus_prefix": "ec_real_100k",
+            "queries": 200,
+            "query_offset": 200,
+            "reuse_fixture": true,
+            "reuse_provenance_dir": "reviews/task-227/003-query-trace/artifacts/prior",
+            "query_trace": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--queries", "200"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--query-offset", "200"]));
+        assert!(command.iter().any(|argument| argument == "--reuse-fixture"));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--reuse-provenance-dir",
+                    "reviews/task-227/003-query-trace/artifacts/prior",
+                ]
+        }));
+        assert!(command.iter().any(|argument| argument == "--query-trace"));
+        let artifacts = config.steps[0].expected_artifacts();
+        assert!(artifacts
+            .iter()
+            .any(|artifact| { artifact.ends_with("physical-production-query-trace.json") }));
+    }
+
+    #[test]
+    fn distann_query_slice_requires_real_corpus() {
+        let raw = r#"{
+          "name": "distann-query-slice-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "synthetic-offset",
+            "query_offset": 200
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("offset needs staged corpus");
+        assert!(error
+            .to_string()
+            .contains("query_offset requires corpus_prefix"));
+    }
+
+    #[test]
+    fn distann_query_trace_requires_physical_benchmark() {
+        let raw = r#"{
+          "name": "distann-query-trace-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "synthetic-trace",
+            "query_trace": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("trace needs physical benchmark");
+        assert!(error
+            .to_string()
+            .contains("query_trace requires physical_benchmark"));
+    }
+
+    #[test]
+    fn distann_graph_diagnostic_is_suite_addressable() {
+        let raw = r#"{
+          "name": "distann-graph-diagnostic",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "graph-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "artifact_dir": "reviews/task-227/004-graph-diagnostics/artifacts/run",
+            "graph_diagnostic": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .iter()
+            .any(|argument| argument == "--graph-diagnostic"));
+        assert!(config.steps[0]
+            .expected_artifacts()
+            .iter()
+            .any(|artifact| artifact.ends_with("physical-graph-diagnostic.json")));
+    }
+
+    #[test]
+    fn distann_graph_diagnostic_requires_monolithic_control() {
+        let raw = r#"{
+          "name": "distann-graph-diagnostic-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "graph-without-control",
+            "physical_benchmark": true,
+            "graph_diagnostic": true,
+            "skip_single_control": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("graph diagnostic needs control");
+        assert!(error
+            .to_string()
+            .contains("graph_diagnostic requires the monolithic control"));
+    }
+
+    #[test]
+    fn distann_residual_attribution_is_frozen_and_suite_addressable() {
+        let raw = r#"{
+          "name": "distann-residual-attribution",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "diagnostic-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "queries": 200,
+            "query_offset": 200,
+            "top_k": 10,
+            "head_index_cap": 4096,
+            "candidate_heap_limit": 32,
+            "query_trace": true,
+            "graph_diagnostic": true,
+            "residual_attribution": true,
+            "artifact_dir": "reviews/task-227/005-query-level-attribution/artifacts/run",
+            "benchmark_seed_variants": [
+              {"name":"prod-bw4-rabitq","seed_strategy":"persisted_head","head_search_width":32,"head_seed_count":32,"neighbor_score_mode":"rabitq","materialization_batch_size":10,"beam_width":4,"hop_rounds":100},
+              {"name":"task226-bw8-rabitq","seed_strategy":"persisted_head","head_search_width":32,"head_seed_count":32,"neighbor_score_mode":"rabitq","materialization_batch_size":10,"beam_width":8,"hop_rounds":100},
+              {"name":"prod-bw4-exact-neighbor","seed_strategy":"persisted_head","head_search_width":32,"head_seed_count":32,"neighbor_score_mode":"exact_neighbor","materialization_batch_size":10,"beam_width":4,"hop_rounds":100},
+              {"name":"owner-bw4-rabitq","seed_strategy":"owner_scan","head_search_width":32,"head_seed_count":32,"neighbor_score_mode":"rabitq","materialization_batch_size":10,"beam_width":4,"hop_rounds":100},
+              {"name":"owner-bw4-exact-neighbor","seed_strategy":"owner_scan","head_search_width":32,"head_seed_count":32,"neighbor_score_mode":"exact_neighbor","materialization_batch_size":10,"beam_width":4,"hop_rounds":100}
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("frozen attribution suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .iter()
+            .any(|argument| argument == "--residual-attribution"));
+        let artifacts = config.steps[0].expected_artifacts();
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.ends_with("physical-residual-attribution.jsonl")));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.ends_with("physical-residual-query-features.jsonl")));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| { artifact.ends_with("physical-residual-attribution-summary.json") }));
+    }
+
+    #[test]
+    fn distann_residual_attribution_requires_trace_and_graph() {
+        let raw = r#"{
+          "name": "distann-residual-attribution-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "missing-prerequisites",
+            "physical_benchmark": true,
+            "residual_attribution": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("attribution needs trace and graph");
+        assert!(error
+            .to_string()
+            .contains("residual_attribution requires query_trace and graph_diagnostic"));
     }
 
     #[test]

@@ -1532,6 +1532,116 @@ impl RetainedGenerationScan {
         Ok(rows)
     }
 
+    /// Streams only the persisted graph tuple fields needed by Task 227. This
+    /// deliberately avoids fetching or detoasting the row-tier exact vector;
+    /// a full 100k diagnostic must remain proportional to graph storage, not
+    /// the much larger payload tier.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn graph_diagnostic_chunk(
+        &self,
+        after_vec_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<GraphDiagnosticRow>, DistannExpandError> {
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "graph diagnostic stream has no active snapshot".to_owned(),
+            ));
+        }
+        let key_count = usize::from(after_vec_id.is_some());
+        let scan = unsafe {
+            IndexScanGuard::begin_from_raw(
+                self.graph_relation_ref()?.as_ptr(),
+                self.directory_relation_ref()?.as_ptr(),
+                snapshot,
+                key_count as i32,
+                0,
+            )
+        }
+        .ok_or_else(|| {
+            DistannExpandError::Internal("could not begin graph diagnostic scan".to_owned())
+        })?;
+        let graph_slot = TupleTableSlotGuard::create_for_heap_guard(self.graph_relation_ref()?)
+            .ok_or_else(|| {
+                DistannExpandError::Internal(
+                    "could not allocate graph diagnostic graph slot".to_owned(),
+                )
+            })?;
+        let mut scan_key =
+            unsafe { std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init() };
+        unsafe {
+            if let Some(after) = after_vec_id {
+                pg_sys::ScanKeyInit(
+                    &mut scan_key,
+                    1,
+                    pg_sys::BTGreaterStrategyNumber as pg_sys::StrategyNumber,
+                    pg_sys::Oid::from(pg_sys::F_INT8GT),
+                    pg_sys::Datum::from(after),
+                );
+                pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
+            } else {
+                pg_sys::index_rescan(scan.as_ptr(), ptr::null_mut(), 0, ptr::null_mut(), 0);
+            }
+        }
+
+        let owner_ordinal = i32::try_from(self.generation.owner_ordinal).map_err(|_| {
+            DistannExpandError::Internal(
+                "graph diagnostic owner ordinal exceeds PostgreSQL integer".to_owned(),
+            )
+        })?;
+        let mut rows = Vec::with_capacity(limit);
+        while rows.len() < limit {
+            unsafe { pg_sys::ExecClearTuple(graph_slot.as_ptr()) };
+            let found = unsafe {
+                pg_sys::index_getnext_slot(
+                    scan.as_ptr(),
+                    pg_sys::ScanDirection::ForwardScanDirection,
+                    graph_slot.as_ptr(),
+                )
+            };
+            if !found {
+                break;
+            }
+            let stored_id =
+                unsafe { pg_sys::DatumGetInt64(graph_slot_attr(&graph_slot, 1, "vec_id")?) };
+            let record =
+                unsafe {
+                    crate::am::common::detoast::DetoastedVarlena::packed_from_datum(
+                        graph_slot_attr(&graph_slot, 2, "record")?,
+                    )
+                }
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "graph diagnostic record could not be detoasted".to_owned(),
+                    )
+                })?;
+            let node = DistannNodeTuple::decode_physical_v1(
+                record.as_bytes(),
+                self.descriptor.graph_degree,
+                self.code_len,
+            )
+            .map_err(DistannExpandError::GenerationMissing)?;
+            let vec_id = u64::from_le_bytes(stored_id.to_le_bytes());
+            if node.vec_id != vec_id {
+                return Err(DistannExpandError::GenerationMissing(
+                    "graph diagnostic vec_id does not match its directory key".to_owned(),
+                ));
+            }
+            self.validate_ownership(&[vec_id])?;
+            let neighbor_count = usize::from(node.neighbor_count);
+            rows.push((
+                owner_ordinal,
+                stored_id,
+                node.tombstoned,
+                node.neighbor_vec_ids[..neighbor_count]
+                    .iter()
+                    .map(|neighbor| i64::from_le_bytes(neighbor.to_le_bytes()))
+                    .collect(),
+            ));
+        }
+        Ok(rows)
+    }
+
     #[cfg(feature = "distann-head-attribution-benchmark")]
     fn seed_candidates(
         &self,
@@ -2602,6 +2712,116 @@ fn ec_distann_stream_traversal_replica_chunk(
     }))
 }
 
+type GraphDiagnosticRow = (i32, i64, bool, Vec<i64>);
+
+/// Task 227 participant-side persisted-adjacency stream. Unlike the traversal
+/// replica stream, this benchmark-only surface does not fetch exact vectors or
+/// emit search codes. It is paginated by the signed bigint storage key and
+/// carries only identities required by the CLI graph diagnostic.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_graph_diagnostic_chunk_benchmark(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    after_vec_id: default!(Option<i64>, "NULL"),
+    chunk_limit: default!(i32, 4096),
+) -> TableIterator<
+    'static,
+    (
+        name!(owner_ordinal, i32),
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+    ),
+> {
+    let limit = graph_diagnostic_chunk_limit(chunk_limit);
+    let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .and_then(|scan| scan.graph_diagnostic_chunk(after_vec_id, limit))
+        .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
+/// Task 227 monolithic-control adjacency stream. It returns the same shape as
+/// the physical participant endpoint with owner ordinal zero, allowing the CLI
+/// to report one schema for both controls.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_graph_diagnostic_chunk_benchmark(
+    index_regclass: PgRelation,
+    after_vec_id: default!(Option<i64>, "NULL"),
+    chunk_limit: default!(i32, 4096),
+) -> TableIterator<
+    'static,
+    (
+        name!(owner_ordinal, i32),
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+    ),
+> {
+    let limit = graph_diagnostic_chunk_limit(chunk_limit);
+    let rows = (|| {
+        let index =
+            IndexRelationGuard::try_access_share(index_regclass.oid()).ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "monolithic graph diagnostic could not open index".to_owned(),
+                )
+            })?;
+        let handle = index.handle();
+        let metadata = super::ambuild::read_metadata_from_index_handle(handle)
+            .map_err(DistannExpandError::GenerationMissing)?;
+        super::require_legacy_local_storage(&metadata, "graph diagnostic")
+            .map_err(DistannExpandError::GenerationMissing)?;
+        let code_len = super::quantizer::metadata_code_len(&metadata)
+            .map_err(DistannExpandError::GenerationMissing)?;
+        let directory = super::reader::read_directory_from_relation(
+            handle,
+            metadata.directory_head,
+            usize::try_from(metadata.node_count).unwrap_or(usize::MAX),
+        )
+        .map_err(DistannExpandError::GenerationMissing)?;
+        directory
+            .into_iter()
+            .filter(|(vec_id, _)| {
+                after_vec_id
+                    .map(|after| u64::from_le_bytes(after.to_le_bytes()))
+                    .map_or(true, |after| *vec_id > after)
+            })
+            .take(limit)
+            .map(|(vec_id, tid)| {
+                let raw = super::reader::read_raw_tuple_bytes_from_relation(
+                    handle,
+                    tid,
+                    "monolithic graph diagnostic",
+                )
+                .map_err(DistannExpandError::GenerationMissing)?;
+                let node = DistannNodeTuple::decode(&raw, metadata.graph_degree_r, code_len)
+                    .map_err(DistannExpandError::GenerationMissing)?;
+                let neighbor_count = usize::from(node.neighbor_count);
+                Ok((
+                    0,
+                    i64::from_le_bytes(vec_id.to_le_bytes()),
+                    node.tombstoned,
+                    node.neighbor_vec_ids[..neighbor_count]
+                        .iter()
+                        .map(|neighbor| i64::from_le_bytes(neighbor.to_le_bytes()))
+                        .collect(),
+                ))
+            })
+            .collect::<Result<Vec<GraphDiagnosticRow>, DistannExpandError>>()
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn graph_diagnostic_chunk_limit(chunk_limit: i32) -> usize {
+    usize::try_from(chunk_limit)
+        .ok()
+        .filter(|limit| (1..=4096).contains(limit))
+        .unwrap_or_else(|| pgrx::error!("graph diagnostic chunk_limit must be in 1..=4096"))
+}
+
 fn expand_physical_nodes_impl(
     index_oid: pg_sys::Oid,
     epoch_fingerprint: &[u8],
@@ -3404,6 +3624,149 @@ fn ec_distann_physical_seed_gateway_trace_benchmark(
         i32::try_from(collection.counters.records_expanded).unwrap_or(i32::MAX),
         i32::try_from(collection.counters.rounds_executed).unwrap_or(i32::MAX),
     ))
+}
+
+/// Task 227 residual-attribution trace. This is a benchmark-only, bounded,
+/// read-only replay of the ordinary physical search. Stable vector ids are
+/// rendered as fixed-width hexadecimal strings so JSON consumers never lose
+/// precision. The production access method never activates this trace.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, None)
+}
+
+/// Participant-side form used by PG18 callback coverage and distributed
+/// diagnostics when the coordinator's immutable epoch fingerprint is already
+/// known. Participant catalogs intentionally do not install an active pointer.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_at_fingerprint_benchmark(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let fingerprint: [u8; 34] = epoch_fingerprint
+        .try_into()
+        .unwrap_or_else(|value: Vec<u8>| {
+            pgrx::error!(
+                "query trace epoch_fingerprint must be 34 bytes, got {}",
+                value.len()
+            )
+        });
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, Some(fingerprint))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn physical_query_trace_benchmark_impl(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    result_limit: usize,
+    requested_fingerprint: Option<[u8; 34]>,
+) -> pgrx::JsonB {
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .unwrap_or_else(|| pgrx::error!("query trace could not open index relation"));
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_guard.as_ptr())
+        .unwrap_or_else(|error| {
+            pgrx::error!("query trace source column resolution failed: {error}")
+        });
+    // SAFETY: SQL function execution has an active snapshot; the relation
+    // guard remains live for the duration of the physical search.
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        pgrx::error!("query trace has no active snapshot");
+    }
+    let mut scan = match requested_fingerprint {
+        Some(fingerprint) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint),
+        None => PhysicalGenerationScan::open(index_oid),
+    }
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let logical_index_uuid = Uuid::from_bytes(scan.descriptor.coordinator_logical_index_uuid);
+    let build_id = scan.build_id;
+    let fingerprint = hex::encode(scan.fingerprint);
+    let effective_top_k = super::options::current_top_k().max(result_limit);
+    let (result, mut trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search(snapshot, source_attnum, &query, effective_top_k)
+    });
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    // The ordinary scan explores to the ec_distann.top_k quality bar, then
+    // PostgreSQL's LIMIT consumes only the requested result count. Preserve
+    // the full exact-rerank input while reporting the same final result prefix
+    // that the executor returns.
+    trace.truncate_final_results(result_limit);
+
+    let rounds = trace
+        .rounds
+        .iter()
+        .map(|round| {
+            serde_json::json!({
+                "round": round.round,
+                "requested_ids": query_trace_ids(&round.requested_ids),
+                "returned_ids": query_trace_ids(&round.returned_ids),
+                "exact_input_ids": query_trace_ids(&round.exact_input_ids),
+                "exact_input_dists": round.exact_input_dists,
+                "retained_ids": query_trace_ids(&round.retained_ids),
+                "retained_code_dists": round.retained_code_dists,
+                "code_threshold": round.code_threshold,
+                "candidate_limit": round.candidate_limit,
+                "heap_saturated": round.heap_saturated,
+                "frontier_stable": round.frontier_stable,
+                "frontier_score_gap": round.frontier_score_gap,
+                "convergence_gap": round.convergence_gap,
+                "owner_ordinals": round.owner_ordinals,
+                "owner_request_counts": round.owner_request_counts,
+                "owner_fanout": round.owner_ordinals.len(),
+                "request_bytes": round.request_bytes,
+                "response_bytes": round.response_bytes,
+            })
+        })
+        .collect::<Vec<_>>();
+    pgrx::JsonB(serde_json::json!({
+        "schema": "ec_distann_query_trace_v1",
+        "logical_index_uuid": logical_index_uuid.to_string(),
+        "build_id": build_id.to_string(),
+        "epoch_fingerprint": fingerprint,
+        "locator_limit": super::stage_counters::DISTANN_QUERY_TRACE_LOCATOR_LIMIT,
+        "truncated": trace.truncated,
+        "seed_ids": query_trace_ids(&trace.seed_ids),
+        "seed_code_dists": trace.seed_code_dists,
+        "seed_expanded_counts": trace.seed_expanded_counts,
+        "seed_hit_counts": trace.seed_hit_counts,
+        "expanded_live_ids": query_trace_ids(&trace.hit_ids),
+        "expanded_origin_masks": trace.hit_origin_masks,
+        "expanded_unique": trace.expanded_unique,
+        "expanded_overlap": trace.expanded_overlap,
+        "rounds": rounds,
+        "exact_rerank_ids": query_trace_ids(&trace.exact_rerank_ids),
+        "exact_rerank_dists": trace.exact_rerank_dists,
+        "final_ids": query_trace_ids(&trace.final_ids),
+        "final_dists": trace.final_dists,
+        "rounds_executed": trace.rounds_executed,
+        "early_exit": trace.early_exit,
+        "beam_exhausted": trace.beam_exhausted,
+    }))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn query_trace_ids(ids: &[u64]) -> Vec<String> {
+    ids.iter().map(|vec_id| format!("{vec_id:016x}")).collect()
 }
 
 /// Task 185 candidate-level attribution. This repeats the same physical scan
@@ -5802,6 +6165,16 @@ impl PhysicalMultiOwnerExpander<'_> {
             vec_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::seed_trace_owner_fanout(
+            &buckets
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, bucket)| {
+                    (!bucket.is_empty()).then_some((ordinal, bucket.len()))
+                })
+                .collect::<Vec<_>>(),
         );
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(

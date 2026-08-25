@@ -1,0 +1,11 @@
+Script started on 2026-08-24 07:31:40-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-5b787553485bfb1e)
+
+running 1 test
+test commands::dev::distann_multicluster::tests::reuse_provenance_exposes_the_exact_query_slice_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 513 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 07:31:40-07:00 [COMMAND_EXIT_CODE="0"]

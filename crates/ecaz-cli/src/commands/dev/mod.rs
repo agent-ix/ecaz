@@ -8,7 +8,9 @@ use color_eyre::eyre::Result;
 
 use crate::psql::ConnectionOptions;
 
+mod distann_graph_diagnostic;
 mod distann_multicluster;
+mod distann_residual_attribution;
 mod fault;
 mod install;
 mod pg_upgrade;
