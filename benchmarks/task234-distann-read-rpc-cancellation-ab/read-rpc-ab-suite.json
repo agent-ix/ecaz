@@ -162,6 +162,34 @@
       "compact_artifacts": true,
       "corpus_prefix": "ec_real_100k",
       "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-optimized-50k-reuse",
+      "tags": ["task234", "candidate", "diagnostic-repeat", "ec_real_50k"],
+      "pgbin": "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+      "artifact_dir": "${artifact_dir}/candidate-optimized-50k-reuse",
+      "run_dir": "/home/peter/.ecaz/clusters/task234-candidate-50k",
+      "reuse_fixture": true,
+      "reuse_provenance_dir": "benchmarks/task234-distann-read-rpc-cancellation-ab/artifacts/run-candidate-optimized-50k/candidate-50k",
+      "nodes": 3,
+      "base_port": 44140,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "queries": 200,
+      "top_k": 10,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "skip_fault_drills": true,
+      "skip_concurrency_drill": true,
+      "skip_single_control": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
     }
   ]
 }
