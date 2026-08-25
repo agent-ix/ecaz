@@ -1,0 +1,18 @@
+2026-08-24 15:52:43.029 PDT [2201346] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 15:52:43.045 PDT [2201346] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 15:52:43.045 PDT [2201346] LOG:  listening on IPv4 address "127.0.0.1", port 43920
+2026-08-24 15:52:43.050 PDT [2201346] LOG:  listening on IPv4 address "127.0.0.2", port 43920
+2026-08-24 15:52:43.056 PDT [2201352] LOG:  database system was shut down at 2026-08-24 15:52:41 PDT
+2026-08-24 15:52:43.069 PDT [2201346] LOG:  database system is ready to accept connections
+2026-08-24 15:52:44.423 PDT [2201411] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 7.2427 at position 0
+2026-08-24 15:52:50.496 PDT [2201441] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.496 PDT [2201441] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.496 PDT [2201436] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.496 PDT [2201436] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:51.126 PDT [2201346] LOG:  received fast shutdown request
+2026-08-24 15:52:51.138 PDT [2201346] LOG:  aborting any active transactions
+2026-08-24 15:52:51.140 PDT [2201346] LOG:  background worker "logical replication launcher" (PID 2201355) exited with exit code 1
+2026-08-24 15:52:51.140 PDT [2201350] LOG:  shutting down
+2026-08-24 15:52:51.144 PDT [2201350] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 15:52:51.521 PDT [2201350] LOG:  checkpoint complete: wrote 841 buffers (5.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.023 s, sync=0.336 s, total=0.382 s; sync files=282, longest=0.006 s, average=0.002 s; distance=6933 kB, estimate=6933 kB; lsn=0/1E19A00, redo lsn=0/1E19A00
+2026-08-24 15:52:51.537 PDT [2201346] LOG:  database system is shut down

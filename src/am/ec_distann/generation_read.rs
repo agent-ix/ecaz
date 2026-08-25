@@ -340,18 +340,23 @@ fn visibility_retry_allowed(
 }
 
 fn record_retry_attribution(epoch: u64, node_ids: &[u32], vec_ids: &[u64], missing_vec_id: u64) {
-    if !super::options::retry_attribution_enabled() {
+    // This unlogged relation belongs to diagnostic fixtures, not the
+    // extension schema. Production retries must remain correct when the
+    // attribution surface is absent.
+    // Do not use SPI for this existence check: retries run inside the index
+    // scan's active snapshot, where opening a nested SPI query can perturb
+    // transaction visibility even when the diagnostic relation is absent.
+    // SAFETY: both names are static nul-terminated strings and these catalog
+    // lookups do not retain borrowed backend memory.
+    let relation_exists = unsafe {
+        let namespace_oid = pg_sys::get_namespace_oid(c"public".as_ptr(), true);
+        namespace_oid != pg_sys::InvalidOid
+            && pg_sys::get_relname_relid(c"ec_distann_retry_attribution".as_ptr(), namespace_oid)
+                != pg_sys::InvalidOid
+    };
+    if !relation_exists {
         return;
     }
-    // This unlogged relation belongs to the Task 167 fixture, not the
-    // extension schema. Production retries must remain correct when the
-    // diagnostic surface is absent: attempting the INSERT directly turns a
-    // successful visibility retry into an undefined-table error.
-    let Ok(Some(true)) = Spi::get_one::<bool>(
-        "SELECT pg_catalog.to_regclass('public.ec_distann_retry_attribution') IS NOT NULL",
-    ) else {
-        return;
-    };
     let node_id = vec_ids
         .iter()
         .position(|vec_id| *vec_id == missing_vec_id)
@@ -570,6 +575,23 @@ mod cache_tests {
         assert!(resolve_cached_physical_query(Vec::new(), wrong.to_vec()).is_err());
         assert!(resolve_cached_physical_query(query, wrong.to_vec()).is_err());
         PHYSICAL_QUERY_CACHE.with(|cache| *cache.borrow_mut() = None);
+    }
+
+    #[test]
+    fn catalog_route_roster_uses_secret_reference_not_conninfo() {
+        let route = PhysicalOwnerRoute {
+            roster_ordinal: 0,
+            node_id: 7,
+            is_local: false,
+            remote_index_regclass: "public.items_idx".to_owned(),
+            endpoint:
+                super::super::node_registry::ResolvedConninfoSecret::from_test_secret_reference(
+                    "DISTANN_NODE_SEVEN",
+                    "host=db.example user=alice password=do-not-forward sslmode=require".to_owned(),
+                ),
+        };
+        assert_eq!(route.roster_endpoint_spec(), "secret:DISTANN_NODE_SEVEN");
+        assert!(!route.roster_endpoint_spec().contains("do-not-forward"));
     }
 }
 
@@ -1013,11 +1035,24 @@ pub(crate) struct PhysicalOwnerRoute {
     pub(crate) node_id: u32,
     pub(crate) is_local: bool,
     pub(crate) remote_index_regclass: String,
-    /// Resolved endpoint for roster serialization. This is present for the
-    /// local route too; `conninfo` remains `None` locally because callers use
-    /// that field as the remote-transport discriminator.
-    pub(crate) roster_conninfo: String,
-    pub(crate) conninfo: Option<String>,
+    pub(crate) endpoint: super::node_registry::ResolvedConninfoSecret,
+}
+
+impl PhysicalOwnerRoute {
+    pub(crate) fn conninfo(&self) -> Option<&str> {
+        (!self.is_local).then(|| self.endpoint.conninfo())
+    }
+
+    pub(crate) fn intent_conninfo(&self) -> &str {
+        self.endpoint.conninfo()
+    }
+
+    pub(crate) fn roster_endpoint_spec(&self) -> String {
+        self.endpoint
+            .secret_reference()
+            .map(|reference| format!("secret:{reference}"))
+            .unwrap_or_else(|| self.endpoint.conninfo().to_owned())
+    }
 }
 
 pub(crate) fn physical_owner_routes(
@@ -1066,7 +1101,7 @@ pub(crate) fn physical_owner_routes(
                     .value::<String>()
                     .map_err(|error| format!("EC_NODE_DESCRIPTOR: secret decode failed: {error}"))?
                     .ok_or_else(|| "EC_NODE_DESCRIPTOR: secret is NULL".to_owned())?;
-                let roster_conninfo = super::node_registry::resolve_conninfo_secret(&secret)?;
+                let endpoint = super::node_registry::resolve_conninfo_secret(&secret)?;
                 Ok(PhysicalOwnerRoute {
                     roster_ordinal: usize::try_from(ordinal).map_err(|_| {
                         "EC_NODE_DESCRIPTOR: binding ordinal is negative".to_owned()
@@ -1075,12 +1110,7 @@ pub(crate) fn physical_owner_routes(
                         .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
-                    roster_conninfo: roster_conninfo.clone(),
-                    conninfo: if is_local {
-                        None
-                    } else {
-                        Some(roster_conninfo)
-                    },
+                    endpoint,
                 })
             })
             .collect::<Result<Vec<_>, String>>()
@@ -1138,17 +1168,20 @@ fn physical_owner_routes_for_owner_insert(
     let mut routes = Vec::with_capacity(descriptor.roster.len());
     for (ordinal, entry) in descriptor.roster.iter().enumerate() {
         let is_local = entry.node_id == local_node_id;
+        let endpoint =
+            if let Some(secret_reference) = configured[ordinal].conninfo.strip_prefix("secret:") {
+                super::node_registry::resolve_conninfo_secret(secret_reference)?
+            } else {
+                super::node_registry::ResolvedConninfoSecret::from_legacy_conninfo(
+                    configured[ordinal].conninfo.clone(),
+                )
+            };
         routes.push(PhysicalOwnerRoute {
             roster_ordinal: ordinal,
             node_id: entry.node_id,
             is_local,
             remote_index_regclass: local_locator.clone(),
-            roster_conninfo: configured[ordinal].conninfo.clone(),
-            conninfo: if is_local {
-                None
-            } else {
-                Some(configured[ordinal].conninfo.clone())
-            },
+            endpoint,
         });
     }
     Ok(routes)
@@ -2877,6 +2910,206 @@ fn expand_physical_nodes_impl(
         })
 }
 
+#[cfg(feature = "pg_test")]
+fn maybe_delay_read_rpc_for_test(rpc: &str) {
+    let Some(delay_ms) = super::options::debug_read_rpc_delay_ms(rpc) else {
+        return;
+    };
+    thread_local! {
+        static DELAY_USED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if DELAY_USED.with(|used| used.replace(true)) {
+        return;
+    }
+    let delay_seconds = delay_ms as f64 / 1_000.0;
+    Spi::run(&format!("SELECT pg_sleep({delay_seconds})")).unwrap_or_else(|error| {
+        DistannExpandError::Internal(format!("Task 234 {rpc} delay fault failed: {error}")).raise()
+    });
+}
+
+#[cfg(not(feature = "pg_test"))]
+#[inline]
+fn maybe_delay_read_rpc_for_test(_rpc: &str) {}
+
+#[cfg(feature = "pg_test")]
+fn finish_read_rpc_probe_batch<T>(
+    rpc: &str,
+    results: Vec<Result<Vec<T>, DistannExpandError>>,
+) -> Result<i64, DistannExpandError> {
+    if results.len() < 2 {
+        return Err(DistannExpandError::Internal(format!(
+            "Task 234 {rpc} probe requires at least two remote owners"
+        )));
+    }
+    if let Some(first_error) = results.iter().find_map(|result| result.as_ref().err()) {
+        if results.iter().any(Result::is_ok) {
+            return Err(DistannExpandError::Internal(format!(
+                "Task 234 {rpc} probe observed a partial successful sibling response"
+            )));
+        }
+        return Err(first_error.clone());
+    }
+    results.into_iter().try_fold(0_i64, |count, result| {
+        let rows = result.expect("error results returned above");
+        i64::try_from(rows.len())
+            .ok()
+            .and_then(|rows| count.checked_add(rows))
+            .ok_or_else(|| {
+                DistannExpandError::Internal(format!("Task 234 {rpc} probe row-count overflow"))
+            })
+    })
+}
+
+/// Test-only entry point that exercises the five Task 234 transport callers
+/// against a real physical generation. The owning PG18 fault fixture selects
+/// and parks one endpoint with the pg_test-only delay GUC above; this function
+/// deliberately retains the production batching, pooling, and error paths.
+#[cfg(feature = "pg_test")]
+pub(crate) fn read_rpc_probe_for_test(
+    index_oid: pg_sys::Oid,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64, DistannExpandError> {
+    let scan = PhysicalGenerationScan::open(index_oid).map_err(DistannExpandError::Internal)?;
+    let head = scan.head_index.as_ref().ok_or_else(|| {
+        DistannExpandError::Internal("Task 234 probe found no persisted head".to_owned())
+    })?;
+    let members = head.members();
+    let owner_count = scan.routes.len();
+    let buckets = super::placement::group_by_owning_node(
+        members,
+        owner_count,
+        scan.descriptor.placement_hash_version,
+    );
+    let owned_by_route = buckets
+        .iter()
+        .map(|bucket| bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    match rpc {
+        "physical_head_search" => {
+            let query = vec![0.0_f32; usize::from(scan.descriptor.dimensions)];
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannPhysicalHeadRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            query: &query,
+                            member_vec_ids: &owned_by_route[ordinal],
+                            search_width: 8,
+                            seed_count: 4,
+                            build_list_size: super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
+                            alpha: super::ECDISTANN_DEFAULT_ALPHA,
+                            head_policy: head.policy() as i32,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_physical_head_search_batch(&requests),
+            )
+        }
+        "crown_code_export" => {
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannCrownCodeRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            member_vec_ids: &owned_by_route[ordinal],
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_crown_code_batch(&requests),
+            )
+        }
+        "gateway_routing_export" => {
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannGatewayRoutingRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            member_vec_ids: &owned_by_route[ordinal],
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_gateway_routing_batch(&requests),
+            )
+        }
+        "head_shard_export" | "head_shard_import" => {
+            let (ordinal, route) = scan
+                .routes
+                .iter()
+                .enumerate()
+                .find(|(_, route)| route.node_id == target_node_id)
+                .ok_or_else(|| {
+                    DistannExpandError::BadInput(format!(
+                        "Task 234 probe target node {target_node_id} is absent"
+                    ))
+                })?;
+            let conninfo = route.conninfo().ok_or_else(|| {
+                DistannExpandError::BadInput(format!(
+                    "Task 234 probe target node {target_node_id} is local"
+                ))
+            })?;
+            let owned = &owned_by_route[ordinal];
+            if owned.is_empty() {
+                return Err(DistannExpandError::Internal(format!(
+                    "Task 234 probe target node {target_node_id} owns no head members"
+                )));
+            }
+            let shard = super::remote_transport::remote_head_shard_export(
+                conninfo,
+                &route.remote_index_regclass,
+                &scan.fingerprint,
+                owned,
+            )?;
+            if rpc == "head_shard_export" {
+                return i64::try_from(shard.len()).map_err(|_| {
+                    DistannExpandError::Internal(
+                        "Task 234 head-shard export row-count overflow".to_owned(),
+                    )
+                });
+            }
+            super::remote_transport::remote_head_shard_import(
+                conninfo,
+                &route.remote_index_regclass,
+                &scan.fingerprint,
+                i32::try_from(ordinal).unwrap_or(i32::MAX),
+                &shard,
+                i32::from(scan.descriptor.dimensions),
+            )
+        }
+        other => Err(DistannExpandError::BadInput(format!(
+            "Task 234 probe does not recognize RPC {other:?}"
+        ))),
+    }
+}
+
 /// Export this owner's head-shard landmarks so another node can serve the shard
 /// as a replica (Task 210 P2b, `DISTRIBUTEDANN` §4.1).
 ///
@@ -3029,7 +3262,7 @@ fn populate_head_replicas_impl(
             // skipping it while still attesting population is exactly how a
             // valid owner route turned into a deterministic missing-copy
             // failure (003a review, 2026-07-31 finding 3).
-            let copy = match owner.conninfo.as_deref() {
+            let copy = match owner.conninfo() {
                 Some(owner_conninfo) => super::remote_transport::remote_head_shard_export(
                     owner_conninfo,
                     &owner.remote_index_regclass,
@@ -3053,7 +3286,7 @@ fn populate_head_replicas_impl(
                 }
                 expected += 1;
                 let route = &state.routes[server];
-                match route.conninfo.as_deref() {
+                match route.conninfo() {
                     Some(conninfo) => {
                         super::remote_transport::remote_head_shard_import(
                             conninfo,
@@ -5408,7 +5641,7 @@ impl PhysicalGenerationScan {
             // carries no conninfo. Serve that shard in-process rather than
             // dialling ourselves — same shape as the traversal expander's
             // local-ordinal branch.
-            let Some(conninfo) = route.conninfo.as_deref() else {
+            let Some(conninfo) = route.conninfo() else {
                 if !route.is_local {
                     return Err(format!(
                         "EC_NODE_DESCRIPTOR: physical owner {server} route has no connection"
@@ -5694,7 +5927,7 @@ impl PhysicalGenerationScan {
             .iter()
             .filter(|route| !route.is_local)
             .map(|route| {
-                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                let conninfo = route.conninfo().ok_or_else(|| {
                     format!(
                         "EC_NODE_DESCRIPTOR: physical owner {} route has no connection descriptor",
                         route.roster_ordinal
@@ -5817,7 +6050,7 @@ impl PhysicalGenerationScan {
             .iter()
             .map(|(ordinal, ids, _locators)| {
                 let route = &self.routes[*ordinal];
-                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                let conninfo = route.conninfo().ok_or_else(|| {
                     format!(
                         "EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection descriptor"
                     )
@@ -5967,7 +6200,7 @@ fn populate_gateway_copies(
         }
         let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
         let route = &routes[ordinal];
-        if route.conninfo.is_some() {
+        if route.conninfo().is_some() {
             remote_work.push((ordinal, owned));
             continue;
         }
@@ -6007,8 +6240,7 @@ fn populate_gateway_copies(
         .map(
             |(ordinal, owned)| super::remote_transport::DistannGatewayRoutingRequest {
                 conninfo: routes[*ordinal]
-                    .conninfo
-                    .as_deref()
+                    .conninfo()
                     .expect("remote gateway work requires a connection descriptor"),
                 index_regclass: &routes[*ordinal].remote_index_regclass,
                 epoch_fingerprint: fingerprint,
@@ -6070,7 +6302,7 @@ fn populate_crown_cache(
         }
         let ids = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
         let route = &routes[ordinal];
-        if let Some(conninfo) = route.conninfo.as_deref() {
+        if let Some(conninfo) = route.conninfo() {
             remote_work.push((ordinal, ids, conninfo));
             continue;
         }
@@ -6232,7 +6464,7 @@ impl PhysicalMultiOwnerExpander<'_> {
             .iter()
             .map(|(ordinal, owned, _, skip_ids)| {
                 let route = &self.routes[*ordinal];
-                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                let conninfo = route.conninfo().ok_or_else(|| {
                     DistannExpandError::Internal(format!(
                         "EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection descriptor"
                     ))

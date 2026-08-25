@@ -648,6 +648,14 @@ struct DistannLocalMultinodeStep {
     /// Production benchmark suites must leave this false.
     #[serde(default)]
     allow_debug_extension: bool,
+    /// Route extension-owned coordinator-to-owner traffic through the
+    /// fixture's verify-full mutual-TLS identity.
+    #[serde(default)]
+    secure_remote_transport: bool,
+    /// Task 236 diagnostic-only TLS, mTLS, handshake-fault, and secret-
+    /// rotation matrix.
+    #[serde(default)]
+    tls_security_matrix: bool,
     #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
@@ -4173,6 +4181,29 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.secure_remote_transport && step.reuse_fixture {
+                    bail!(
+                        "distann-local-multinode step {:?} cannot combine secure_remote_transport with reuse_fixture",
+                        step.name
+                    )
+                }
+                if step.tls_security_matrix
+                    && (!step.secure_remote_transport
+                        || step.nodes.unwrap_or(3) < 3
+                        || step.coordinator_outside_roster
+                        || !step.allow_debug_extension)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} TLS security matrix requires secure_remote_transport, at least three owner nodes, an in-roster coordinator, and allow_debug_extension",
+                        step.name
+                    )
+                }
+                if step.tls_security_matrix && (step.physical_benchmark || step.reuse_fixture) {
+                    bail!(
+                        "distann-local-multinode step {:?} cannot combine tls_security_matrix with physical_benchmark or reuse_fixture",
+                        step.name
+                    )
+                }
                 if step.build_shards.is_some_and(|value| value > 4096) {
                     bail!(
                         "distann-local-multinode step {:?} must set build_shards in 0..=4096",
@@ -5179,6 +5210,13 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::DistannLocalMultinode(step) => {
+                if step.tls_security_matrix {
+                    let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
+                    if let Some(dir) = &step.artifact_dir {
+                        artifacts.push(dir.join("task236-tls-security-matrix.log"));
+                    }
+                    return artifacts;
+                }
                 if step.compact_artifacts {
                     return step
                         .artifact_dir
@@ -5970,6 +6008,12 @@ fn expand_distann_local_multinode(
     }
     if step.allow_debug_extension {
         args.push("--allow-debug-extension".into());
+    }
+    if step.secure_remote_transport {
+        args.push("--secure-remote-transport".into());
+    }
+    if step.tls_security_matrix {
+        args.push("--tls-security-matrix".into());
     }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
@@ -7762,6 +7806,36 @@ psql header noise\n\
         let config: SuiteConfig = serde_json::from_str(&missing_sd).expect("suite parses");
         let error = validate_config(&config).expect_err("unpaired baseline must fail");
         assert!(error.to_string().contains("requires both baseline deficit"));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_secure_remote_transport() {
+        let raw = r#"{
+          "name": "distann-secure-transport",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "tls",
+            "secure_remote_transport": true,
+            "tls_security_matrix": true,
+            "allow_debug_extension": true,
+            "nodes": 3,
+            "artifact_dir": "artifacts/tls"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--secure-remote-transport".into()));
+        assert!(command.contains(&"--tls-security-matrix".into()));
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from(
+                "artifacts/tls/task236-tls-security-matrix.log"
+            )]
+        );
     }
 
     #[test]

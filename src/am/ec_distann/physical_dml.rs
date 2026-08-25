@@ -160,13 +160,13 @@ unsafe fn insert_from_prepared_slot(
         .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
 
     let owner_intent_conninfo = if owner_route.is_local {
-        owner_route.roster_conninfo.as_str()
+        owner_route.intent_conninfo()
     } else {
-        owner_route.conninfo.as_deref().ok_or_else(|| {
+        owner_route.conninfo().ok_or_else(|| {
             "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
         })?
     };
-    let coordinator_conninfo = routes[local_owner].roster_conninfo.as_str();
+    let coordinator_conninfo = routes[local_owner].intent_conninfo();
     super::remote_transport::record_physical_insert_intent(
         owner_intent_conninfo,
         coordinator_conninfo,
@@ -386,7 +386,7 @@ unsafe fn insert_from_prepared_slot(
     drop(scan);
 
     if !owner_route.is_local {
-        let conninfo = owner_route.conninfo.as_deref().ok_or_else(|| {
+        let conninfo = owner_route.conninfo().ok_or_else(|| {
             "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
         })?;
         let (payload_nulls, payload_offsets, payload_values) =
@@ -445,7 +445,7 @@ unsafe fn insert_from_prepared_slot(
                         .to_owned(),
                 );
             }
-            let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
+            let conninfo = target_route.conninfo().ok_or_else(|| {
                 "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
             })?;
             super::remote_transport::remote_physical_backlink(
@@ -558,7 +558,7 @@ unsafe fn insert_from_prepared_slot(
                         .to_owned(),
                 );
                 }
-                let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
+                let conninfo = target_route.conninfo().ok_or_else(|| {
                     "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
                 })?;
                 super::remote_transport::remote_physical_backlink(
@@ -950,7 +950,7 @@ pub(crate) unsafe fn tombstone_dead_records(
                 vec_id,
             )?;
         } else {
-            let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+            let conninfo = route.conninfo().ok_or_else(|| {
                 "EC_NODE_DESCRIPTOR: remote delete route has no conninfo".to_owned()
             })?;
             let index_name = super::routine::distann_index_relname(index_relation);
@@ -998,13 +998,15 @@ fn row_relation_for_payload(
 fn roster_spec_for_routes(
     routes: &[super::generation_read::PhysicalOwnerRoute],
 ) -> Result<String, String> {
-    let configured = super::roster::current_roster_spec();
-    if !configured.trim().is_empty() {
-        return Ok(configured);
-    }
     routes
         .iter()
-        .map(|route| Ok(format!("{}@{}", route.node_id, route.roster_conninfo)))
+        .map(|route| {
+            Ok(format!(
+                "{}@{}",
+                route.node_id,
+                route.roster_endpoint_spec()
+            ))
+        })
         .collect::<Result<Vec<_>, String>>()
         .map(|entries| entries.join(";"))
 }

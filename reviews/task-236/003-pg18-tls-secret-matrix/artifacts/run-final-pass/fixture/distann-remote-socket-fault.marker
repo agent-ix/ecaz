@@ -1,0 +1,6 @@
+pid=2201343 mode=socket-reset match= peer=tcp:127.0.0.1:43921 latency_ms=0
+pid=2201344 mode=socket-reset match= peer=tcp:127.0.0.1:43921 latency_ms=0
+pid=2201345 mode=socket-reset match= peer=tcp:127.0.0.1:43921 latency_ms=0
+pid=2201346 mode=socket-reset match= peer=tcp:127.0.0.1:43921 latency_ms=0
+pid=2201346 mode=socket-reset match= peer=tcp:127.0.0.1:43921 latency_ms=0
+fault=1 pid=2201411 mode=socket-reset op=send count=1 errno=104 target=tcp:127.0.0.1:43921

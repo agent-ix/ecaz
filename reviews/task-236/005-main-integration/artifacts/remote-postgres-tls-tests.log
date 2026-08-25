@@ -1,0 +1,39 @@
+Script started on 2026-08-24 20:31:21-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on artifact directory
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 29s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-f6d2273f41ef719e)
+
+running 8 tests
+test am::common::remote_postgres_tls::tests::distann_default_requires_tls_and_preserves_channel_binding ... ok
+test am::common::remote_postgres_tls::tests::distann_rejects_downgrade_modes_and_remote_plaintext ... ok
+test am::common::remote_postgres_tls::tests::debug_and_parse_errors_do_not_expose_conninfo ... ok
+test am::common::remote_postgres_tls::tests::distann_allows_only_explicit_loopback_plaintext ... ok
+test am::common::remote_postgres_tls::tests::plaintext_side_transaction_gate_requires_explicit_loopback ... ok
+test am::common::remote_postgres_tls::tests::security_fingerprint_changes_on_rotation_without_debug_exposure ... ok
+test am::common::remote_postgres_tls::tests::parser_rejects_ambiguous_or_unsupported_security_options ... ok
+test am::common::remote_postgres_tls::tests::spire_compatibility_keeps_existing_default ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2582 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 20:33:50-07:00 [COMMAND_EXIT_CODE="0"]
+ort::read_transport_snapshot_for_test;
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0282]: type annotations needed
+  --> src/tests/mod.rs:14:30
+   |
+14 |             .unwrap_or_else(|error| error.raise())
+   |                              ^^^^^  ----- type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+14 |             .unwrap_or_else(|error: /* Type */| error.raise())
+   |                                   ++++++++++++
+
+Some errors have detailed explanations: E0282, E0425.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `ecaz` (lib test) due to 3 previous errors
+
+Script done on 2026-08-24 20:31:24-07:00 [COMMAND_EXIT_CODE="101"]

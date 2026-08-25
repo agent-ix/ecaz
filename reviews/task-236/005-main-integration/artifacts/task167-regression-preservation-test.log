@@ -1,0 +1,11 @@
+Script started on 2026-08-24 20:36:56-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-6b0d37a0d3e38283)
+
+running 1 test
+test commands::bench::suite::tests::distann_task167_heldout_regression_gate_is_step_local_and_paired ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 514 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 20:36:56-07:00 [COMMAND_EXIT_CODE="0"]

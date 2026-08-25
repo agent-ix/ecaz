@@ -1,0 +1,13 @@
+Script started on 2026-08-24 13:48:35-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-0321d34b49d4d990)
+
+running 3 tests
+test am::ec_distann::generation_read::cache_tests::catalog_route_roster_uses_secret_reference_not_conninfo ... ok
+test am::ec_distann::generation_read::cache_tests::physical_query_cache_requires_matching_digest_and_reuses_arc ... ok
+test am::ec_distann::generation_read::cache_tests::physical_epoch_cache_is_bounded_and_lru ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 13:48:35-07:00 [COMMAND_EXIT_CODE="0"]

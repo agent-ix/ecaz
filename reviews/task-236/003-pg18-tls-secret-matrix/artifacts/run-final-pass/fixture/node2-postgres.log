@@ -1,0 +1,36 @@
+2026-08-24 15:52:43.143 PDT [2201359] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 15:52:43.159 PDT [2201359] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 15:52:43.159 PDT [2201359] LOG:  listening on IPv4 address "127.0.0.1", port 43921
+2026-08-24 15:52:43.164 PDT [2201359] LOG:  listening on IPv4 address "127.0.0.2", port 43921
+2026-08-24 15:52:43.170 PDT [2201365] LOG:  database system was shut down at 2026-08-24 15:52:41 PDT
+2026-08-24 15:52:43.183 PDT [2201359] LOG:  database system is ready to accept connections
+2026-08-24 15:52:50.494 PDT [2201440] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.494 PDT [2201440] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.494 PDT [2201432] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.494 PDT [2201432] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.496 PDT [2201437] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.496 PDT [2201437] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.597 PDT [2201462] LOG:  could not accept SSL connection: unexpected eof while reading
+2026-08-24 15:52:50.602 PDT [2201463] LOG:  could not accept SSL connection: unexpected eof while reading
+2026-08-24 15:52:50.608 PDT [2201464] FATAL:  connection requires a valid client certificate
+2026-08-24 15:52:50.616 PDT [2201465] LOG:  provided user name (distann_rpc) and authenticated user name (not_distann_rpc) do not match
+2026-08-24 15:52:50.616 PDT [2201465] FATAL:  certificate authentication failed for user "distann_rpc"
+2026-08-24 15:52:50.616 PDT [2201465] DETAIL:  Connection matched file "/home/peter/.ecaz/clusters/task236-tls-secret-matrix/node2/pg_hba.conf" line 1: "hostssl all distann_rpc 127.0.0.1/32 cert"
+2026-08-24 15:52:50.622 PDT [2201466] LOG:  could not accept SSL connection: certificate verify failed
+2026-08-24 15:52:50.622 PDT [2201466] DETAIL:  Client certificate verification failed at depth 0: certificate has expired.
+	Failed certificate data (unverified): subject "/CN=distann_rpc", serial number 4096, issuer "/CN=ECAZ Task 236 fixture CA".
+2026-08-24 15:52:50.629 PDT [2201467] LOG:  could not accept SSL connection: certificate verify failed
+2026-08-24 15:52:50.629 PDT [2201467] DETAIL:  Client certificate verification failed at depth 0: certificate is not yet valid.
+	Failed certificate data (unverified): subject "/CN=distann_rpc", serial number 4097, issuer "/CN=ECAZ Task 236 fixture CA".
+2026-08-24 15:52:50.632 PDT [2201468] FATAL:  pg_hba.conf rejects connection for host "127.0.0.1", user "distann_rpc", database "postgres", no encryption
+2026-08-24 15:52:50.662 PDT [2201414] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.662 PDT [2201414] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:51.127 PDT [2201471] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:51.127 PDT [2201471] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:51.628 PDT [2201359] LOG:  received fast shutdown request
+2026-08-24 15:52:51.639 PDT [2201359] LOG:  aborting any active transactions
+2026-08-24 15:52:51.641 PDT [2201359] LOG:  background worker "logical replication launcher" (PID 2201368) exited with exit code 1
+2026-08-24 15:52:51.641 PDT [2201363] LOG:  shutting down
+2026-08-24 15:52:51.646 PDT [2201363] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 15:52:52.119 PDT [2201363] LOG:  checkpoint complete: wrote 621 buffers (3.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.440 s, total=0.479 s; sync files=272, longest=0.008 s, average=0.002 s; distance=5298 kB, estimate=5298 kB; lsn=0/1C80EA8, redo lsn=0/1C80EA8
+2026-08-24 15:52:52.135 PDT [2201359] LOG:  database system is shut down

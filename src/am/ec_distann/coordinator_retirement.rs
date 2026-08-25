@@ -618,7 +618,7 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
             if !is_local {
                 let conninfo = super::node_registry::resolve_conninfo_secret(&secret_name)?;
                 super::remote_transport::remote_apply_epoch_retire(
-                    &conninfo,
+                    conninfo.conninfo(),
                     &remote_regclass,
                     &stored.decision,
                     &stored.digest,

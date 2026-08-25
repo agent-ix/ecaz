@@ -634,7 +634,7 @@ pub(super) fn recover_cancelled_publish(index_regclass: PgRelation, build_id: Uu
             } else {
                 let conninfo = super::super::node_registry::resolve_conninfo_secret(&secret_name)?;
                 super::super::remote_transport::remote_reclaim_cancelled_generation(
-                    &conninfo,
+                    conninfo.conninfo(),
                     &remote_index_regclass,
                     &stored.1,
                     &stored.2,

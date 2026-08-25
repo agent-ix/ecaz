@@ -568,8 +568,7 @@ fn ec_distann_reap_orphaned_remote_prepared_xacts(
         pgrx::error!("EC_NODE_DESCRIPTOR: reaper target must be a remote owner");
     }
     let conninfo = route
-        .conninfo
-        .as_deref()
+        .conninfo()
         .unwrap_or_else(|| pgrx::error!("EC_NODE_DESCRIPTOR: reaper route has no conninfo"));
     super::remote_transport::reap_orphaned_physical_prepared_xacts(
         conninfo,

@@ -39,6 +39,8 @@ mod gateway_copy;
 mod generation_catalog;
 mod generation_descriptor;
 mod generation_read;
+#[cfg(feature = "pg_test")]
+pub(crate) use self::generation_read::read_rpc_probe_for_test;
 mod generation_store;
 mod handoff;
 #[cfg(any(test, feature = "pg_test"))]
@@ -64,6 +66,8 @@ pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod remote_endpoint;
 mod remote_transport;
+#[cfg(feature = "pg_test")]
+pub(crate) use self::remote_transport::read_transport_snapshot_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::remote_transport::remote_timeout_probe_for_test;
 mod roster;

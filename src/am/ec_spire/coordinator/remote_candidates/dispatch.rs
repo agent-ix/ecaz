@@ -500,7 +500,7 @@ impl SpireRemotePooledConnectionKey {
             format!("ec_spire remote connection pool conninfo parse failed for node_id {node_id}: {error}")
         })?;
         let config = parsed
-            .base_conninfo
+            .base_conninfo()
             .parse::<tokio_postgres::Config>()
             .map_err(|_| {
                 format!(
@@ -516,7 +516,7 @@ impl SpireRemotePooledConnectionKey {
             conninfo_secret_name: conninfo_secret_name.to_owned(),
             remote_index_regclass: remote_index_regclass.to_owned(),
             remote_index_identity: remote_index_identity.to_vec(),
-            tls_mode: parsed.tls_config.sslmode_name(),
+            tls_mode: parsed.tls_config().sslmode_name(),
             user: config.get_user().unwrap_or("").to_owned(),
             dbname: config.get_dbname().unwrap_or("").to_owned(),
             statement_timeout_ms:
