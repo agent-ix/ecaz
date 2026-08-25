@@ -848,7 +848,7 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     // correlated Param is only bound per outer row, so evaluation is deferred to
     // ensure_outputs (after each rescan binds the current param).
     let exprs = cs_pg_list::<pg_sys::Expr>((*custom_scan).custom_exprs);
-    let query_expr = exprs
+    let mut query_expr = exprs
         .get_ptr(0)
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan plan missing ORDER BY query"));
     let mut payload_mask = payload_mask_for_custom_scan(custom_scan, query_expr);
@@ -865,27 +865,24 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     if wants_elision {
         let mut projection_elided = false;
         let old_context = pg_sys::MemoryContextSwitchTo((*estate).es_query_cxt);
-        let copied_scan =
-            pg_sys::palloc(std::mem::size_of::<pg_sys::CustomScan>()).cast::<pg_sys::CustomScan>();
-        ptr::copy_nonoverlapping(custom_scan, copied_scan, 1);
-        (*copied_scan).scan.plan.targetlist =
-            pg_sys::copyObjectImpl((*custom_scan).scan.plan.targetlist.cast())
-                .cast::<pg_sys::List>();
+        let copied_scan = pg_sys::copyObjectImpl(custom_scan.cast()).cast::<pg_sys::CustomScan>();
         pg_sys::MemoryContextSwitchTo(old_context);
         if let (Some(copied_scan_ref), Some(proof)) = (cs_pg_ref(copied_scan), ordering_only) {
-            let copied_mask = payload_mask_for_custom_scan(copied_scan, query_expr);
-            let copied_wants_elision = copied_mask
-                .exact_attnums()
-                .is_some_and(|attnums| attnums.binary_search(&proof.relation_attnum).is_err());
-            if copied_wants_elision
-                && elide_ordering_only_target(
+            let copied_exprs = cs_pg_list::<pg_sys::Expr>(copied_scan_ref.custom_exprs);
+            let copied_query_expr = copied_exprs.get_ptr(0);
+            if copied_query_expr.is_some_and(|copied_query_expr| {
+                elide_ordering_only_target(
                     copied_scan_ref.scan.plan.targetlist,
-                    query_expr,
+                    copied_query_expr,
                     proof,
                 )
-            {
+            }) {
                 custom_scan = copied_scan;
-                payload_mask = copied_mask;
+                query_expr = copied_query_expr.expect("checked by is_some_and");
+                // The parent Limit's lefttree still names the original plan and
+                // target list. This split is safe: its junk filter identifies
+                // resjunk columns positionally and does not evaluate that target
+                // list, while this CustomScanState executes only the copied plan.
                 (*node).ss.ps.plan = copied_scan.cast::<pg_sys::Plan>();
                 pg_sys::ExecAssignScanProjectionInfoWithVarno(
                     &mut (*node).ss,
