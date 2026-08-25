@@ -1,0 +1,88 @@
+2026-08-24 12:36:40.746 PDT [1816007] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 12:36:40.759 PDT [1816007] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 12:36:40.759 PDT [1816007] LOG:  listening on IPv4 address "127.0.0.1", port 43820
+2026-08-24 12:36:40.767 PDT [1816013] LOG:  database system was shut down at 2026-08-24 12:36:36 PDT
+2026-08-24 12:36:40.778 PDT [1816007] LOG:  database system is ready to accept connections
+2026-08-24 12:36:43.511 PDT [1816088] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-08-24 12:36:44.606 PDT [1816113] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote physical head search failed: canceling statement due to statement timeout
+2026-08-24 12:36:44.606 PDT [1816113] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:44.702 PDT [1816122] ERROR:  canceling statement due to user request
+2026-08-24 12:36:44.702 PDT [1816122] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:45.274 PDT [1816139] ERROR:  canceling statement due to statement timeout
+2026-08-24 12:36:45.274 PDT [1816139] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:45.398 PDT [1816152] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote physical head search failed: terminating connection due to administrator command
+2026-08-24 12:36:45.398 PDT [1816152] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:45.525 PDT [1816164] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote physical head search transport failed: connection closed
+2026-08-24 12:36:45.525 PDT [1816164] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:46.304 PDT [1816190] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote crown-code export failed: canceling statement due to statement timeout
+2026-08-24 12:36:46.304 PDT [1816190] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:46.384 PDT [1816199] ERROR:  canceling statement due to user request
+2026-08-24 12:36:46.384 PDT [1816199] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:46.946 PDT [1816216] ERROR:  canceling statement due to statement timeout
+2026-08-24 12:36:46.946 PDT [1816216] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:47.033 PDT [1816230] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote crown-code export failed: terminating connection due to administrator command
+2026-08-24 12:36:47.033 PDT [1816230] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:47.120 PDT [1816242] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote crown-code export transport failed: connection closed
+2026-08-24 12:36:47.120 PDT [1816242] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:47.802 PDT [1816267] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote gateway routing export failed: canceling statement due to statement timeout
+2026-08-24 12:36:47.802 PDT [1816267] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:47.889 PDT [1816276] ERROR:  canceling statement due to user request
+2026-08-24 12:36:47.889 PDT [1816276] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:48.448 PDT [1816293] ERROR:  canceling statement due to statement timeout
+2026-08-24 12:36:48.448 PDT [1816293] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:48.544 PDT [1816306] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote gateway routing export failed: terminating connection due to administrator command
+2026-08-24 12:36:48.544 PDT [1816306] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:48.639 PDT [1816318] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote gateway routing export transport failed: connection closed
+2026-08-24 12:36:48.639 PDT [1816318] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:49.323 PDT [1816343] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote head-shard export failed: canceling statement due to statement timeout
+2026-08-24 12:36:49.323 PDT [1816343] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:49.408 PDT [1816350] ERROR:  canceling statement due to user request
+2026-08-24 12:36:49.408 PDT [1816350] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:49.971 PDT [1816361] ERROR:  canceling statement due to statement timeout
+2026-08-24 12:36:49.971 PDT [1816361] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:50.058 PDT [1816370] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote head-shard export failed: terminating connection due to administrator command
+2026-08-24 12:36:50.058 PDT [1816370] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:50.149 PDT [1816380] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote head-shard export transport failed: connection closed
+2026-08-24 12:36:50.149 PDT [1816380] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:50.862 PDT [1816403] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote head-shard import failed: canceling statement due to statement timeout
+2026-08-24 12:36:50.862 PDT [1816403] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:51.255 PDT [1816410] ERROR:  canceling statement due to user request
+2026-08-24 12:36:51.255 PDT [1816410] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:52.120 PDT [1816421] ERROR:  canceling statement due to statement timeout
+2026-08-24 12:36:52.120 PDT [1816421] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:52.536 PDT [1816435] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote head-shard import failed: terminating connection due to administrator command
+2026-08-24 12:36:52.536 PDT [1816435] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:52.958 PDT [1816445] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote head-shard import transport failed: connection closed
+2026-08-24 12:36:52.958 PDT [1816445] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-24 12:36:53.833 PDT [1816007] LOG:  received fast shutdown request
+2026-08-24 12:36:53.837 PDT [1816007] LOG:  aborting any active transactions
+2026-08-24 12:36:53.838 PDT [1816007] LOG:  background worker "logical replication launcher" (PID 1816016) exited with exit code 1
+2026-08-24 12:36:53.838 PDT [1816011] LOG:  shutting down
+2026-08-24 12:36:53.842 PDT [1816011] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 12:36:54.219 PDT [1816011] LOG:  checkpoint complete: wrote 758 buffers (4.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.017 s, sync=0.339 s, total=0.381 s; sync files=278, longest=0.006 s, average=0.002 s; distance=6376 kB, estimate=6376 kB; lsn=0/1D8E918, redo lsn=0/1D8E918
+2026-08-24 12:36:54.234 PDT [1816007] LOG:  database system is shut down

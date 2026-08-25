@@ -1,0 +1,28 @@
+Script started on 2026-08-24 11:23:30-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task234-read-rpc-cancellation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.38s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-75f48d065754bf4b)
+
+running 13 tests
+test am::ec_distann::remote_transport::tests::interrupt_poll_accepts_cancel_and_backend_termination ... ok
+test am::ec_distann::remote_transport::tests::conninfo_parse_error_is_redacted ... ok
+test am::ec_distann::remote_transport::tests::missing_coverage_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::physical_prepared_gid_is_fenced_to_index_and_owner ... ok
+test am::ec_distann::remote_transport::tests::physical_prepared_gid_rejects_untrusted_names ... ok
+test am::ec_distann::remote_transport::tests::parsed_remote_config_has_nonzero_connect_timeout ... ok
+test am::ec_distann::remote_transport::tests::read_batch_failure_is_uniform_and_deterministic ... ok
+test am::ec_distann::remote_transport::tests::reassembles_interleaved_request_across_owners ... ok
+test am::ec_distann::remote_transport::tests::remote_await_preserves_remote_error ... ok
+test am::ec_distann::remote_transport::tests::wrong_response_count_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::successful_read_batch_preserves_request_order ... ok
+test am::ec_distann::remote_transport::tests::remote_await_enforces_client_deadline ... ok
+test am::ec_distann::remote_transport::tests::owner_futures_are_driven_concurrently ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2567 filtered out; finished in 0.10s
+
+
+Script done on 2026-08-24 11:24:15-07:00 [COMMAND_EXIT_CODE="0"]
