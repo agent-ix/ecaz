@@ -10170,6 +10170,7 @@ async fn run_read_rpc_fault_matrix(
     psql: &Path,
     socket_dir: &Path,
     nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let coordinator = &nodes[0];
     let target = &nodes[1];
@@ -10269,7 +10270,14 @@ async fn run_read_rpc_fault_matrix(
                         .stderr(Stdio::inherit());
                     run_status(stop).await?;
                     let probe_outcome = probe.await?;
-                    restart_physical_node(pg_ctl, socket_dir, target, nodes).await?;
+                    restart_physical_node_with_transport(
+                        pg_ctl,
+                        socket_dir,
+                        target,
+                        nodes,
+                        secure_transport_fixture,
+                    )
+                    .await?;
                     probe_outcome
                 }
                 _ => unreachable!(),
@@ -10649,7 +10657,9 @@ async fn drive_physical_fixture(
         return Ok(());
     }
     if args.read_rpc_fault_matrix {
-        let lines = run_read_rpc_fault_matrix(pg_ctl, psql, socket_dir, nodes).await?;
+        let lines =
+            run_read_rpc_fault_matrix(pg_ctl, psql, socket_dir, nodes, secure_transport_fixture)
+                .await?;
         let body = lines.join("\n") + "\n";
         fs::write(log_dir.join("task234-read-rpc-fault-matrix.log"), &body)?;
         for line in &lines {
@@ -11466,6 +11476,26 @@ async fn restart_physical_node(
     node: &Node,
     nodes: &[Node],
 ) -> Result<()> {
+    restart_physical_node_with_transport(pg_ctl, socket_dir, node, nodes, None).await
+}
+
+async fn restart_physical_node_with_transport(
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<()> {
+    let secure_transport_startup_options = if secure_transport_fixture.is_some() {
+        " -c ssl=on -c ssl_ca_file=root.crt"
+    } else {
+        ""
+    };
+    let listen_addresses = if secure_transport_fixture.is_some() {
+        "127.0.0.1,127.0.0.2"
+    } else {
+        "127.0.0.1"
+    };
     let mut restart = Command::new(pg_ctl);
     restart
         .arg("-w")
@@ -11475,17 +11505,21 @@ async fn restart_physical_node(
         .arg(&node.log_file)
         .arg("-o")
         .arg(format!(
-            "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-             -c shared_preload_libraries=ecaz -c max_prepared_transactions=32",
-            node.port
+            "-p {} -c listen_addresses={} -c unix_socket_directories='' \
+             -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}",
+            node.port, listen_addresses, secure_transport_startup_options
         ))
         .arg("start")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     for target in nodes {
+        let remote_conninfo = match secure_transport_fixture {
+            Some(fixture) => secure_remote_conninfo(target.port, fixture)?,
+            None => conninfo(socket_dir, target.port),
+        };
         restart.env(
             format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
-            conninfo(socket_dir, target.port),
+            remote_conninfo,
         );
     }
     run_status(restart)
