@@ -14,18 +14,24 @@
 //! Single-node / empty roster is not eligible here — those queries stay on the
 //! local AM `amgettuple` path.
 
-use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
-use std::ffi::c_void;
-use std::ptr;
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::time::Instant;
+use std::{ffi::c_void, ptr};
 
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
+
+use super::{
+    payload_projection::{
+        append_ordering_proof_plan_private, derive_payload_attribute_mask,
+        elide_ordering_only_target, ordering_proof_from_plan_private, relation_var_attno,
+        OrderingOnlyProof, PayloadAttributeMask,
+    },
+    placement::owning_node,
+};
 use crate::am::common::{
     heap_slot::TupleSlotWriter,
     pg_ptr::{pg_list as cs_pg_list, pg_ref as cs_pg_ref},
 };
-
-use super::placement::owning_node;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcDistannDistributedScan";
 const EC_DISTANN_AM_NAME: &core::ffi::CStr = c"ec_distann";
@@ -63,7 +69,7 @@ static mut CUSTOM_EXEC_METHODS: pg_sys::CustomExecMethods = pg_sys::CustomExecMe
     ReInitializeDSMCustomScan: None,
     InitializeWorkerCustomScan: None,
     ShutdownCustomScan: None,
-    ExplainCustomScan: None,
+    ExplainCustomScan: Some(explain_custom_scan),
 };
 
 /// Installs the CustomScan provider + planner hook (once per backend, from
@@ -168,6 +174,72 @@ impl<'a> PlannerRel<'a> {
         }
     }
 
+    fn ordering_target_entry(self) -> Option<&'a pg_sys::TargetEntry> {
+        // SAFETY: this view is built from live planner callback pointers and
+        // borrows the matching query TargetEntry for the callback lifetime.
+        unsafe {
+            let query = cs_pg_ref(self.root_ref.parse)?;
+            if pg_sys::list_length(query.sortClause) != 1 || query.targetList.is_null() {
+                return None;
+            }
+            let sort_clause =
+                cs_pg_ref(cs_pg_list::<pg_sys::SortGroupClause>(query.sortClause).get_ptr(0)?)?;
+            cs_pg_list::<pg_sys::TargetEntry>(query.targetList)
+                .iter_ptr()
+                .filter_map(|entry| cs_pg_ref(entry))
+                .find(|entry| entry.ressortgroupref == sort_clause.tleSortGroupRef)
+        }
+    }
+
+    fn ordering_only_proof(self, best_path: &pg_sys::CustomPath) -> Option<OrderingOnlyProof> {
+        let query = unsafe { cs_pg_ref(self.root_ref.parse)? };
+        let supported_upper_shape = query.commandType == pg_sys::CmdType::CMD_SELECT
+            && !query.hasAggs
+            && !query.hasWindowFuncs
+            && !query.hasTargetSRFs
+            && !query.hasDistinctOn
+            && !query.hasForUpdate
+            && query.groupClause.is_null()
+            && query.groupingSets.is_null()
+            && query.havingQual.is_null()
+            && query.windowClause.is_null()
+            && query.distinctClause.is_null()
+            && query.setOperations.is_null()
+            && query.rowMarks.is_null()
+            && !query.limitCount.is_null();
+        let path_proves_order = !best_path.path.pathkeys.is_null()
+            && !self.root_ref.sort_pathkeys.is_null()
+            && !best_path.path.parallel_aware
+            && !best_path.path.parallel_safe
+            && unsafe {
+                pg_sys::equal(
+                    best_path.path.pathkeys.cast(),
+                    self.root_ref.sort_pathkeys.cast(),
+                )
+            };
+        if !self.is_plain_base_relation() || !supported_upper_shape || !path_proves_order {
+            return None;
+        }
+        let entry = self.ordering_target_entry()?;
+        if !entry.resjunk || entry.ressortgroupref == 0 {
+            return None;
+        }
+        let relation_attnum = unsafe { var_attno_from_op_expr(entry.expr, self.rel_ref.relid) }?;
+        let expression = unsafe { cs_pg_ref(entry.expr.cast::<pg_sys::Node>()) }?;
+        if expression.type_ != pg_sys::NodeTag::T_OpExpr {
+            return None;
+        }
+        let operator_oid = unsafe { cs_pg_ref(entry.expr.cast::<pg_sys::OpExpr>()) }?.opno;
+        if relation_attnum <= 0 || operator_oid == pg_sys::InvalidOid {
+            return None;
+        }
+        Some(OrderingOnlyProof {
+            scan_relid: self.rel_ref.relid,
+            relation_attnum,
+            operator_oid,
+        })
+    }
+
     fn query_expr_from_sort_expr(self, expr: *mut pg_sys::Expr) -> Option<*mut pg_sys::Expr> {
         // SAFETY: expr is reached through this live callback view; only inspected
         // for node/list shape.
@@ -240,9 +312,8 @@ unsafe fn var_attno_from_op_expr(
     }
     for index in 0..2 {
         let arg = args.get_ptr(index)?;
-        if is_relation_var(arg, relid) {
-            let var = cs_pg_ref(arg.cast::<pg_sys::Var>())?;
-            return Some(var.varattno);
+        if let Some(attnum) = relation_var_attno(arg, relid) {
+            return Some(attnum);
         }
     }
     None
@@ -281,12 +352,10 @@ unsafe extern "C-unwind" fn find_system_column_var(
     }
     let context = &mut *context.cast::<SystemColumnWalkerContext>();
     if (*node).type_ == pg_sys::NodeTag::T_Var {
-        let var = &*node.cast::<pg_sys::Var>();
-        if u32::try_from(var.varno).ok() == Some(context.scan_relid)
-            && var.varlevelsup == 0
-            && var.varattno < 0
+        if let Some(attnum) = relation_var_attno(node.cast::<pg_sys::Expr>(), context.scan_relid)
+            .filter(|attnum| *attnum < 0)
         {
-            context.system_attnum = Some(var.varattno);
+            context.system_attnum = Some(attnum);
             return true;
         }
     }
@@ -325,16 +394,7 @@ unsafe fn reject_unsupported_system_columns(
 }
 
 unsafe fn is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
-    let Some(node) = cs_pg_ref(expr.cast::<pg_sys::Node>()) else {
-        return false;
-    };
-    if node.type_ != pg_sys::NodeTag::T_Var {
-        return false;
-    }
-    let Some(var) = cs_pg_ref(expr.cast::<pg_sys::Var>()) else {
-        return false;
-    };
-    u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0
+    relation_var_attno(expr, relid).is_some()
 }
 
 unsafe fn is_query_value(expr: *mut pg_sys::Expr) -> bool {
@@ -497,8 +557,13 @@ unsafe extern "C-unwind" fn plan_custom_path(
     let quals = pg_sys::extract_actual_clauses(clauses, false);
     reject_unsupported_system_columns(
         planner_rel.rel_ref.relid,
-        &[tlist.cast::<pg_sys::Node>(), quals.cast::<pg_sys::Node>()],
+        &[
+            tlist.cast::<pg_sys::Node>(),
+            quals.cast::<pg_sys::Node>(),
+            query_expr.cast::<pg_sys::Node>(),
+        ],
     );
+    let ordering_only_proof = planner_rel.ordering_only_proof(best_path);
 
     let mut custom_scan = PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
     custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
@@ -518,7 +583,7 @@ unsafe extern "C-unwind" fn plan_custom_path(
     custom_scan.flags = best_path.flags;
     custom_scan.custom_plans = custom_plans;
     custom_scan.custom_exprs = custom_exprs;
-    custom_scan.custom_private = pg_sys::lappend_oid(
+    let custom_private = pg_sys::lappend_oid(
         pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 ptr::null_mut(),
@@ -530,6 +595,8 @@ unsafe extern "C-unwind" fn plan_custom_path(
             pgrx::error!("EcDistannDistributedScan LIMIT exceeds CustomScan plan-private range")
         })),
     );
+    custom_scan.custom_private =
+        append_ordering_proof_plan_private(custom_private, ordering_only_proof);
     custom_scan.custom_scan_tlist = ptr::null_mut();
     custom_scan.custom_relids = ptr::null_mut();
     custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
@@ -585,6 +652,10 @@ struct DistannCustomScanExecState {
     /// evaluated lazily per (re)scan — a correlated LATERAL Param is only bound
     /// per outer row, so the vector cannot be materialized at Begin time.
     query_expr_state: *mut pg_sys::ExprState,
+    /// Typed proof result shared by payload metadata and future payload
+    /// contract/sidecar consumers; an all-column fallback remains distinct
+    /// from an exact mask that happens to cover every live attribute.
+    payload_mask: PayloadAttributeMask,
     /// Heap attnums of the projected payload columns (parallel to the io vecs).
     payload_attnums: Vec<pg_sys::AttrNumber>,
     payload_columns: Vec<String>,
@@ -641,6 +712,9 @@ fn default_exec_state() -> DistannCustomScanExecState {
         index_oid: pg_sys::InvalidOid,
         top_k: 0,
         query_expr_state: ptr::null_mut(),
+        payload_mask: PayloadAttributeMask::AllColumns(
+            super::payload_projection::PayloadFallbackReason::UnprovedExpression,
+        ),
         payload_attnums: Vec::new(),
         payload_columns: Vec::new(),
         payload_send_functions: Vec::new(),
@@ -759,12 +833,12 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     _eflags: core::ffi::c_int,
 ) {
     register_exec_state_cleanup(node.cast::<DistannCustomScanExecState>(), estate);
-    let custom_scan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
+    let mut custom_scan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
     if custom_scan.is_null() {
         pgrx::error!("EcDistannDistributedScan BeginCustomScan missing plan");
     }
-    if pg_sys::list_length((*custom_scan).custom_private) < 3 {
-        pgrx::error!("EcDistannDistributedScan plan missing plan-private oids");
+    if pg_sys::list_length((*custom_scan).custom_private) != 6 {
+        pgrx::error!("EcDistannDistributedScan plan missing plan-private payload metadata");
     }
     let index_oid = pg_sys::list_nth_oid((*custom_scan).custom_private, 1);
     let top_k = u32::from(pg_sys::list_nth_oid((*custom_scan).custom_private, 2)) as usize;
@@ -774,21 +848,74 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     // correlated Param is only bound per outer row, so evaluation is deferred to
     // ensure_outputs (after each rescan binds the current param).
     let exprs = cs_pg_list::<pg_sys::Expr>((*custom_scan).custom_exprs);
-    let query_expr = exprs
+    let mut query_expr = exprs
         .get_ptr(0)
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan plan missing ORDER BY query"));
+    let mut payload_mask = payload_mask_for_custom_scan(custom_scan, query_expr);
+    let ordering_only = ordering_proof_from_plan_private(
+        (*custom_scan).custom_private,
+        (*custom_scan).scan.scanrelid,
+    )
+    .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"));
+    let wants_elision = ordering_only.is_some_and(|proof| {
+        payload_mask
+            .exact_attnums()
+            .is_some_and(|attnums| attnums.binary_search(&proof.relation_attnum).is_err())
+    });
+    if wants_elision {
+        let mut projection_elided = false;
+        let old_context = pg_sys::MemoryContextSwitchTo((*estate).es_query_cxt);
+        let copied_scan = pg_sys::copyObjectImpl(custom_scan.cast()).cast::<pg_sys::CustomScan>();
+        pg_sys::MemoryContextSwitchTo(old_context);
+        if let (Some(copied_scan_ref), Some(proof)) = (cs_pg_ref(copied_scan), ordering_only) {
+            let copied_exprs = cs_pg_list::<pg_sys::Expr>(copied_scan_ref.custom_exprs);
+            let copied_query_expr = copied_exprs.get_ptr(0);
+            if copied_query_expr.is_some_and(|copied_query_expr| {
+                elide_ordering_only_target(
+                    copied_scan_ref.scan.plan.targetlist,
+                    copied_query_expr,
+                    proof,
+                )
+            }) {
+                custom_scan = copied_scan;
+                query_expr = copied_query_expr.expect("checked by is_some_and");
+                // The parent Limit's lefttree still names the original plan and
+                // target list. This split is safe: its junk filter identifies
+                // resjunk columns positionally and does not evaluate that target
+                // list, while this CustomScanState executes only the copied plan.
+                (*node).ss.ps.plan = copied_scan.cast::<pg_sys::Plan>();
+                pg_sys::ExecAssignScanProjectionInfoWithVarno(
+                    &mut (*node).ss,
+                    i32::try_from((*custom_scan).scan.scanrelid).unwrap_or_else(|_| {
+                        pgrx::error!("EcDistannDistributedScan scanrelid exceeds int")
+                    }),
+                );
+                projection_elided = true;
+            }
+        }
+        if !projection_elided {
+            payload_mask = derive_payload_attribute_mask(
+                (*custom_scan).scan.scanrelid,
+                (*custom_scan).scan.plan.targetlist,
+                (*custom_scan).scan.plan.qual,
+                query_expr,
+                None,
+            );
+        }
+    }
     let query_expr_state = pg_sys::ExecInitExpr(query_expr, &mut (*node).ss.ps);
     if query_expr_state.is_null() {
         pgrx::error!("EcDistannDistributedScan failed to initialize the ORDER BY query expression");
     }
 
     let (payload_attnums, payload_columns, payload_send_functions, payload_inputs) =
-        build_payload_metadata(node, custom_scan);
+        build_payload_metadata(node, &payload_mask);
 
     let state = exec_state_mut(node);
     state.index_oid = index_oid;
     state.top_k = top_k;
     state.query_expr_state = query_expr_state;
+    state.payload_mask = payload_mask;
     state.payload_attnums = payload_attnums;
     state.payload_columns = payload_columns;
     state.payload_send_functions = payload_send_functions;
@@ -810,15 +937,12 @@ unsafe fn eval_query_vector(
     if expr_state.is_null() {
         pgrx::error!("EcDistannDistributedScan missing initialized ORDER BY query expression");
     }
-    let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-        pgrx::error!("EcDistannDistributedScan ORDER BY query expression has no evaluator")
-    });
     let econtext = (*scan_state).ps.ps_ExprContext;
     if econtext.is_null() {
         pgrx::error!("EcDistannDistributedScan missing expression context for the ORDER BY query");
     }
     let mut is_null = false;
-    let datum = eval(expr_state, econtext, &mut is_null);
+    let datum = pg_sys::ExecEvalExprSwitchContext(expr_state, econtext, &mut is_null);
     if is_null {
         pgrx::error!("EcDistannDistributedScan ORDER BY query must not be NULL");
     }
@@ -835,7 +959,7 @@ unsafe fn eval_query_vector(
 /// column's binary receive FmgrInfo (for the coordinator-side reconstruct).
 unsafe fn build_payload_metadata(
     node: *mut pg_sys::CustomScanState,
-    custom_scan: *mut pg_sys::CustomScan,
+    mask: &PayloadAttributeMask,
 ) -> (
     Vec<pg_sys::AttrNumber>,
     Vec<String>,
@@ -850,14 +974,6 @@ unsafe fn build_payload_metadata(
     let tuple_desc = (*relation).rd_att;
     let natts = (*tuple_desc).natts;
 
-    // Ship EVERY non-dropped column, not just target-list Vars. Reviewer
-    // 011/020-P1: narrowing to the target list left qual columns unshipped, so a
-    // WHERE predicate on a non-projected column evaluated against NULL for remote
-    // rows (wrong results / dropped valid rows). Shipping the whole row is the
-    // correct, shape-agnostic reconstruction (a qual-aware narrowing is a later
-    // optimization). The `custom_scan` plan pointer is no longer needed here.
-    let _ = custom_scan;
-
     let mut attnums = Vec::new();
     let mut columns = Vec::new();
     let mut inputs = Vec::new();
@@ -867,6 +983,12 @@ unsafe fn build_payload_metadata(
             continue;
         }
         let attnum = (*attr).attnum;
+        if mask
+            .exact_attnums()
+            .is_some_and(|requested| requested.binary_search(&attnum).is_err())
+        {
+            continue;
+        }
         let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
             .to_string_lossy()
             .into_owned();
@@ -890,8 +1012,95 @@ unsafe fn build_payload_metadata(
         });
     }
 
+    if let Some(requested) = mask.exact_attnums() {
+        if attnums != requested {
+            pgrx::error!(
+                "EC_SCHEMA_MISMATCH: exact payload mask {:?} does not match live attributes {:?}",
+                requested,
+                attnums
+            );
+        }
+    }
+
     let send_functions = resolve_send_functions(relation_oid, &columns);
     (attnums, columns, send_functions, inputs)
+}
+
+unsafe fn payload_mask_for_custom_scan(
+    custom_scan: *mut pg_sys::CustomScan,
+    query_expr: *mut pg_sys::Expr,
+) -> PayloadAttributeMask {
+    if custom_scan.is_null() {
+        pgrx::error!("EcDistannDistributedScan missing plan for payload mask derivation");
+    }
+    if !super::options::payload_projection_enabled() {
+        return PayloadAttributeMask::AllColumns(
+            super::payload_projection::PayloadFallbackReason::BenchmarkControl,
+        );
+    }
+    let scan_relid = (*custom_scan).scan.scanrelid;
+    let ordering_only = ordering_proof_from_plan_private((*custom_scan).custom_private, scan_relid)
+        .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"));
+    derive_payload_attribute_mask(
+        scan_relid,
+        (*custom_scan).scan.plan.targetlist,
+        (*custom_scan).scan.plan.qual,
+        query_expr,
+        ordering_only,
+    )
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn explain_custom_scan(
+    node: *mut pg_sys::CustomScanState,
+    _ancestors: *mut pg_sys::List,
+    es: *mut pg_sys::ExplainState,
+) {
+    if node.is_null() || es.is_null() || !(*es).verbose {
+        return;
+    }
+    let plan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
+    if plan.is_null() {
+        return;
+    }
+    let mask = &exec_state_mut(node).payload_mask;
+    let variant = std::ffi::CString::new(mask.variant_label()).expect("static label has no NUL");
+    pg_sys::ExplainPropertyText(c"Payload Mask".as_ptr(), variant.as_ptr(), es);
+    match mask {
+        PayloadAttributeMask::Exact(attnums) => {
+            let rendered = attnums
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let rendered = std::ffi::CString::new(rendered).expect("attnums contain no NUL");
+            pg_sys::ExplainPropertyText(c"Payload Attnums".as_ptr(), rendered.as_ptr(), es);
+        }
+        PayloadAttributeMask::AllColumns(reason) => {
+            let reason = std::ffi::CString::new(reason.label()).expect("static reason has no NUL");
+            pg_sys::ExplainPropertyText(c"Payload Fallback".as_ptr(), reason.as_ptr(), es);
+        }
+    }
+    if let Some(proof) =
+        ordering_proof_from_plan_private((*plan).custom_private, (*plan).scan.scanrelid)
+            .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"))
+    {
+        pg_sys::ExplainPropertyInteger(
+            c"Ordering Attnum".as_ptr(),
+            ptr::null(),
+            i64::from(proof.relation_attnum),
+            es,
+        );
+        let status = if mask
+            .exact_attnums()
+            .is_some_and(|attnums| attnums.binary_search(&proof.relation_attnum).is_err())
+        {
+            c"elided"
+        } else {
+            c"retained"
+        };
+        pg_sys::ExplainPropertyText(c"Ordering Projection".as_ptr(), status.as_ptr(), es);
+    }
 }
 
 /// Look up each projected column's schema-qualified `typsend` function name (as

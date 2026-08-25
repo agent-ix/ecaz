@@ -416,18 +416,72 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// Compact per-query seed provenance used only by Task 185's benchmark
-/// endpoint. The traversal records the origin mask carried by each expanded
-/// node; callers can join `hit_ids` to a held-out truth set.
+pub(crate) const DISTANN_QUERY_TRACE_LOCATOR_LIMIT: usize = 65_536;
+
+/// One bounded traversal-round snapshot for Task 227 residual attribution.
+/// Distances use the scan's native `-ip` ordering (smaller is better).
+#[derive(Debug, Default)]
+pub(crate) struct DistannQueryRoundTrace {
+    pub(crate) round: usize,
+    pub(crate) requested_ids: Vec<u64>,
+    pub(crate) returned_ids: Vec<u64>,
+    pub(crate) exact_input_ids: Vec<u64>,
+    pub(crate) exact_input_dists: Vec<f32>,
+    pub(crate) retained_ids: Vec<u64>,
+    pub(crate) retained_code_dists: Vec<f32>,
+    pub(crate) code_threshold: Option<f32>,
+    pub(crate) candidate_limit: usize,
+    pub(crate) heap_saturated: bool,
+    pub(crate) frontier_stable: bool,
+    pub(crate) frontier_score_gap: Option<f32>,
+    pub(crate) convergence_gap: Option<f32>,
+    pub(crate) owner_ordinals: Vec<u32>,
+    pub(crate) owner_request_counts: Vec<u32>,
+    pub(crate) request_bytes: usize,
+    pub(crate) response_bytes: usize,
+}
+
+/// Compact per-query provenance used only by benchmark endpoints. Task 185
+/// consumes the seed-origin fields; Task 227 adds bounded round/frontier and
+/// exact-result state so the CLI can join stable ids to held-out truth.
 #[derive(Debug, Default)]
 pub(crate) struct DistannSeedTrace {
     pub(crate) seed_ids: Vec<u64>,
+    pub(crate) seed_code_dists: Vec<f32>,
     pub(crate) seed_expanded_counts: Vec<u32>,
     pub(crate) seed_hit_counts: Vec<u32>,
     pub(crate) hit_ids: Vec<u64>,
     pub(crate) hit_origin_masks: Vec<u32>,
     pub(crate) expanded_unique: u64,
     pub(crate) expanded_overlap: u64,
+    pub(crate) rounds: Vec<DistannQueryRoundTrace>,
+    pub(crate) exact_rerank_ids: Vec<u64>,
+    pub(crate) exact_rerank_dists: Vec<f32>,
+    pub(crate) final_ids: Vec<u64>,
+    pub(crate) final_dists: Vec<f32>,
+    pub(crate) rounds_executed: usize,
+    pub(crate) early_exit: bool,
+    pub(crate) beam_exhausted: bool,
+    pub(crate) truncated: bool,
+    captured_locators: usize,
+}
+
+impl DistannSeedTrace {
+    fn remaining_locator_capacity(&self) -> usize {
+        DISTANN_QUERY_TRACE_LOCATOR_LIMIT.saturating_sub(self.captured_locators)
+    }
+
+    fn reserve_locators(&mut self, requested: usize) -> usize {
+        let captured = requested.min(self.remaining_locator_capacity());
+        self.captured_locators = self.captured_locators.saturating_add(captured);
+        self.truncated |= captured < requested;
+        captured
+    }
+
+    pub(crate) fn truncate_final_results(&mut self, result_limit: usize) {
+        self.final_ids.truncate(result_limit);
+        self.final_dists.truncate(result_limit);
+    }
 }
 
 thread_local! {
@@ -450,16 +504,174 @@ pub(crate) fn with_seed_trace<T>(operation: impl FnOnce() -> T) -> (T, DistannSe
     (result, trace)
 }
 
-pub(crate) fn seed_trace_start(seed_ids: &[u64]) {
+pub(crate) fn seed_trace_start(seeds: &[(u64, f32)]) {
     ACTIVE_SEED_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let Some(trace) = trace.as_mut() else {
             return;
         };
-        trace.seed_ids.clear();
-        trace.seed_ids.extend_from_slice(seed_ids);
-        trace.seed_expanded_counts = vec![0; seed_ids.len()];
-        trace.seed_hit_counts = vec![0; seed_ids.len()];
+        // A scan may abandon a replica traversal and restart through owners.
+        // Keep only the last attempt so a failed partial path cannot leak into
+        // the successful query trace.
+        *trace = DistannSeedTrace::default();
+        let captured = trace.reserve_locators(seeds.len());
+        trace
+            .seed_ids
+            .extend(seeds.iter().take(captured).map(|(vec_id, _)| *vec_id));
+        trace
+            .seed_code_dists
+            .extend(seeds.iter().take(captured).map(|(_, dist)| *dist));
+        trace.seed_expanded_counts = vec![0; captured];
+        trace.seed_hit_counts = vec![0; captured];
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn seed_trace_round_start(
+    round: usize,
+    requested_ids: &[u64],
+    code_threshold: Option<f32>,
+    candidate_limit: usize,
+) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        let captured = trace.reserve_locators(requested_ids.len());
+        trace.rounds.push(DistannQueryRoundTrace {
+            round,
+            requested_ids: requested_ids.iter().copied().take(captured).collect(),
+            code_threshold,
+            candidate_limit,
+            ..DistannQueryRoundTrace::default()
+        });
+    });
+}
+
+pub(crate) fn seed_trace_owner_fanout(owner_requests: &[(usize, usize)]) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(round) = trace.as_mut().and_then(|trace| trace.rounds.last_mut()) else {
+            return;
+        };
+        round.owner_ordinals.extend(
+            owner_requests
+                .iter()
+                .map(|(ordinal, _)| u32::try_from(*ordinal).unwrap_or(u32::MAX)),
+        );
+        round.owner_request_counts.extend(
+            owner_requests
+                .iter()
+                .map(|(_, count)| u32::try_from(*count).unwrap_or(u32::MAX)),
+        );
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn seed_trace_round_finish(
+    returned_ids: &[u64],
+    exact_inputs: &[(u64, f32)],
+    retained: &[(u64, f32)],
+    candidate_limit: usize,
+    kth_exact_dist: Option<f32>,
+    request_bytes: usize,
+    response_bytes: usize,
+) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        let previous_retained_ids = trace
+            .rounds
+            .iter()
+            .rev()
+            .nth(1)
+            .map(|round| round.retained_ids.clone());
+        let returned_count = trace.reserve_locators(returned_ids.len());
+        let exact_count = trace.reserve_locators(exact_inputs.len());
+        let retained_count = trace.reserve_locators(retained.len());
+        let Some(round) = trace.rounds.last_mut() else {
+            return;
+        };
+        round
+            .returned_ids
+            .extend(returned_ids.iter().copied().take(returned_count));
+        round.exact_input_ids.extend(
+            exact_inputs
+                .iter()
+                .take(exact_count)
+                .map(|(vec_id, _)| *vec_id),
+        );
+        round
+            .exact_input_dists
+            .extend(exact_inputs.iter().take(exact_count).map(|(_, dist)| *dist));
+        round.retained_ids.extend(
+            retained
+                .iter()
+                .take(retained_count)
+                .map(|(vec_id, _)| *vec_id),
+        );
+        round
+            .retained_code_dists
+            .extend(retained.iter().take(retained_count).map(|(_, dist)| *dist));
+        round.heap_saturated = retained.len() >= candidate_limit;
+        round.frontier_stable = previous_retained_ids
+            .as_deref()
+            .is_some_and(|previous| previous == round.retained_ids);
+        round.frontier_score_gap = retained
+            .first()
+            .zip(retained.last())
+            .map(|((_, best), (_, worst))| *worst - *best);
+        round.convergence_gap = retained
+            .first()
+            .zip(kth_exact_dist)
+            .map(|((_, best), kth)| *best - kth);
+        round.request_bytes = request_bytes;
+        round.response_bytes = response_bytes;
+    });
+}
+
+pub(crate) fn seed_trace_terminal(
+    exact_rerank: &[(u64, f32)],
+    top_k: usize,
+    rounds_executed: usize,
+    early_exit: bool,
+    beam_exhausted: bool,
+) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        let rerank_count = trace.reserve_locators(exact_rerank.len());
+        let final_requested = exact_rerank.len().min(top_k);
+        let final_count = trace.reserve_locators(final_requested);
+        trace.exact_rerank_ids.extend(
+            exact_rerank
+                .iter()
+                .take(rerank_count)
+                .map(|(vec_id, _)| *vec_id),
+        );
+        trace.exact_rerank_dists.extend(
+            exact_rerank
+                .iter()
+                .take(rerank_count)
+                .map(|(_, dist)| *dist),
+        );
+        trace.final_ids.extend(
+            exact_rerank
+                .iter()
+                .take(final_count)
+                .map(|(vec_id, _)| *vec_id),
+        );
+        trace
+            .final_dists
+            .extend(exact_rerank.iter().take(final_count).map(|(_, dist)| *dist));
+        trace.rounds_executed = rounds_executed;
+        trace.early_exit = early_exit;
+        trace.beam_exhausted = beam_exhausted;
     });
 }
 
@@ -474,7 +686,11 @@ pub(crate) fn seed_trace_expanded(origin_mask: u32) {
             .expanded_overlap
             .saturating_add(u64::from(origin_mask.count_ones().saturating_sub(1)));
         for (index, count) in trace.seed_expanded_counts.iter_mut().enumerate() {
-            if origin_mask & (1_u32 << index) != 0 {
+            if u32::try_from(index)
+                .ok()
+                .and_then(|index| 1_u32.checked_shl(index))
+                .is_some_and(|bit| origin_mask & bit != 0)
+            {
                 *count = count.saturating_add(1);
             }
         }
@@ -487,10 +703,16 @@ pub(crate) fn seed_trace_hit(vec_id: u64, origin_mask: u32) {
         let Some(trace) = trace.as_mut() else {
             return;
         };
-        trace.hit_ids.push(vec_id);
-        trace.hit_origin_masks.push(origin_mask);
+        if trace.reserve_locators(1) == 1 {
+            trace.hit_ids.push(vec_id);
+            trace.hit_origin_masks.push(origin_mask);
+        }
         for (index, count) in trace.seed_hit_counts.iter_mut().enumerate() {
-            if origin_mask & (1_u32 << index) != 0 {
+            if u32::try_from(index)
+                .ok()
+                .and_then(|index| 1_u32.checked_shl(index))
+                .is_some_and(|bit| origin_mask & bit != 0)
+            {
                 *count = count.saturating_add(1);
             }
         }
@@ -784,5 +1006,48 @@ mod tests {
             .find(|row| row.metric == DistannMaterializationWork::TraversalHopRounds)
             .expect("hop rounds row");
         assert_eq!(rounds.value, 2);
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn query_trace_is_bounded_and_resets_between_operations() {
+        let oversized = (0..=DISTANN_QUERY_TRACE_LOCATOR_LIMIT)
+            .map(|vec_id| (vec_id as u64, vec_id as f32))
+            .collect::<Vec<_>>();
+        let (_, first) = with_seed_trace(|| {
+            seed_trace_start(&oversized);
+            seed_trace_expanded(1);
+            seed_trace_hit(0, 1);
+        });
+        assert_eq!(first.seed_ids.len(), DISTANN_QUERY_TRACE_LOCATOR_LIMIT);
+        assert_eq!(
+            first.seed_code_dists.len(),
+            DISTANN_QUERY_TRACE_LOCATOR_LIMIT
+        );
+        assert!(first.truncated);
+        assert_eq!(first.seed_expanded_counts[0], 1);
+        assert_eq!(first.seed_hit_counts[0], 1);
+
+        let (_, second) = with_seed_trace(|| {
+            seed_trace_start(&[(6, -0.6)]);
+            seed_trace_round_start(0, &[6], None, 4);
+            seed_trace_start(&[(7, -0.7)]);
+        });
+        assert_eq!(second.seed_ids, vec![7]);
+        assert_eq!(second.seed_code_dists, vec![-0.7]);
+        assert!(!second.truncated);
+        assert!(second.rounds.is_empty());
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn query_trace_preserves_rerank_input_when_final_results_are_truncated() {
+        let (_, mut trace) = with_seed_trace(|| {
+            seed_trace_terminal(&[(1, -0.9), (2, -0.8), (3, -0.7)], 3, 1, false, true);
+        });
+        trace.truncate_final_results(2);
+        assert_eq!(trace.exact_rerank_ids, vec![1, 2, 3]);
+        assert_eq!(trace.final_ids, vec![1, 2]);
+        assert_eq!(trace.final_dists, vec![-0.9, -0.8]);
     }
 }

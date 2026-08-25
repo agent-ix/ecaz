@@ -1,0 +1,16 @@
+Script started on 2026-08-24 20:10:46-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-main-integration)
+   Compiling rustls v0.23.43
+   Compiling rustls-webpki v0.103.15
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 52s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-75f48d065754bf4b)
+
+running 1 test
+test am::ec_distann::stage_counters::tests::query_trace_preserves_rerank_input_when_final_results_are_truncated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2582 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 20:13:38-07:00 [COMMAND_EXIT_CODE="0"]

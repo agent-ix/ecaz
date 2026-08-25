@@ -1,6 +1,8 @@
-use std::ffi::CString;
-use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::{
+    ffi::CString,
+    mem::{offset_of, size_of},
+    ptr,
+};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
@@ -104,6 +106,8 @@ static ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC: GucSetting<bool> = GucSetting::<bo
 static ECDISTANN_BENCHMARK_PACKED_PAYLOAD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
@@ -526,6 +530,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_payload_projection",
+        c"Task 222 benchmark-only payload projection arm.",
+        c"On uses the production exact/fail-closed attribute mask. Off forces the historical all-column payload control. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.gateway_copy_capacity",
         c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
@@ -866,6 +879,15 @@ pub(super) fn benchmark_expanded_locator() -> bool {
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false
+}
+
+pub(super) fn payload_projection_enabled() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    true
 }
 
 pub(super) fn benchmark_traversal_replica_fail_batch() -> Option<usize> {
