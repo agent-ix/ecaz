@@ -1505,7 +1505,9 @@
             .expect("user query should succeed")
             .expect("user should exist");
 
-        format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
+        format!(
+            "host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1 sslmode=disable"
+        )
     }
 
     struct TestCoordinatorInsertPrepareResult {
