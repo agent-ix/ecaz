@@ -402,7 +402,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
 | TRAV-30 | Routing-only gateway copies without full graph replication | **complete — review-closed ACCEPT in Task 210 packet 006** (2026-08-08). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is accepted, and no latency win is required for this conformance work. |
-| TRAV-31 | Current-production BW8/H100 transfer screen | **measured useful non-default in Task 226; final review open** — passed 10k/50k/100k registered gates, while Task 219 retains the shipped BW4 default because recall changes and tails regress |
+| TRAV-31 | Current-production BW8/H100 transfer screen | **review-closed ACCEPT as useful non-default in Task 226** — passed 10k/50k/100k registered gates, while Task 219 retains the shipped BW4 default because recall changes and tails regress |
 
 ## Candidate ledger: graph construction and adaptive search
 
