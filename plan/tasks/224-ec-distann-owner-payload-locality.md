@@ -1,7 +1,9 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **proposed, conditional on Task 223 attribution** (2026-08-21).
-Priority: P2 latency.
+Status: **ready for its own entry-gate disposition; Task 223 review-closed
+STOP** (updated 2026-08-25). Priority: P2 latency. Task 223's accepted
+whole-bucket ceiling releases this task and supplies a conservative upper
+bound for the heap/TOAST subset; Task 224 must record its own gate outcome.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.
@@ -63,5 +65,4 @@ block-batched detoast/binary-send work.
 
 - Tasks 222 and 223
 - Roadmap MAT-25 / MAT-26
-
 

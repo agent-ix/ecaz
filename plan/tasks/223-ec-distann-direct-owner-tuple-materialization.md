@@ -1,14 +1,15 @@
 # Task 223: ec_distann Direct Owner Tuple Materialization
 
-Status: **100k ceiling gate evaluated; packet 002 review-open; coder recommends
-STOP before substage instrumentation or a direct-tuple candidate** (updated
-2026-08-25). Priority: P1 latency. Task 222's accepted production result
+Status: **complete — outside-reviewed ACCEPT; STOP before substage
+instrumentation or a direct-tuple candidate** (updated 2026-08-25). Priority:
+P1 latency. Task 222's accepted production result
 measures the entire addressable owner payload-SQL bucket at 0.514999 ms against
 an 11.60 ms warm mean. Even an impossible zero-cost replacement is only a
 4.439647% end-to-end ceiling, below both the 1 ms and 5% implementation gates.
-Evidence: `reviews/task-223/002-owner-substage-attribution/`. Outside review
-must accept or reject the dominance argument before this task closes; Task 224
-remains blocked on that verdict.
+The reviewer accepted the dominance proof and retired the P1 counter
+requirement as decision-obviated. Final verdict:
+`reviews/task-223/002-owner-substage-attribution/feedback/2026-08-25-01-reviewer.md`.
+Task 224 is released to its own entry gate.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 MAT-41. This is a new physical tuple-access candidate, not a reopening of Task
@@ -96,8 +97,10 @@ Run one same-generation 100k A/B. Advance only a useful result to the standard
 
 1. `reviews/task-223/001-plan/`
 2. `reviews/task-223/002-owner-substage-attribution/`
-3. `reviews/task-223/003-direct-tuple-screen/`
-4. `reviews/task-223/004-full-scale-decision/` (only after a useful screen)
+3. `reviews/task-223/003-direct-tuple-screen/` — decision-obviated by the
+   review-accepted packet 002 whole-bucket ceiling; do not create.
+4. `reviews/task-223/004-full-scale-decision/` — decision-obviated because no
+   candidate is authorized; do not create.
 
 ## References
 
