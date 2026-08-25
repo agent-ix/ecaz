@@ -10610,6 +10610,7 @@ async fn task235_restart_owner_with_prepared(
     socket_dir: &Path,
     nodes: &[Node],
     candidate: &Task235WriteCandidate,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<()> {
     let owner_node = nodes
         .get(candidate.owner_ordinal)
@@ -10626,7 +10627,14 @@ async fn task235_restart_owner_with_prepared(
     run_status(stop)
         .await
         .wrap_err("crashing Task 235 prepared owner")?;
-    restart_physical_node(pg_ctl, socket_dir, owner_node, nodes).await?;
+    restart_physical_node_with_transport(
+        pg_ctl,
+        socket_dir,
+        owner_node,
+        nodes,
+        secure_transport_fixture,
+    )
+    .await?;
     let prepared_after_restart = task235_prepared_xact_count(socket_dir, nodes).await?;
     if prepared_after_restart == 0 {
         bail!("Task 235 owner restart lost the prepared transaction recovery fence");
@@ -12121,7 +12129,14 @@ async fn run_task235_write_fault_matrix(
             let error =
                 task235_terminate_coordinator_after_prepare(args, socket_dir, nodes, &candidate)
                     .await?;
-            task235_restart_owner_with_prepared(pg_ctl, socket_dir, nodes, &candidate).await?;
+            task235_restart_owner_with_prepared(
+                pg_ctl,
+                socket_dir,
+                nodes,
+                &candidate,
+                secure_transport_fixture,
+            )
+            .await?;
             Some(error)
         } else if cell == "owner_backend_death_during_mutation" {
             Some(
