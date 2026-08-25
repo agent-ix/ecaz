@@ -4,23 +4,58 @@ packet: 001-plan
 agent: Codex
 role: coder
 model: gpt-5
-date: 2026-08-21
+date: 2026-08-25
 seq: 01
 ---
 
-# Task 224 owner payload locality plan
+# Task 224 owner payload locality measurement plan
 
-This packet requests review of the Task 224 plan at planning checkpoint
-`daf2b1fb1`. The task is conditional on the post-222/223 profile and begins
-with heap-block dispersion, cache, TOAST, detoast and binary-send attribution.
-It advances at most one of TID/block reorder or block-batched detoast only when
-the addressable physical-locality ceiling is at least 1 ms/scan or 5% of warm
-100k mean.
+This packet requests review of the Task 224 attribution and candidate-selection
+plan. Task 223 is review-closed ACCEPT/STOP, so the dependency is satisfied and
+the Task 222 projected production path is the control.
 
-Please review the attribution requirements, exact rank-restoration contract and
-the prohibition on combining locality work with a row-tier format change.
+Task 223's accepted 0.514999 ms payload-SQL ceiling settles the production
+id-only projection but does not automatically settle Task 224. This task also
+registers narrow scalar, vector-bearing, and externally toasted projection
+shapes. The toasted arm may have a materially different heap/detoast ceiling,
+so it must be measured rather than inferred from the id-only result.
 
-This is a planning-only packet. No implementation or benchmark result is under
-review.
+P1 adds feature-only owner attribution under
+`distann-head-attribution-benchmark`; normal release behavior and SQL shape
+remain unchanged. On one fresh 100k physical generation, each of the four
+projection shapes records:
 
+- requested TIDs, distinct heap blocks, rows per block, and the displacement
+  required to sort by `(block, offset)` and restore request rank;
+- heap and TOAST buffer hits/reads around the payload fetch where PostgreSQL's
+  backend buffer-usage counters can be sampled without changing execution;
+- projected non-NULL values, external-toast values, stored/logical bytes, and
+  binary-send bytes; and
+- separately attributable heap/TOAST access, detoast/send, and retained
+  response-construction time, reconciled to the existing payload-SQL parent.
 
+The measurement runs through `ecaz bench suite`, with a checked-in SuiteConfig,
+packet-local manifest/results, clean release+feature preflight, and one
+generation shared across projection arms. It includes warm and controlled
+residency observations; cache state is reported, not assumed from TID
+distribution.
+
+No candidate is authorized unless an independently addressable heap or
+detoast/send bucket reaches at least 1 ms/scan or 5% of that arm's matched warm
+end-to-end mean at 100k. If both pass, advance only the larger percentage
+ceiling: MAT-25 for heap-block/TID reorder or MAT-26 for block-batched
+detoast/binary send. If neither passes, packet 002 records STOP and packets
+003/004 are decision-obviated.
+
+Any candidate must preserve exact request/result rank after physical reorder,
+pass the complete materialization semantic/failure matrix, and win an isolated
+same-generation 100k A/B before receiving the required 10k/50k/100k recall,
+latency, storage, build, and DML closeout matrix.
+
+Please focus review on whether the four shapes cover Task 224's locality scope,
+whether buffer/TOAST counters are safely attributable, whether the two
+candidate ceilings are independently addressable, and whether the single-
+candidate tie-break prevents an unregistered combined optimization.
+
+This is planning-only. No code was changed and no tests or benchmarks were
+run.
