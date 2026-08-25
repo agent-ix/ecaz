@@ -1,7 +1,12 @@
 # Task 235: ec_distann Write and Lifecycle RPC Cancellation Hardening
 
-Status: **proposed — Task 167 is review-closed; ready before Task 228**
-(updated 2026-08-25).
+Status: **bounded transport implemented; packet 002 review-open; PG18 2PC and
+lifecycle fault/recovery matrices pending** (updated 2026-08-25). Checkpoint
+`ed32ae6df` bounds async DML/intent/transaction-control and lifecycle phases,
+evicts every failed write session, uses epoch-qualified coordinator XIDs, and
+makes coordinator-local `pg_xact_status` authoritative for prepared recovery;
+`reviews/task-235/002-bounded-write-transport/` contains the phase inventory
+and 17/17 focused unit result. Packets 003/004 and outside review remain open.
 Priority: P0 distributed-write correctness/recovery.
 
 ## Why
@@ -109,10 +114,24 @@ deterministic recovery action for every uncertain phase.
 3. `reviews/task-235/003-2pc-lifecycle-fault-matrix/`
 4. `reviews/task-235/004-operator-recovery-closeout/`
 
+## Current checkpoint (2026-08-25)
+
+Packet 002 is review-open on the Task 234 current-TLS substrate. All async
+write/lifecycle statements now share the bounded deadline, PostgreSQL
+interrupt, CancelRequest, outcome taxonomy, and mandatory-eviction contract.
+Blocking commit/abort callbacks and the explicit reaper also carry connect,
+statement, and TCP user timeouts. Recovery no longer treats an ambiguously
+acknowledged `commit_intended` row as the commit decision: the coordinator's
+epoch-qualified full xid and `pg_xact_status` determine commit versus rollback,
+and unavailable status stops for operator action.
+
+This is not a completion disposition. The phase-by-phase PG18 multicluster
+fault matrix, duplicate/partial recovery, restart, prepared-slot saturation,
+and NFR-014 operator closeout remain required in packets 003/004.
+
 ## References
 
 - FR-078, FR-082, FR-083, FR-087
 - NFR-014 and NFR-020
 - Tasks 167, 179, 214, 228, 234, and 236
 - `src/am/ec_distann/remote_transport.rs`
-
