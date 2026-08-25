@@ -1,11 +1,13 @@
 # Task 222: ec_distann Qual-Aware Payload Projection
 
-Status: **implementation and required 10k/50k/100k evidence complete; packets
-002-004 review-open** (2026-08-23). Priority: P0 latency. Candidate retained:
+Status: **implementation and required 10k/50k/100k evidence complete; packet
+004 reviewer seq-03 findings addressed; packets 002-004 re-review-open**
+(2026-08-24). Priority: P0 latency. Candidate retained:
 the exact id-only mask preserves recall, ordered-result identity, and storage
 while improving warm mean latency by 33.33%-40.41%. Plan revisions applied
 against `reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`;
 closeout request: `reviews/task-222/004-full-scale-decision/request.md`.
+Reviewer cleanup commit: `06b59c4c6`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-28 and MAT-29. Origin: Task 218's production lazy-10 attribution and the
@@ -182,6 +184,13 @@ owners with no non-owned/orphan/coordinator-resident payload, and admissible
 NFR-021/NFR-022 provenance. No implementation or measurement work remains;
 the task awaits an outside verdict on review-open packets 002-004 and is not
 self-marked review-closed.
+
+Productionization disposition: Task 222 ships the proved exact payload mask as
+the production default. That decision rests on byte-identical ordered results
+and identical recall at 10k, 50k, and 100k, rather than a recall-for-latency
+trade, so Task 219's recall-equivalence product-ruling clause is not engaged.
+If a query shape escapes the ordering-only proof, execution fails closed to
+all-column shipping, preserving the pre-Task-222 behavior.
 
 ## Required review packets
 

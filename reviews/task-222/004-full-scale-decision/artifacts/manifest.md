@@ -2,6 +2,7 @@
 
 - Extension/source behavior SHA: `c9f79be4a756031b3f8301960fc0f57b77ae60d1`
 - CLI reuse-attestation correction: `f1351d2db`
+- Reviewer cleanup SHA: `06b59c4c6bf818236b852b2ac6597fbbe92593a2`
 - Task bucket / packet: `reviews/task-222/004-full-scale-decision/`
 - Original matrix timestamp: `2026-08-23T23:03:55-07:00`; explicit 10k/50k
   normalized-evidence reruns completed later on `2026-08-23`
@@ -69,6 +70,11 @@ contain 1,463, 1,985, and 1,803 rows.
 - `run/{10k,50k,100k}/physical-head-membership.json`: deterministic head
   membership evidence.
 - `completion-audit.md`: acceptance-criterion and reviewer-finding closure map.
+- `cargo-check-copyobject.log`: PG18 library check at reviewer cleanup SHA;
+  finished successfully.
+- `pg18-copyobject-contract.log`: focused three-owner payload-projection
+  contract at reviewer cleanup SHA; 1 passed, 0 failed, 2,578 filtered out in
+  78.10 seconds.
 
 No corpus TSV, truth cache, PGDATA, PostgreSQL operational log, polling
 snapshot, or failed reuse exhaust is committed.

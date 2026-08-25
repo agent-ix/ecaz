@@ -41,3 +41,30 @@ missing, or stale artifacts. No N-1 fixture was used as benchmark evidence.
 and `artifacts/manifest.md` routes every cited value to packet-local evidence.
 Task 222 implementation and evidence are complete; packets 002-004 remain
 review-open for an outside verdict.
+
+Productionization disposition: the proved exact payload mask ships as the
+production default. The 10k/50k/100k decision is based on byte-identical
+ordered results and identical recall, not a recall-for-latency trade, so Task
+219's recall-equivalence product-ruling clause is not engaged. Any query shape
+that escapes the ordering-only proof fails closed to historical all-column
+shipping.
+
+## Response to reviewer seq-03
+
+Commit `06b59c4c6` closes the remaining code-cleanup item: `BeginCustomScan`
+uses PostgreSQL `copyObject` for a legal deep executor-local `CustomScan` copy,
+derives the typed payload mask only once before the rewrite, initializes the
+query expression from the copied tree, and documents why the parent Limit's
+original lefttree/target-list pointer is safe (its junk filter reads resjunk
+positions and does not evaluate that list).
+
+Validation at `06b59c4c6`:
+
+- `cargo check --lib --no-default-features --features pg18`: passed;
+- `cargo pgrx test pg18 test_distann_payload_projection_contract
+  --no-default-features --features pg18`: passed, 1 test, 0 failed, 2,578
+  filtered out in 78.10 seconds.
+
+Together with the productionization disposition above, this addresses the two
+items left open by
+`feedback/2026-08-24-03-reviewer.md`. Please re-review for closeout.
