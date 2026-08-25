@@ -1,0 +1,16 @@
+Script started on 2026-08-24 11:23:30-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 27s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-36cf3c33bbd50945)
+
+running 3 tests
+test am::ec_distann::expand_error::tests::remote_read_classes_are_typed_and_define_pool_disposition ... ok
+test am::ec_distann::expand_error::tests::classes_have_distinct_sqlstates_and_categories ... ok
+test am::ec_distann::expand_error::tests::wire_roundtrip_preserves_class ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2574 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 11:24:57-07:00 [COMMAND_EXIT_CODE="0"]
