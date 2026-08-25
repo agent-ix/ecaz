@@ -1,0 +1,13 @@
+tls_security secret_exposure pass=true descriptor_leaks=0 generation_leaks=0 explain_status_leaks=0
+tls_security cell=valid_verify_full pass=true status=connected ssl=true tls_version=TLSv1.3 category=none
+tls_security cell=wrong_ca pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=wrong_hostname pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=missing_client_certificate pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=incorrect_client_certificate pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=expired_client_certificate pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=not_yet_valid_client_certificate pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=plaintext_disabled_remote pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=unsupported_sslmode pass=true status=connect_failed ssl=false tls_version=none category=tls_option_unsupported
+tls_security cell=connection_reset_during_handshake pass=true status=connect_failed ssl=false tls_version=none category=secure_connect_failed
+tls_security cell=connection_reset_recovery pass=true status=connected ssl=true tls_version=TLSv1.3 category=none
+tls_security cell=rotated_secret pass=true pool_before=2 pool_after=2 pool_reused=2 handshake_ms=466 pooled_ms=3 rows=8

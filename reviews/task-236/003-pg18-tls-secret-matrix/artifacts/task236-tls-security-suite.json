@@ -1,0 +1,36 @@
+{
+  "name": "task236-pg18-tls-secret-matrix",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/run-final-pass",
+  "defaults": {
+    "pg": 18
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "pg18-tls-secret-matrix",
+      "tags": [
+        "task236",
+        "pg18",
+        "tls",
+        "mtls",
+        "secret-rotation"
+      ],
+      "pgbin": "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+      "run_dir": "/home/peter/.ecaz/clusters/task236-tls-secret-matrix",
+      "artifact_dir": "${artifact_dir}/fixture",
+      "log_file": "${artifact_dir}/fixture.log",
+      "nodes": 3,
+      "base_port": 43920,
+      "rows": 2000,
+      "dim": 32,
+      "graph_degree": 32,
+      "queries": 20,
+      "top_k": 10,
+      "allow_debug_extension": true,
+      "secure_remote_transport": true,
+      "tls_security_matrix": true
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+Script started on 2026-08-24 13:47:42-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on artifact directory
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task236-secure-transport)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 43.16s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-0321d34b49d4d990)
+
+running 8 tests
+test am::common::remote_postgres_tls::tests::parser_rejects_ambiguous_or_unsupported_security_options ... ok
+test am::common::remote_postgres_tls::tests::plaintext_side_transaction_gate_requires_explicit_loopback ... ok
+test am::common::remote_postgres_tls::tests::distann_default_requires_tls_and_preserves_channel_binding ... ok
+test am::common::remote_postgres_tls::tests::distann_rejects_downgrade_modes_and_remote_plaintext ... ok
+test am::common::remote_postgres_tls::tests::debug_and_parse_errors_do_not_expose_conninfo ... ok
+test am::common::remote_postgres_tls::tests::spire_compatibility_keeps_existing_default ... ok
+test am::common::remote_postgres_tls::tests::security_fingerprint_changes_on_rotation_without_debug_exposure ... ok
+test am::common::remote_postgres_tls::tests::distann_allows_only_explicit_loopback_plaintext ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2585 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 13:48:25-07:00 [COMMAND_EXIT_CODE="0"]

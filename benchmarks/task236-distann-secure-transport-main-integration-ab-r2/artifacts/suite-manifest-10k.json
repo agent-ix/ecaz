@@ -1,0 +1,227 @@
+{
+  "suite": "task236-distann-secure-transport-ab",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-ab/transport-ab-suite.json",
+  "config_sha256": "142257437332be069d878527ba485cddfd631305bc7a7354394ec3dd42fe9deb",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787630350787,
+  "runner_git_commit": "48ea5d506c781ec92cfa91b0b756540f3b8cd8cd",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "plaintext-control-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--pgbin",
+        "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task236-plaintext-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "44010",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task236",
+        "control",
+        "plaintext-loopback",
+        "ec_real_10k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-10k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-10k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787630350810,
+      "finished_at_unix_ms": 1787630448253,
+      "duration_ms": 97750,
+      "exit_code": 0
+    },
+    {
+      "name": "tls-candidate-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--pgbin",
+        "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task236-tls-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--secure-remote-transport",
+        "--physical-benchmark",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "44020",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task236",
+        "candidate",
+        "verify-full-mtls",
+        "ec_real_10k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-10k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-10k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787630448254,
+      "finished_at_unix_ms": 1787630541070,
+      "duration_ms": 93045,
+      "exit_code": 0
+    },
+    {
+      "name": "plaintext-control-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task236",
+        "control",
+        "plaintext-loopback",
+        "ec_real_50k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-50k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-50k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "tls-candidate-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task236",
+        "candidate",
+        "verify-full-mtls",
+        "ec_real_50k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-50k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-50k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "plaintext-control-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task236",
+        "control",
+        "plaintext-loopback",
+        "ec_real_100k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-100k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/plaintext-control-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "tls-candidate-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task236",
+        "candidate",
+        "verify-full-mtls",
+        "ec_real_100k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-100k/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task236-main-integration-v2/benchmarks/task236-distann-secure-transport-main-integration-ab-r2/artifacts/run-10k/tls-candidate-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
