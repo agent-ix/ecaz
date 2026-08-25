@@ -1,0 +1,12 @@
+Script started on 2026-08-24 04:14:20-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 10s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-36cf3c33bbd50945)
+
+running 1 test
+test am::ec_distann::scan::tests::distann_orchestration_expands_no_vec_id_twice_and_respects_cap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2573 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 04:15:31-07:00 [COMMAND_EXIT_CODE="0"]

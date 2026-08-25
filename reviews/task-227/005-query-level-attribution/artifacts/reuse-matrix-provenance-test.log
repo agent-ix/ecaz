@@ -1,0 +1,13 @@
+Script started on 2026-08-24 07:47:02-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-5b787553485bfb1e)
+
+running 1 test
+test commands::dev::distann_multicluster::tests::reuse_provenance_uses_the_first_registered_matrix_variant ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 514 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-24 07:48:03-07:00 [COMMAND_EXIT_CODE="0"]

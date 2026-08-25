@@ -419,15 +419,15 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-07 | Higher build search list size | conditional build-quality A/B |
 | GRAPH-08 | Vamana alpha tuning | conditional build-quality A/B |
 | GRAPH-09 | Closure/stitch parameter tuning | conditional if shard stitching is implicated |
-| GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
+| GRAPH-10 | Connectivity and reachability audit | Task 227 complete; no physical-versus-monolithic structural deficit |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
 | GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
 | GRAPH-16 | Training-query-aware gateway augmentation | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
-| GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
-| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
+| GRAPH-17 | Query-difficulty adaptive search budget | Task 227 STOP; no reliable truth-free trigger among seven preregistered rules |
+| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | Task 227 complete; all 141 misses classify as traversal `budget_frontier` |
 
 ## Candidate ledger: codec and distance estimation
 
