@@ -1,13 +1,16 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **packet 004 NOT DONE latency gap resolved; packet 005 review-open;
-outside ACCEPT/REJECT verdict pending** (2026-08-26). The secure PG18 matrix
-passes 25/25 cells with no partial rows or leaked remote work, and the accepted
-10k/50k/100k recall/storage findings are unchanged. Reviewer-requested 50k
-same-fixture repeats measure control 8.83 -> 8.47 ms (-4.08%) and candidate
-9.43 -> 8.74 ms (-7.32%); the repeat-only candidate delta is +3.19%, inside
-the directly observed drift band that covers the historical +7.1% signal.
-Coder recommendation: ACCEPT; outside verdict remains required. Evidence:
+Status: **implementation/evidence complete; packet 005 outside-reviewed NOT
+DONE pending an explicit product ruling on the measured latency cost**
+(2026-08-26). The secure PG18 matrix passes 25/25 cells with no partial rows or
+leaked remote work, and the accepted 10k/50k/100k recall/storage findings are
+unchanged. Reviewer-requested matched-fixture measurements retire packet 004's
+-6.37% apparent win: the candidate is slower at both positions (+6.80% fresh,
++3.19% reuse mean), with reuse p50/p95/p99 +2.03%/+0.96%/+1.89%. The fixture
+cannot resolve the exact magnitude, but all eight indicators record a small
+cost in the mechanism-consistent direction. Coder recommendation: ACCEPT the
+cost for the P0 correctness property; product ACCEPT/REJECT remains required.
+Evidence:
 `reviews/task-234/004-current-tls-reintegration/feedback/2026-08-25-01-reviewer.md`,
 `reviews/task-234/005-50k-reuse-drift-bound/`, and
 `benchmarks/task234-current-tls-read-rpc-cancellation-ab/`. Task 237 and Task
