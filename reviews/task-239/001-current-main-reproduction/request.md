@@ -18,9 +18,11 @@ Task 191 and Task 198 evidence on the same staged 10k corpus/query recorded 6
 remote + 4 local = 10. This packet preregisters the smallest exact-current-main
 reproduction before any bound, runtime, or fixture-methodology change.
 
-No live suite, extension installation, or cluster creation is authorized by
-this request. The two live lanes remain prohibited until an outside reviewer
-explicitly authorizes both the ordered run and the decision rules below.
+At initial request, no live suite, extension installation, or cluster creation
+was authorized. Reviewer seq01 returned NOT DONE. Reviewer seq02 verified every
+correction and explicitly authorized both lanes in order
+(`feedback/2026-08-26-02-reviewer.md`). Each lane has now run exactly once with
+no resume, selected-step execution, or replacement run.
 
 ## Frozen revisions and inputs
 
@@ -180,6 +182,41 @@ The one-iteration latency and storage fields are context only and have no
 decision weight. Packet 001 changes no runtime behavior, so the 10k/50k/100k
 A/B closeout matrix is not triggered. If packet 002 changes scan, rerank,
 posting, payload, or storage behavior, Task 239 packet 004 becomes mandatory.
+
+## Live result and requested disposition
+
+Lane 1 passed every production gate at exact release SHA `41392c011...` with
+features `pg18`: seven byte-identical semantic rows,
+`attribution_available=false`, the required feature-isolation row, 0.9990
+recall for both same-production-configuration labels, byte-identical
+predictions, and a passing routed DELETE+VACUUM drill. The suite exited 0 and
+emitted its structured `results.jsonl`.
+
+Lane 2 attested the same exact SHA with release features
+`distann-head-attribution-benchmark,pg18`, completed both recall children at
+0.9990, then failed at the fixed rule-1 gate:
+
+```text
+rows=10/10 identity=true remote_requested=8 local_consumed=4
+payload_reads=12/10 duplicate_requested=0
+```
+
+The requested packet-001 disposition is therefore **REPRODUCED — EAGER-PATH
+COUNTER SHAPE ON EXACT CURRENT MAIN**, explicitly not a production lazy-10
+regression. No rerun was attempted.
+
+The independently spawned attribution latency children provide a direct
+production-path cross-check on the same fixture. The explicit eager child
+requested 27 remote rows and consumed 4 local rows; the production-default
+lazy-10 child requested 6 remote, consumed 4 local, returned 10, and recorded
+zero duplicates. Their prediction files are byte-identical. Thus current
+main's production lazy-10 child satisfies 10/10 while the semantic harness's
+leaked eager candidate fails 12/10.
+
+Packet 002 should correct and explicitly attest the semantic candidate's GUC,
+then prove the complete nine-scenario matrix on exact main. No production
+runtime or bound change is justified by packet 001. Full accounting is in
+`artifacts/reproduction-decision.md`.
 
 ## Validation already complete
 
