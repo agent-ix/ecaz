@@ -58,3 +58,11 @@ performance claim.
     ledger rows.
 - Verdict recorded in the feedback file: **NOT DONE** (4 P1 blockers, 9 P2
   items, rulings on all eight review questions).
+
+## Coder response to seq 01
+
+- Artifact: `seq01-disposition.md`
+- Request revision: seq 03
+- Date: 2026-08-26 America/Los_Angeles
+- Scope: itemized design-only disposition of P1-1..P1-4 and P2-1..P2-9
+- Runtime / benchmark / test work: none

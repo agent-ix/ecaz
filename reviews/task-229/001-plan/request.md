@@ -5,233 +5,350 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-26
-seq: 02
+seq: 03
 ---
 
-# Task 229 covering payload sidecar — concrete current-main plan
+# Task 229 covering payload sidecar — revised concrete plan
 
-This refresh supersedes the planning-only placeholder written at checkpoint
-`627477613`. It requests review against exact current main
-`3419c9c758bea7d9940b27d9afbcf9e627e84879`, after Task 239 closed the bounded-
-read semantic blocker and the campaign ledger landed through PR #89. No source
-change, test result, benchmark result, or performance claim is under review.
+This revision requests rereview against exact current main
+`3419c9c758bea7d9940b27d9afbcf9e627e84879`. It supersedes request seq-02 and
+addresses every P1/P2 item in
+`feedback/2026-08-26-01-reviewer.md`; the itemized disposition is
+`artifacts/seq01-disposition.md`.
 
-The source-grounding record is
-`artifacts/current-main-architecture.md`; artifact provenance is in
-`artifacts/manifest.md`.
+No source, SQL, test, fixture, or benchmark result is under review. Source
+grounding remains `artifacts/current-main-architecture.md`.
 
-## Proposed contract
+## 1. Opt-in cover contract
 
-### 1. One opt-in format and one lookup representation
+Add the build-time string reloption `covering_payload_attnums`. Absence means no
+sidecar and preserves all current no-cover format bytes. The value is a
+canonical comma-separated list of positive physical attnums, strictly
+increasing, unique, and bounded to 16. The persisted generation descriptor,
+not a later mutable reloption value, is authoritative for reads and DML.
 
-- Add the build-time index reloption `covering_payload_attnums`. Absence means
-  no sidecar and preserves the current format byte-for-byte. The value is a
-  canonical comma-separated list of positive physical attnums, strictly
-  increasing, unique, and bounded to 16 attributes. Names are not persisted or
-  re-resolved after build. The persisted generation descriptor, not a later
-  mutable reloption value, is authoritative for reads and DML.
-- At generation construction, resolve every declared attnum against the frozen
-  `DistannRowSchemaDescriptor`. Reject dropped/generated columns, the indexed
-  vector, absent binary send/receive identity, and types outside a deliberately
-  small fixed-width built-in scalar set: `bool`, `int2`, `int4`, `int8`,
-  `float4`, `float8`, `uuid`, `date`, `time`, `timestamp`, and `timestamptz` in
-  `pg_catalog`. This keeps each entry bounded; variable-width values, arrays,
-  user types, domains, and arbitrary payloads remain row-tier-only.
-- Persist one owner-local ordinary PostgreSQL heap relation per covered
-  generation:
-  `_ecdz_cover_<index_oid>_<build_uuid>(vec_id bigint NOT NULL, payload bytea
-  NOT NULL)`, plus one unique B-tree on `vec_id`. No second representation,
-  coordinator copy, cache, or per-attribute side table is introduced.
-- Resolve a batch with one ordered `unnest(vec_ids) WITH ORDINALITY` join to the
-  sidecar and its single unique index. Lookup count is bounded by the already-
-  bounded materialization window; there is no query per id and no O(N)
-  coordinator state.
+Generation construction resolves every attnum against the frozen
+`DistannRowSchemaDescriptor` and rejects:
 
-### 2. Canonical cover and entry bytes
+- absent, dropped, or generated attributes;
+- the indexed vector attribute;
+- missing binary send/receive identity; and
+- any type outside this closed PG18 fixed-width `pg_catalog` set: `bool`,
+  `int2`, `int4`, `int8`, `float4`, `float8`, `uuid`, `date`, `time`,
+  `timestamp`, and `timestamptz`.
 
-Introduce `DistannPayloadCoverDescriptorV1` containing:
+The allowlist is intentionally PG18 binary-I/O-stable and excludes variable-
+width, array, domain, and user-defined values. Sixteen attributes times the
+widest allowed 16-byte scalar is 256 value bytes; with a two-byte null bitmap,
+the canonical entry payload is bounded to 258 bytes, below the TOAST threshold.
+Queries requiring an unsupported or uncovered attribute use the row tier.
 
-- sidecar entry version and the fixed maximum attribute count;
-- exact sorted covered attnums;
-- the complete row-schema fingerprint;
-- for each covered attribute, its frozen attnum, type namespace/name, typmod,
-  collation identity, and binary send/receive identity copied from the row
-  schema; and
-- a domain-separated digest over those canonical cover bytes.
+`DistannPayloadCoverDescriptorV1` records:
 
-Each `payload` is independently decodable canonical V1 bytes:
+- entry format version 1 and the maximum attribute count;
+- exact sorted attnums and their fixed binary widths;
+- complete row-schema fingerprint;
+- for each covered attribute, frozen attnum, type namespace/name, typmod,
+  collation identity, and binary send/receive identity; and
+- a domain-separated digest of those canonical descriptor bytes.
 
-`version | vec_id | cover_descriptor_digest | column_count | null_bitmap |
-end_offsets | concatenated_binary_values | entry_digest`.
+## 2. One row-version-exact representation
 
-The null bitmap uses one bit per covered position (`1 = NULL`); NULL consumes no
-value bytes and adjacent offsets remain equal. Offsets are bounded `u32`s.
-The record repeats `vec_id` and the cover digest even though the heap key owns
-them so a wrong-key, wrong-generation, truncated, reordered, or bit-corrupt
-entry cannot decode successfully. The content digest for one owner is the
-domain-separated digest of complete canonical entries in ascending `vec_id`
-order.
+Create one owner-local ordinary PostgreSQL heap per covered generation:
 
-Handoff already carries canonical binary values for the entire frozen row.
-Sidecar build therefore selects the declared positions directly from
-`DistannHandoffEntry` rather than receiving and re-sending the row. DML paths
-encode the same positions from the already-prepared row slot with the frozen
-send identities.
+`_ecdz_cover_<index_oid>_<build_uuid>(row_tid tid NOT NULL, vec_id bigint NOT
+NULL, payload bytea NOT NULL)`
 
-### 3. Typed, complete, fail-closed selection
+and one unique, non-covering B-tree on `row_tid`, named by the existing
+deterministic OID/build-id helper convention. Both names must stay within
+`NAMEDATALEN`; no hand-written suffix rule is allowed. The heap uses
+`fillfactor=100`, and `payload` is `STORAGE PLAIN`.
 
-Task 222's `PayloadAttributeMask` remains the only planner/executor authority.
-Thread an explicit eligibility value alongside the requested attnums through
-the local and remote physical materialization APIs:
+This task deliberately chooses a non-covering unique B-tree rather than
+`INCLUDE (payload)`. An INCLUDE index duplicates every payload and only becomes
+index-only when heap visibility-map state permits it; recent Task 167 DML would
+still require heap visibility checks. The chosen compact heap gives stable MVCC
+semantics and minimum storage without depending on VACUUM state. This is the
+only representation built or measured in Task 229.
 
-- `Exact(attnums)` is eligible only if every attnum is present in the cover and
-  the cover descriptor exactly matches the retained generation's row schema;
-- `AllColumns(reason)` is never eligible, even if its expanded live-attnum list
-  happens to be a subset of the cover;
-- an uncovered attnum, qual-required attnum, unsupported type, absent cover,
-  cover/schema disagreement, or legacy descriptor selects the existing whole
-  row-tier path; and
-- selection is all-or-nothing for a requested row. No sidecar/row-tier partial
-  reconstruction is allowed.
+Initial handoff creates exactly one sidecar row per owned vec_id. Later
+same-identity replacements append one sidecar row per new row-tier version,
+keyed by that version's frozen `row_tid`; superseded entries follow the row
+tier's append-only retention rule and disappear only at generation reclaim.
+`vec_id` is retained as a non-key identity echo and digest-order field.
 
-This preserves whole-row, `SELECT *`, unproved-expression, and visibility
-fallbacks. A covered qual-only column is eligible because Task 222 includes it
-in the exact mask; an uncovered qual forces the complete row-tier path.
+A read resolves one bounded batch with ordered
+`unnest(row_tids, vec_ids) WITH ORDINALITY` against the single unique index.
+There is no query per row, second sidecar variant, coordinator copy, or O(N)
+state.
 
-The owner repeats the descriptor/subset check. A missing sidecar relation,
-missing covered entry for a live graph record, wrong key/digest, malformed
-offset/null shape, or corrupt bytes is structural corruption and errors
-fail-closed; it does not silently fall back. Ordinary unsupported query shapes
-fall back before lookup.
+### Compact canonical entry
 
-The optimization applies to both owner classes. Remote hits keep the current
-wire response shape after an owner-side sidecar lookup. Covered local hits are
-also reconstructed as virtual projected tuples from the local owner's sidecar
-instead of opening the frozen row tier. Fallback local hits retain the existing
-frozen-row TID path.
+The relation's cover descriptor supplies version, column count, order, and
+fixed widths. `payload` therefore contains only:
 
-## Backward-compatible identity and lifecycle
+`null_bitmap | concatenated_non_null_fixed_width_binary_values`.
 
-### Format evolution
+NULL is one bit (`1 = NULL`) and consumes no value bytes. Decode walks the
+known widths and bitmap and requires the exact derived length; trailing,
+truncated, or impossible payloads fail. The returned SQL row must echo the
+requested `row_tid` and `vec_id`. No per-entry cover digest, column count,
+offset array, or 32-byte checksum is duplicated into every row.
 
-- A descriptor with no cover continues to encode as generation descriptor V2
-  under the existing V2 domain. A descriptor with a cover encodes as V3.
-  Decode accepts V2 as `cover = None` and V3 as `cover = Some(...)`; digesting
-  decoded V2 bytes reproduces their existing digest.
-- Ready receipts remain V1 when no sidecar exists. Sidecar generations use V2,
-  adding sidecar row count, initial content digest, heap bytes, and index bytes.
-  Receipt storage becomes variable-length and decodes both versions.
-- Epoch manifests remain V2 for no-sidecar builds. Sidecar builds use V3 and
-  add the cover-descriptor digest and roster-ordered global initial sidecar
-  digest. Fingerprint decoding accepts both the existing `02 00 + digest` and
-  new `03 00 + digest` forms. A V3 successor may name a V2 parent and vice
-  versa.
-- Catalog rows gain nullable, paired `payload_sidecar_relid` and
-  `payload_sidecar_directory_relid` columns. Existing rows decode as absent and
-  use the row tier. SQL receipt/fingerprint checks accept both canonical
-  versions and reject every other shape.
+Corruption detection is layered: strict key/vec_id/length decoding, the frozen
+cover descriptor, relation/page checksums, and the initial whole-sidecar digest
+bound into receipt/manifest. Packet 002 will corrupt keys, vec_id echoes,
+length/null shapes, descriptor identity, relation identity, and initial digest.
+It will not claim detection of an arbitrary same-length value bit flip beyond
+PostgreSQL page checksums, which is the same boundary as the row tier.
 
-The initial immutable sidecar content is bound by descriptor -> owner receipt
--> epoch manifest -> manifest digest/fingerprint, matching how existing build-
-time graph and row-tier digests remain the immutable publication identity even
-though Task 167 later adds mutable generation-local DML state.
+The owner initial-content digest folds `(vec_id, row_tid, payload)` in ascending
+`(vec_id, row_tid)` order under a sidecar-specific domain. Handoff uses the
+already-canonical row values directly. DML encodes the same positions from the
+prepared row slot with the frozen send identities.
 
-### Physical lifecycle
+## 3. Typed, complete, visibility-equivalent selection
 
-- Create the sidecar heap/index in the same transaction as the generation row
-  and graph relations, with the same owner, persistence, tablespace, deterministic
-  naming, and internal dependency on the control index.
-- Build entries in the same handoff transaction as row-tier and graph records.
-  Ready recomputes count/digest from physical storage, records exact heap/index
-  sizes, and refuses count/key/digest disagreement.
-- Publication, restart, retained predecessor reads, rollback, and outage use
-  cataloged OIDs plus the descriptor/manifest identity. Abort, retirement
-  reclaim, cancelled reclaim, control REINDEX, and extension/index drop remove
-  both sidecar relations with their generation.
-- Insert writes the row tier, sidecar entry, and graph record in one owner
-  transaction before graph publication. Same-identity replacement upserts the
-  sole sidecar row before switching the graph's current version. Any later
-  failure aborts all three writes. Remote inserts use the existing Task 167
-  transaction/intent boundary; no independent sidecar commit is added.
-- Delete keeps the existing graph tombstone rule. The one sidecar row is
-  retained but unreachable while the current graph record is tombstoned, and
-  is reclaimed only with the generation. A later valid same-identity
-  replacement overwrites it transactionally.
+Task 222's `PayloadAttributeMask` remains the only executor authority. Thread
+an explicit typed eligibility value, not merely the expanded attnum list,
+through local and remote physical materialization:
 
-## Implementation checkpoints
+- `Exact(attnums)` is eligible only when every requested attnum—including every
+  qual-required attnum—is covered and the cover descriptor exactly matches the
+  retained generation row schema;
+- `AllColumns(reason)` is categorically ineligible even if its expanded live-
+  attnum list happens to be a cover subset;
+- an uncovered attnum, uncovered qual-required attnum, unsupported type,
+  absent/legacy cover, or cover/schema disagreement selects the complete
+  existing row-tier path; and
+- selection is per request and all-or-nothing. No row is reconstructed from a
+  mix of sidecar and row tier.
 
-Packet 002 (`format-and-lifecycle`) will contain:
+The owner repeats the descriptor and subset validation. Failure modes split as
+follows:
 
-1. reloption parsing and cover resolution;
-2. canonical cover/entry V1 codecs and corruption/limit tests;
-3. descriptor V2/V3, receipt V1/V2, manifest V2/V3, and fingerprint dual
-   decoding with legacy byte fixtures;
-4. nullable catalog OIDs plus create/build/digest/size/abort/reclaim/restart
-   lifecycle; and
-5. topology/storage counters for sidecar rows, heap bytes, index bytes, and
-   digests.
+- ERROR for structural corruption: descriptor declares a cover but either
+  sidecar relation is absent; cover/schema mismatch after catalog resolution;
+  returned key or vec_id echo mismatch; malformed length/null shape; visible
+  row-tier tuple with no matching visible sidecar tuple; or any decode failure.
+- Existing `tuple_payload_missing -> RemoteSkipped` semantics for a sidecar
+  tuple not visible under the read snapshot. On a miss, the owner probes only
+  that exact row-tier TID under the same snapshot: if the row-tier tuple is also
+  not visible, return the normal missing marker; if it is visible, error as
+  corruption. Because both tuples are inserted by the same transaction, their
+  legal visibility event is identical.
 
-Packet 003 (`correctness-and-dml`) will contain:
+The sidecar applies to both physical owner classes. Eligible remote hits retain
+the production semantic payload response shape. Eligible
+`CustomScanOutputRow::Frozen(row_tid)` local hits become virtual projected rows
+from the local sidecar, preserving the same visibility rule. The legacy
+`CustomScanOutputRow::Local(tid)` path addresses the user's own heap and is
+untouched. A frozen row-tier TID was never a coordinator user-table ctid;
+converting only `Frozen` rows does not add ctid/EPQ/`FOR UPDATE` capability, and
+`custom_scan_recheck` retains its existing unconditional virtual-row contract.
 
-1. typed exact-mask propagation and local/remote owner selection;
-2. id-only and covered multi-scalar success;
-3. uncovered scalar, uncovered qual, `SELECT *`, whole-row, unsupported
-   variable-width/TOAST, and schema-disagreement fallback;
-4. covered NULL, mixed local/remote ownership, deepening, rescan, and byte-
-   identity checks;
-5. insert, same-identity replacement, delete/tombstone, injected rollback,
-   restart, retained predecessor, reclaim, and owner outage cases; and
-6. EXPLAIN/stage/work counters distinguishing sidecar selection, fallback
-   reason, sidecar rows/lookups/bytes, and row-tier reads.
+## 4. Backward-compatible identity and lifecycle
 
-Tests that touch PostgreSQL callbacks/lifecycle will use focused PG18 pgrx
-commands. Static codec tests will use focused `cargo test`. No PG17 run is
-planned unless a PG17-specific issue appears.
+### Canonical versions
 
-## Preregistered full-scale decision design
+- No-cover descriptors continue to encode as V2. Covered descriptors encode as
+  V3. Decode accepts both and re-encodes a decoded legacy V2 byte-for-byte.
+- No-cover Ready receipts remain V1/303 bytes. Covered receipts use V2 and add
+  sidecar row count, explicitly named `initial_content_digest`, heap bytes, and
+  index bytes. Receipt storage/framing becomes bounded variable-length and
+  accepts both versions.
+- No-cover epoch manifests remain V2. Covered manifests use V3 and add the
+  cover-descriptor digest plus roster-ordered global initial-content digest.
+  Fingerprints accept both `02 00 + digest` and `03 00 + digest`; either version
+  may name the other as parent.
+- Existing digest domain strings remain unchanged. Version is inside canonical
+  bytes; no V2 descriptor, V1 receipt, V2 manifest, or their digest is reprinted.
+- Packet 002 carries frozen legacy byte fixtures proving decode, byte-identical
+  re-encode, and digest identity for descriptor V2, receipt V1, manifest V2,
+  fingerprint V2, and Ready-receipt-set framing.
 
-Packet 004 will use only a checked-in `ecaz bench suite` config. If the suite's
-`distann-local-multinode` step cannot declare the cover, counterbalance build
-order, or report the required sidecar metrics, those narrow runner fields will
-land and be reviewed before the matrix; no packet-local shell sweeper will be
-created.
+The project is in research-stage bootstrap posture: catalog SQL changes require
+re-bootstrap rather than an extension upgrade script. Every control and
+candidate matrix arm will use the post-change bootstrap and the same extension
+binary; no pre-change database or SHA is a control.
 
-At each of 10k, 50k, and 100k:
+### Catalog and relation ownership
 
-- use the standard three-owner real corpus, production lazy-10, Task 222
-  projection, identical RaBitQ/search/head/build settings, and one release SHA;
-- compare no-cover control with `covering_payload_attnums='1'` (`id bigint`) so
-  the standard id-only query exercises exactly the candidate;
-- run two fresh-build pairs in counterbalanced order `control -> candidate`
-  and `candidate -> control`; neither arm may be a reused fixture while the
-  other is fresh;
-- compare matched pair positions and report both pair deltas plus their
-  counterbalanced envelope, never a pooled number that hides order/warmth;
-- require source count/digest, graph digest, row-tier digest, predictions, and
-  recall to match between arms. This is a format-changing separate-generation
-  comparison, not a false same-generation claim; NFR-022 provenance will name
-  the build and position for every cell; and
-- report build time, DML work, mean/p50/p95/p99/max, recall/result digest,
-  owner endpoint/lookup/row-tier/sidecar stages, heap and sidecar reads, bytes
-  by attribute, wire bytes, per-node graph/row/sidecar/index/control storage,
-  amplification, NFR-021 conformance, and NFR-022 admissibility.
+`ec_distann_generation` gains nullable paired
+`payload_sidecar_relid`/`payload_sidecar_directory_relid` with paired-state and
+unique-non-null checks. Existing rows decode both as absent and use the row
+tier. The implementation checklist explicitly covers every fixed-three-OID
+consumer:
 
-The decision is `PROMOTE` or `STOP` only after all scales and both positions
-pass semantic/provenance gates. Promotion authorizes a separate default-policy
-decision; it does not skip Tasks 230--232.
+- generation cache invalidation;
+- replay/existence validation;
+- abort and reclaim drop ordering;
+- control REINDEX cleanup;
+- generation relation enumeration; and
+- bootstrap uniqueness constraints.
 
-## Review questions
+It also covers every fixed 303-byte receipt consumer: generation catalog row
+and transition parameter, handoff Ready construction, lifecycle-wire
+Ready-receipt-set framing, AM/module/lib exports, SQL receipt and candidate-set
+checks, and physical lifecycle fixtures.
 
-Please rule specifically on:
+Sidecar heap/index creation shares the row/graph generation transaction,
+owner, permanence, explicit tablespace, deterministic name, and internal
+control-index dependency. Ready locks and scans all five physical relations,
+recomputes sidecar count/digest, requires initial sidecar count equal to owned
+record count, and records heap/index sizes. Publication, restart, retained
+predecessor reads, rollback, owner outage, abort, retirement reclaim, cancelled
+reclaim, index/extension drop, and REINDEX all use the cataloged pair.
 
-1. numeric physical-attnum reloption, 16-attribute cap, and fixed-width
-   built-in allowlist;
-2. one heap plus one unique B-tree as the sole bounded representation;
-3. preserving no-cover V2/V1/V2 bytes while introducing optional
-   descriptor/receipt/manifest versions;
-4. initial-build digest binding versus later Task 167 mutable DML state;
-5. retaining tombstoned sidecar rows until generation reclaim;
-6. treating corruption/missing covered rows as an error rather than fallback;
-7. applying the sidecar to local as well as remote owner hits; and
-8. the two-pair `AB/BA` full-scale envelope as sufficient position/warmth
-   control.
+### Task 167 DML
+
+Insert appends the row-tier tuple, then its TID-keyed sidecar tuple, then the
+graph record in the same owner transaction before graph publication.
+Same-identity replacement appends a new row-tier tuple and matching new sidecar
+tuple, then switches the graph's current version; it never updates the old
+sidecar row. Any later graph/backlink/fault failure aborts both payload writes.
+Remote inserts reuse the existing Task 167 transaction/intent boundary and add
+no round trip or independent commit.
+
+Delete continues to flip only the graph tombstone. Historical sidecar versions
+are retained exactly because their row-tier versions are retained; no new
+sidecar-specific tombstone rule exists. A later valid replacement appends a new
+TID-keyed entry.
+
+Receipt/manifest/fingerprint bind only the immutable initial build content, as
+existing graph/row-tier digests do. Post-Ready DML does not rewrite the
+fingerprint. Packet 003 explicitly proves that post-Ready insert/replacement/
+delete does not invalidate publication, restart, or retained-predecessor reads.
+
+## 5. Review checkpoints
+
+### Packet 002 — format and lifecycle
+
+1. Parse the reloption and resolve/validate the exact fixed-width cover.
+2. Implement the compact V1 cover/entry codec, exact length/null rules,
+   TID+vec_id echo checks, 258-byte bound, corruption tests, `STORAGE PLAIN`,
+   fillfactor 100, and the documented non-covering B-tree choice.
+3. Implement descriptor V2/V3, receipt V1/V2, manifest V2/V3, fingerprint and
+   lifecycle-wire receipt-set dual decode under unchanged domains; update all
+   fixed-width Rust/SQL consumers; prove legacy byte/digest fixtures.
+4. Add nullable sidecar OIDs and update all six fixed-three-relation surfaces;
+   create/build/lock/digest/size/replay/cache-invalidate/abort/reclaim/restart/
+   REINDEX/drop behavior and topology output.
+5. Extend benchmark-only physical response telemetry—without changing the
+   production semantic payload fields—with owner sidecar selected/fallback
+   reason, lookup time, requested/returned/missing rows, payload bytes, and
+   row-tier visibility probes. The coordinator aggregates those response fields
+   into stage/work counters; the fixture also records per-node topology sizes.
+
+### Packet 003 — correctness and DML
+
+1. Thread Task 222's typed exact eligibility and owner-side revalidation.
+2. Exercise id-only, covered multi-scalar, covered NULL, and covered qual-only
+   paths on local, remote, and mixed owners with byte-identical control output.
+3. Exercise uncovered scalar/qual, `SELECT *`, whole-row, unsupported variable-
+   width and external TOAST, legacy no-cover, and cover/schema disagreement
+   fallback without partial reconstruction.
+4. Exercise deepening, rescan, local Frozen conversion, remote payload reuse,
+   current visibility skip, missing-visible corruption error, malformed bytes,
+   restart, retained predecessor, reclaim, and owner outage.
+5. Exercise insert, same-identity replacement with distinct old/new TIDs,
+   delete/tombstone, fault rollback, routed DML, and post-Ready DML publication/
+   restart/retained-read stability.
+6. EXPLAIN and counters distinguish exact selection, fallback reason, sidecar
+   rows/lookups/bytes, row-tier reads/probes, and local/remote owner work.
+
+Focused callback/lifecycle validation uses PG18 pgrx tests; static codec work
+uses focused Rust tests. PG17 is not planned absent a PG17-specific defect.
+
+### Runner prerequisite before packet 004
+
+The current suite cannot declare an ec_distann cover. Before any matrix, land
+and review a separate runner commit adding:
+
+- `covering_payload_attnums` to `distann-local-multinode` and its fixture DDL;
+- a feature-gated Userset `benchmark_covering_sidecar` variant field, default
+  on, where off forces the row-tier read against the same covered generation;
+- isolated-pair validation that every other runtime axis matches;
+- counterbalanced fresh-build position metadata; and
+- sidecar topology, build, DML, and owner telemetry collection.
+
+No packet-local shell runner is permitted.
+
+## 6. Full-scale preregistration and decision rule
+
+Packet 004 uses a bespoke checked-in `ecaz bench suite` config because current
+canonical lane configs are single-node while Task 229 requires a three-owner
+format A/B. Its manifest records that reason, exact release profile/feature
+set, `allow_debug_extension=false`, one-index-per-table isolation for every
+build arm, build/fixture/position identity for every result, and direct
+`results.jsonl` provenance for every cited number.
+
+At each of 10k, 50k, and 100k use the standard real corpus, three owners,
+production lazy-10, Task 222 projection, identical RaBitQ/search/head/build
+settings, post-change bootstrap, and one release binary SHA.
+
+### Primary read-path A/B
+
+Build covered generations with `covering_payload_attnums='1'` (`id bigint`).
+Within each covered generation compare, through the feature-gated Userset arm:
+
+- control: `benchmark_covering_sidecar=false`, forced row-tier read;
+- candidate: `benchmark_covering_sidecar=true`, sidecar read.
+
+Run this isolated pair on both covered builds produced by the build/storage
+counterbalance below. Variant order is row-tier/sidecar on the first covered
+build and sidecar/row-tier on the second. Both arms use the same extension
+binary and exact generation; recall, result digest, and storage are therefore
+same-generation controls for the read mechanism.
+
+The primary endpoint is 100k warm mean end-to-end latency. **PROMOTE requires
+both independent 100k covered-generation pairs to improve by at least 5.0% and
+at least 0.50 ms.** Opposite signs, either pair below either magnitude, or an
+envelope crossing zero is STOP; there is no favorable averaging tie-break.
+
+Additional gating rules:
+
+- recall and ordered prediction digest must be identical in every read pair;
+- every 10k/50k pair must avoid warm-mean regression greater than 2.0%; a 100k
+  win does not override a smaller-scale breach;
+- p95 and p99 may not regress more than 5.0% at any scale/pair;
+- candidate sidecar heap+index bytes must be at most 5.0% of the no-cover
+  generation's total per-node physical bytes at every scale and all NFR-021
+  amplification/placement constraints must still pass;
+- covered build time may not regress more than 10.0% in either matched
+  counterbalanced pair;
+- at 100k, covered single-row insert throughput may not fall more than 10.0%,
+  replacement/delete p95 may not regress more than 15.0%, and the sidecar may
+  add no remote round trip; and
+- any semantic, lifecycle, provenance, or measurement-integrity failure is not
+  a performance result and must be corrected before the single authorized
+  decision run is interpreted.
+
+If 10k/100k directions disagree but the smaller scale stays inside its 2.0%
+non-regression band, the 100k primary rule governs. A smaller-scale breach,
+replicate sign disagreement, or any cost ceiling breach is STOP. Passing every
+gate is PROMOTE to a separate production-default disposition; it never skips
+Tasks 230--232.
+
+### Build, storage, and DML A/B
+
+At each scale run two fresh-build pairs in order
+`no-cover -> cover` and `cover -> no-cover`. No arm reuses a fixture while its
+mate is fresh, and no build-time arms share a corpus table or index. Compare
+matched positions and report both deltas plus the envelope. The no-cover and
+covered builds must match source count/digest, graph digest, row-tier digest,
+search settings, and release provenance. They are separate-generation format
+comparisons and are never labelled same-generation.
+
+### Reported non-gating endpoints
+
+Report p50/max, owner open/validation/lookup/row-tier/sidecar stages, local and
+remote split, heap/sidecar reads, bytes by attribute, wire bytes, per-node
+graph/row/sidecar/index/control storage, build phases, detailed DML work,
+NFR-021 conformance, and NFR-022 admissibility. These explain the decision but
+do not override the explicit gates above.
+
+## Rereview request
+
+Please confirm that P1-1 through P1-4 and P2-1 through P2-9 are closed, and
+authorize packet 002 implementation only if this revised plan is DONE.
