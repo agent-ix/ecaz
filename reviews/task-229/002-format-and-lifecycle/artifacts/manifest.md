@@ -76,3 +76,58 @@ policy. This checkpoint makes no runtime or performance claim.
   generation now fails)
 - No PostgreSQL, pgrx, cargo, test, fixture, corpus, or benchmark command was
   executed by the reviewer.
+
+## Checkpoint 2 coder evidence (2026-08-26)
+
+- Head SHA: `255081d74aa6ce430a2a21ee5555e9569c0a0fa7`
+- Timestamp: 2026-08-26T05:50:16-07:00
+- Scope: canonical payload-cover descriptor and compact entry codec; exact
+  row-TID/`vec_id` echo validation; conditional covered-registration identity
+  while preserving no-cover V1 bytes
+- Disposition: `seq01-disposition.md`
+
+### `cargo-fmt-checkpoint2.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0; formatting clean, with only stable-rustfmt warnings for the
+  repository's nightly-only import grouping configuration.
+
+### `cargo-check-pg18-checkpoint2.log`
+
+- Command: `cargo check --lib --no-default-features --features pg18`
+- Result: exit 0; PG18 library compile completed successfully.
+
+### `cargo-test-payload-sidecar-checkpoint2.log`
+
+- Command: `cargo test --lib --no-default-features --features pg18 payload_sidecar::tests -- --nocapture`
+- Result: exit 0; 5 passed, 0 failed, 2,592 filtered out.
+
+### `cargo-test-registration-binding-checkpoint2.log`
+
+- Command: `cargo test --lib --no-default-features --features pg18 registration_digest_golden_binds_private_transport_fields -- --nocapture`
+- Result: exit 0; 1 passed, 0 failed, 2,596 filtered out. The test preserves
+  the existing no-cover digest golden and proves an optional cover digest moves
+  registration identity.
+
+### `cargo-clippy-pg18-checkpoint2.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: expected non-zero from exactly four known main/toolchain-drift lints:
+  `collapsible_if` (`ambuild.rs:139`), `unnecessary_unwrap`
+  (`generation_descriptor.rs:748`), `needless_range_loop`
+  (`head_sample.rs:1818`), and `items_after_test_module`
+  (`remote_endpoint.rs:1052`). No Task 229 file is named.
+
+### `clippy-inherited-files-diff-checkpoint2.log`
+
+- Command: `git diff --exit-code origin/main -- src/am/ec_distann/ambuild.rs src/am/ec_distann/generation_descriptor.rs src/am/ec_distann/head_sample.rs src/am/ec_distann/remote_endpoint.rs`
+- Result: exit 0; every strict-clippy failure file is unchanged from main.
+
+### `cargo-clippy-pg18-checkpoint2-task-clean.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings -A clippy::collapsible_if -A clippy::unnecessary_unwrap -A clippy::needless_range_loop -A clippy::items_after_test_module`
+- Result: exit 0; after allowing only the four exact inherited lint names, all
+  targets are warning-clean.
+
+No PostgreSQL, `cargo pgrx test`, fixture, corpus, or benchmark command was
+run. This checkpoint makes no runtime or performance claim.

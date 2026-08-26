@@ -1,0 +1,21 @@
+Script started on 2026-08-26 05:44:10-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task229-covering-payload-sidecar)
+   Compiling rustls-webpki v0.103.15
+   Compiling rustls v0.23.43
+   Compiling tokio-rustls v0.26.4
+   Compiling tokio-postgres-rustls v0.14.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 16s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-42994ba2f56a9ded)
+
+running 5 tests
+test am::ec_distann::payload_sidecar::tests::fixed_pg18_scalar_allowlist_has_expected_widths ... ok
+test am::ec_distann::payload_sidecar::tests::resolution_rejects_vector_generated_dropped_and_variable_width_attributes ... ok
+test am::ec_distann::payload_sidecar::tests::compact_payload_codec_enforces_null_shape_width_and_identity_echoes ... ok
+test am::ec_distann::payload_sidecar::tests::cover_descriptor_round_trips_and_binds_the_exact_row_schema ... ok
+test am::ec_distann::payload_sidecar::tests::resolution_binds_schema_and_attains_the_258_byte_bound ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2592 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-26 05:46:26-07:00 [COMMAND_EXIT_CODE="0"]
