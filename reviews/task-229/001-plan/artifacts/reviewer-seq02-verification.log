@@ -1,0 +1,366 @@
+# Task 229 packet 001 reviewer verification log (seq 02, rereview of request seq-03)
+
+Agent: Agent IX (reviewer, claude-opus-5)
+Date: 2026-08-26
+Branch: task229-covering-payload-sidecar
+Head SHA at review: f70c439e9c07352b18e9cbd3130ef4fd882cfdec
+Packet head SHA claimed by manifest: 3419c9c758bea7d9940b27d9afbcf9e627e84879 (= origin/main)
+Mode: read-only static inspection. No build, PostgreSQL, pgrx, test, fixture, or benchmark command was run.
+
+---
+
+## W1  git state and diff scope
+
+$ git log --oneline -6
+f70c439e9 reviews(task-229): clean seq01 disposition
+aa9d0e974 plan(task-229): address sidecar design review
+755c42fc7 Review Task 229 packet 001 concrete sidecar plan: NOT DONE
+961bb13ee reviews(task-229): clean plan artifact manifest
+6a2ad4d8e plan(task-229): request concrete sidecar design review
+3419c9c75 Merge pull request #89 from agent-ix/integrate/distann-campaign-ledger-v2
+
+$ git status --porcelain
+(empty at review start)
+
+$ git rev-parse HEAD origin/main
+f70c439e9c07352b18e9cbd3130ef4fd882cfdec
+3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+$ git diff --name-only 3419c9c75 f70c439e9
+plan/design/ec-distann-recall-latency-roadmap.md
+plan/tasks/229-ec-distann-covering-payload-sidecar.md
+plan/tasks/README.md
+reviews/task-229/001-plan/artifacts/current-main-architecture.md
+reviews/task-229/001-plan/artifacts/manifest.md
+reviews/task-229/001-plan/artifacts/reviewer-seq01-verification.log
+reviews/task-229/001-plan/artifacts/seq01-disposition.md
+reviews/task-229/001-plan/feedback/2026-08-26-01-reviewer.md
+reviews/task-229/001-plan/request.md
+
+(No file under src/, sql/, crates/, spec/, tests/ or fixtures/ differs between the
+main the plan targets and the branch tip. The revision is reviewed against exactly
+the main it claims.)
+
+---
+
+## W2  Task 222 typed mask exists with the exact two variants the plan threads
+
+$ grep -rn "enum PayloadAttributeMask" -A 20 src/am/ec_distann/
+
+src/am/ec_distann/payload_projection.rs:34:pub(crate) enum PayloadAttributeMask {
+src/am/ec_distann/payload_projection.rs-35-    Exact(Vec<pg_sys::AttrNumber>),
+src/am/ec_distann/payload_projection.rs-36-    AllColumns(PayloadFallbackReason),
+src/am/ec_distann/payload_projection.rs-37-}
+src/am/ec_distann/payload_projection.rs-39-impl PayloadAttributeMask {
+src/am/ec_distann/payload_projection.rs-47-    pub(crate) fn exact_attnums(&self) -> Option<&[pg_sys::AttrNumber]> {
+src/am/ec_distann/payload_projection.rs-48-        match self {
+src/am/ec_distann/payload_projection.rs-49-            Self::Exact(attnums) => Some(attnums),
+src/am/ec_distann/payload_projection.rs-50-            Self::AllColumns(_) => None,
+src/am/ec_distann/payload_projection.rs-51-        }
+src/am/ec_distann/payload_projection.rs-52-    }
+
+Result: request seq-03 §3's `Exact(attnums)` / `AllColumns(reason)` naming matches
+the shipped enum exactly. P2-8's qual contradiction is corrected in seq-03 §3 bullet
+1 ("including every qual-required attnum") and bullet 3 ("uncovered qual-required
+attnum"); the two now agree.
+
+---
+
+## W3  BLOCKER EVIDENCE — the local `Frozen` path ERRORS on invisibility; it does
+##     not skip, and it retries under a second snapshot first
+
+$ sed -n 1244,1300p src/am/ec_distann/custom_scan.rs   (abridged to the decision points)
+
+1246:                // Row no longer visible under the snapshot — skip to the next.
+1247:            }
+1248:            CustomScanOutputRow::Frozen(tid) => {
+...
+1256:                let mut visible = pg_sys::table_tuple_fetch_row_version(
+1257:                    context.row_relation()...,
+1258:                    &mut item,
+1259:                    (*estate).es_snapshot,
+1260:                    state.frozen_row_slot,
+1261:                );
+1264:                // A concurrent physical replacement can retire the row-TID
+1265:                // after traversal has ranked the immutable graph record but
+1266:                // before the executor consumes the result.  Refresh once
+1267:                // against the latest registered snapshot; the generation
+1268:                // reader already treats this as a bounded visibility race.
+1269:                if !visible {
+1270:                    if let Some(latest) =
+1271:                        crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
+1272:                    {
+...
+1280:                        visible = pg_sys::table_tuple_fetch_row_version(
+1281:                            context.row_relation()...,
+1282:                            &mut item,
+1283:                            latest.as_ptr(),
+1284:                            state.frozen_row_slot,
+1285:                        );
+1291:                if visible {
+1294:                    return pg_sys::ExecCopySlot(scan_slot, state.frozen_row_slot);
+1295:                }
+1296:                pgrx::error!(
+1297:                    "EC_GENERATION_MISSING: published row-tier tuple ({},{}) disappeared",
+1298:                    tid.block_number,
+1299:                    tid.offset_number
+1300:                );
+
+$ grep -n "RemoteSkipped { .. } => continue" src/am/ec_distann/custom_scan.rs
+1318:            CustomScanOutputRow::RemoteSkipped { .. } => continue,
+
+Result: three distinct existing visibility outcomes, not one.
+
+  - `Local(tid)`   (user heap)      -> not visible  => SKIP silently (line 1246)
+  - `Frozen(tid)`  (row tier)       -> not visible under `es_snapshot`
+                                       => RETRY under `RegisteredSnapshotGuard::latest()`
+                                       => still not visible => **ERROR** (line 1296)
+  - `RemoteSkipped`(owner-reported) -> **SKIP** (line 1318)
+
+request seq-03 §3 states a single rule — "Existing `tuple_payload_missing ->
+RemoteSkipped` semantics for a sidecar tuple not visible under the read snapshot ...
+if the row-tier tuple is also not visible, return the normal missing marker" — and
+then says eligible `Frozen(row_tid)` local hits are converted "preserving the same
+visibility rule". Applied to a local hit that rule is a behaviour change in either
+direction, and the second-snapshot retry is unmentioned:
+
+  (a) if the sidecar miss returns the missing marker, the candidate SKIPS where the
+      control raises `EC_GENERATION_MISSING` (line 1296);
+  (b) if the sidecar lookup runs only under `es_snapshot`, it misses in the window
+      the control recovers from at lines 1269-1285, so the candidate skips or errors
+      on a row the control returns.
+
+Either way a covered local query diverges from the control on something other than
+the covered mechanism, under exactly the concurrent same-identity replacement that
+packet 003 checkpoint 5 must exercise.
+
+---
+
+## W4  BLOCKER EVIDENCE — the local lookup mechanism is unstated, and the local
+##     hit is consumed one row at a time
+
+$ sed -n 1180,1186p src/am/ec_distann/custom_scan.rs
+    let state = exec_state_mut(scan_state.cast());
+    ensure_outputs(state, scan_state);
+    // The projection is compiled for the (virtual) scan tuple slot, so every row
+    // — local or remote — is delivered through it.
+    let scan_slot = (*scan_state).ss_ScanTupleSlot;
+    loop {
+
+(The `Frozen` arm at 1248-1300 runs inside this per-row `custom_scan_access` loop
+and pays one direct `table_tuple_fetch_row_version` call, no SPI, no planner.)
+
+$ grep -n "unnest\|WITH ORDINALITY" src/am/ec_distann/remote_endpoint.rs
+790:    // via WITH ORDINALITY so responses zip 1:1 back onto `resolved`.
+953:           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
+1036:           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
+
+Result: request seq-03 §2's "one bounded batch with ordered `unnest(row_tids,
+vec_ids) WITH ORDINALITY`" is a clean extension of the existing owner-side SPI shape
+(remote_endpoint.rs:953/1036) and is correct for the REMOTE class. The LOCAL class
+has no batch: `Frozen` rows are resolved individually inside `custom_scan_access`.
+Replacing one direct heap fetch with one SPI `unnest` round per row would add
+plan/executor setup per row on ~40% of the production lazy-10 window (6 remote + 4
+local of 10, Task 239 packet 003), which lands directly on the primary endpoint the
+decision turns on. The plan does not say which mechanism the local class uses.
+
+---
+
+## W5  BLOCKER EVIDENCE — `Frozen` carries no `vec_id`, so the planned echo check
+##     is not expressible on the local path as the enum stands
+
+$ grep -n "enum CustomScanOutputRow" -A 25 src/am/ec_distann/custom_scan.rs
+616:enum CustomScanOutputRow {
+618-    Local(crate::storage::page::ItemPointer),
+621-    Frozen(crate::storage::page::ItemPointer),
+624-    Remote { vec_id: u64, payload_nulls: ..., payload_offsets: ..., payload_values: ... },
+632-    RemotePending { vec_id: u64, owner_heap_tid: crate::storage::page::ItemPointer },
+639-    RemoteSkipped { vec_id: u64 },
+640-}
+
+Result: `Frozen(ItemPointer)` holds a row-tier TID only. request seq-03 §2 requires
+"The returned SQL row must echo the requested `row_tid` and `vec_id`". On the remote
+path the expected `vec_id` is in hand (`resolve_owned_rows` returns `(vec_id, tid,
+..)`, remote_endpoint.rs:775). On the local path it is not.
+
+---
+
+## W6  Remote path resolves identity -> current TID owner-side; TID keying is
+##     still correct there, and the corruption rule stays derivable
+
+$ sed -n 760,776p src/am/ec_distann/remote_endpoint.rs
+fn materialize_row_payloads_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: &[i64],
+    ...
+    // FR-082/FR-078 preflight + heap ctid resolution (shared with the ctid path).
+    let resolved = resolve_owned_rows(index_oid, epoch_fingerprint, vec_ids)?;
+
+$ grep -n "expanded_locator" src/am/ec_distann/generation_read.rs
+3552:    expanded_locator: default!(bool, "false"),
+4612:    use_expanded_locator: bool,
+4638:    let owner_heap_tids = if use_expanded_locator {
+5996:        let candidate = super::options::benchmark_expanded_locator();
+
+Result: production sends `vec_ids` and the owner resolves them to the current row
+TID itself (Task 221's `benchmark_expanded_locator` is the benchmark-only variant
+that ships the TID from the coordinator). Because P1-1's sidecar holds one entry per
+row-tier version keyed by that version's TID, whichever TID the owner resolves has a
+same-transaction sidecar entry, so §3's "visible row-tier tuple with no matching
+visible sidecar tuple = corruption" remains provable on the remote path. No blocker
+here; recorded because it bounds what P1-1's version-exactness actually buys
+remotely.
+
+---
+
+## W7  P1-3 / P1-4 evidence design — closed
+
+$ sed -n 515,541p src/am/ec_distann/options.rs
+515:    #[cfg(feature = "distann-head-attribution-benchmark")]
+516:    GucRegistry::define_bool_guc(
+517:        c"ec_distann.benchmark_packed_payload", ... GucContext::Userset,
+545:    #[cfg(feature = "distann-head-attribution-benchmark")]
+        c"ec_distann.benchmark_expanded_locator", ... GucContext::Userset,
+        c"ec_distann.benchmark_payload_projection",
+        c"On uses the production exact/fail-closed attribute mask. Off forces the
+          historical all-column payload control. This GUC is absent from normal
+          production builds.", ... GucContext::Userset,
+
+$ grep -n "payload_projection" crates/ecaz-cli/src/commands/bench/suite.rs
+541:    payload_projection: bool,
+4942/4955/4970/4992:  && candidate.payload_projection == control.payload_projection
+5013:    let has_payload_projection_pair = ...
+5037:  "distann-local-multinode step {:?} materialization_correctness requires an isolated
+     owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, or
+     payload-projection pair"
+
+Result: seq-03 §5/§6's "feature-gated Userset `benchmark_covering_sidecar` variant
+field, default on, where off forces the row-tier read" is byte-for-byte the shipped
+Task 222 shape, and the new axis has an existing isolated-pair validator (5013-5037)
+to extend. P1-4 closed. P1-3's thresholds are stated with sign, magnitude, replicate
+rule and STOP band in seq-03 §6. Closed.
+
+---
+
+## W8  Cover `'1'` is valid against the fixture the matrix will use
+
+$ sed -n 1821p crates/ecaz-cli/src/commands/dev/distann_multicluster.rs
+         CREATE TABLE dm (id bigint, source real[], embedding ecvector);\n\
+
+$ sed -n 1904p crates/ecaz-cli/src/commands/dev/distann_multicluster.rs
+             (SELECT id FROM dm ORDER BY embedding <#> q.v LIMIT {top_k}) r;\n\
+
+Result: attnum 1 is `id bigint` — fixed width, `pg_catalog`, not dropped, not
+generated, not the indexed vector attribute (attnum 3). attnum 2 (`source real[]`)
+is an array and is correctly excluded by seq-03 §1's allowlist. The recall/latency
+query projects `id` alone, so the Task 222 mask is `Exact([1])` and the cover `'1'`
+is an exact subset. seq-03 §6's candidate declaration is feasible as written.
+
+Width bound check: the widest allowed type in seq-03 §1's ten-type allowlist is
+`uuid` at 16 bytes (`bool` 1, `int2` 2, `int4`/`float4`/`date` 4, `int8`/`float8`/
+`time`/`timestamp`/`timestamptz` 8). 16 attributes x 16 bytes = 256 value bytes;
+16 null bits = 2 bytes; 258 total. The arithmetic in §1 is correct and far below the
+~2 kB TOAST threshold, so `STORAGE PLAIN` cannot fail on a bounded entry.
+
+---
+
+## W9  P2-4 / P2-5 consumer enumeration — closed against the shipped call sites
+
+$ grep -rn "DISTANN_READY_RECEIPT_BYTES" src/ --include=*.rs
+src/am/ec_distann/manifest_v2.rs:38          (definition, 303)
+src/am/ec_distann/generation_catalog.rs:131  Option<[u8; 303]>
+src/am/ec_distann/generation_catalog.rs:703  fixed-array transition parameter
+src/am/ec_distann/handoff.rs:1686            Ready construction
+src/am/ec_distann/lifecycle_wire.rs:132,147  cross-node Ready-receipt-set framing
+src/am/mod.rs:112 / src/am/ec_distann/mod.rs:167 / src/lib.rs:480   exports
+src/tests/ec_distann_physical_lifecycle.rs:6116                     fixture
+
+$ grep -n "ready_receipt\b\|ready_receipt_set" sql/bootstrap.sql
+355-360: octet_length(ready_receipt) = 303 AND get_byte(ready_receipt,0)=1 AND get_byte(...,1)=0
+562:     ready_receipt_set bytea NOT NULL CHECK (octet_length(ready_receipt_set) > 0)
+
+seq-03 §4 lists: "generation catalog row and transition parameter, handoff Ready
+construction, lifecycle-wire Ready-receipt-set framing, AM/module/lib exports, SQL
+receipt and candidate-set checks, and physical lifecycle fixtures". Every site above
+is covered, including the `lifecycle_wire.rs` wire the seq-01 plan omitted. Closed.
+
+$ grep -n "UNIQUE (row_tier_relid)" -A 2 sql/bootstrap.sql
+392:    UNIQUE (row_tier_relid),
+393:    UNIQUE (graph_store_relid),
+394:    UNIQUE (directory_relid)
+
+Fixed-triple Rust sites re-confirmed unchanged: generation_read.rs:632-635 (cache
+invalidation), generation_store.rs:668-672 (replay existence), :612-621 (drop),
+:1041-1052 (REINDEX reset), generation_catalog.rs:756 (enumeration). seq-03 §4's six
+named surfaces map 1:1 onto these five plus the SQL uniqueness triple. Closed.
+
+$ grep -n "replica_relid" sql/bootstrap.sql
+1039: CREATE TABLE ec_distann_traversal_replica (
+1056:     replica_relid oid NOT NULL ...
+1084:     UNIQUE (replica_relid),
+
+Note: the traversal replica lives in its own catalog table, so a generation's
+physical relations really are three today and become five with the sidecar heap +
+index. seq-03 §4's "all five physical relations" is accurate.
+
+---
+
+## W10  Naming, versioning and fingerprint width — no new obstruction
+
+$ sed -n 317,323p src/am/ec_distann/generation_store.rs
+fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String, String) {
+    let suffix = hex::encode(build_id.as_bytes());
+    let oid = u32::from(index_oid);
+    (format!("_ecdz_row_{oid}_{suffix}"),
+     format!("_ecdz_graph_{oid}_{suffix}"),
+     format!("_ecdz_dir_{oid}_{suffix}"))
+
+$ sed -n 483,486p src/am/ec_distann/generation_store.rs
+        "CREATE UNIQUE INDEX {} ON {qualified_graph} (vec_id){tablespace} \
+         WHERE is_current",
+        quote_ident(&directory_name)
+
+Result: `_ecdz_dir_*` is an INDEX name produced by the same helper, so the plan's
+"one heap + one unique B-tree, named by the existing deterministic OID/build-id
+helper convention" has a direct precedent. Width: `_ecdz_cover_` (12) + oid (<=10) +
+`_` (1) + 32 hex = 55 < NAMEDATALEN 63; an `_ecdz_cover_dir_` variant is 59. Both
+fit without a hand-rolled truncation rule.
+
+$ grep -n "DISTANN_EPOCH_FINGERPRINT_BYTES" src/am/ec_distann/manifest_v2.rs
+32: pub const DISTANN_EPOCH_FINGERPRINT_BYTES: usize = 34;
+
+$ sed -n 362,364p sql/bootstrap.sql
+    epoch_fingerprint bytea CHECK (
+        epoch_fingerprint IS NULL OR octet_length(epoch_fingerprint) = 34
+    ),
+
+Result: a fingerprint is 2 version bytes + 32 digest bytes = 34, and the SQL check is
+length-only with no hardcoded version byte. seq-03 §4's "Fingerprints accept both
+`02 00 + digest` and `03 00 + digest`" needs no SQL width or check change. Domains at
+generation_descriptor.rs:38 and manifest_v2.rs:43-44 are unchanged by the plan, per
+P2-3. Closed.
+
+---
+
+## W11  Bookkeeping is current (no stale-header defect)
+
+$ grep -n "^| 229 " plan/design/ec-distann-recall-latency-roadmap.md
+134:| 229 | Covering scalar payload sidecar | implementation pending — packet 001
+seq-01 NOT DONE findings addressed; revised plan rereview-open; no source change;
+Tasks 222–224 and 239 entry conditions review-closed | one owner-local
+row-version-exact sidecar keyed by frozen row-tier TID; ... |
+
+$ grep -n "229" plan/tasks/README.md
+270: 229. ... **implementation pending — packet 001 seq-01 NOT DONE findings addressed;
+revised concrete plan rereview-open on exact current main; no source change yet;
+Tasks 222–224 and 239 entry conditions review-closed** ... keyed by frozen row-tier TID ...
+
+Result: the task file `Status:` line, the `plan/tasks/README.md` row, and the roadmap
+row all carry the post-P1-1 TID-keyed description and the rereview-open state. No
+stale-header defect. Entry conditions 1-4 remain satisfied (Task 222 review-closed
+ACCEPT, Task 239 review-closed ACCEPT restoring lazy-10 to 6 remote + 4 local = 10).
+
+---
+
+End of log.
