@@ -126,7 +126,7 @@ validity requirements.
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
 | 223 | Direct owner tuple materialization | **complete — review-closed ACCEPT; STOP** (2026-08-25) | the reviewer accepted the 0.514999 ms / 4.439647% whole-bucket dominance proof, retired substage instrumentation as decision-obviated, and authorized no direct candidate |
-| 224 | Owner payload heap locality | **packet 003 MAT-26 implementation/preregistration review-open; 100k screen not yet run; MAT-25 retired** | feature-only exact `real[]` sender `0ad5d6393` is preregistered for an unprofiled same-generation screen; serial saving remains <=5.148990 ms / 18.258830% |
+| 224 | Owner payload heap locality | **packet 003 seq01 NOT DONE; blockers corrected at `7cafbd202`; rereview open; screen unauthorized; MAT-25 retired** | corrected exact `real[]` sender and four-step noise/attribution preregistration await outside acceptance; serial saving remains <=5.148990 ms / 18.258830% |
 | 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 | 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
@@ -155,9 +155,11 @@ attribution now finds a real wide-value ceiling: vector-bearing binary send is
 path limits any serial saving to at most 5.148990 ms / 18.258830% of its
 28.20 ms profiled warm mean. MAT-25 has essentially one TID per heap block and
 no coalescing premise. Packet 002 is review-closed ACCEPT; MAT-26's feature-only
-exact `real[]` sender and isolated same-generation 100k screen are packet-003
-review-open at `0ad5d6393`, and packet 002's profiled warm means are barred as
-candidate baselines. Task 225 remains
+exact `real[]` sender was packet-003 seq01 NOT DONE. The four blockers are
+corrected at `7cafbd202`, with control-repeat noise and profiled attribution
+added before measurement; rereview is open and the 100k screen remains
+unauthorized. Packet 002's profiled warm means remain barred as candidate
+baselines. Task 225 remains
 conditional on a separately measured finalist-stability and hideable-RTT
 premise.
 
@@ -360,7 +362,7 @@ remain controls rather than new candidates.
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **review-closed retired by Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
-| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 implementation/preregistration review-open at `0ad5d6393`**: exact `real[]` sender is feature-only/default-off; the unprofiled same-generation 100k screen has not run; serial saving remains <=5.148990 ms / 18.258830% |
+| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 seq01 NOT DONE, corrected at `7cafbd202`, rereview open**: session-wide native fallback, exact bitmap parity, outcome telemetry, release-only preflight, control-repeat noise, and profiled attribution are preregistered; the 100k screen remains unauthorized; serial saving remains <=5.148990 ms / 18.258830% |
 | MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |

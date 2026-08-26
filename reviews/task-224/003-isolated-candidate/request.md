@@ -8,10 +8,16 @@ seq: 01
 
 # Task 224 packet 003 — MAT-26 implementation and screen preregistration
 
-Review requested at code HEAD
+Initial review was requested at code HEAD
 `0ad5d63930bb021114585f64da5ab3622e4ddf7b` before the live 100k A/B.
 Packet 002 authorized exactly one MAT-26 candidate under instrumentation parity;
 this packet implements that candidate and preregisters the isolated screen.
+
+Reviewer seq01 returned **NOT DONE** and did not authorize the screen. The
+follow-up code checkpoint and amended preregistration below address all four
+blockers at corrected code HEAD
+`7cafbd2027b05365afd47c6f8b34c0415e6b78fc`; a live run remains prohibited
+until outside rereview accepts them.
 
 ## Candidate
 
@@ -24,10 +30,12 @@ detoasted flat array:
 - dimension count, null flag, element OID, dimensions, and lower bounds are
   emitted in network order;
 - every float retains its exact IEEE-754 bits, including negative zero and NaN;
-- arrays containing NULL elements fall back to PostgreSQL `array_send`;
+- arrays carrying a NULL bitmap fall back to PostgreSQL `array_send`, including
+  the reachable bitmap-without-NULL shape, so the flags word is byte-identical;
 - all other SQL types fail closed;
 - only frozen-schema attributes identified as `pg_catalog._float4` are
-  substituted, and a candidate request with no such projection fails closed.
+  substituted; requests with no such projection use their frozen native send
+  functions and increment an explicit ineligible-request counter.
 
 The path is absent from normal builds. It requires the feature-only, default-off
 `ec_distann.benchmark_fast_real_array_send` GUC, which the coordinator transmits
@@ -39,44 +47,101 @@ the control shape.
 
 Config:
 `crates/ecaz-cli/suites/task224-mat26-fast-real-array-100k.json`
-(`ddad71b7f8d92b9ec3e061e2622ff09820d4edfb3ea400c196f7dbcbe8746d57`).
+(`d9b086cc4664390dd8833e2ff8db8965e98a41a35965159cce14feda7834e941`).
 
-Both steps use:
+The amended suite has four ordered steps on one immutable fixture:
+
+1. unprofiled production control A;
+2. the unprofiled-SQL fast-sender candidate;
+3. unprofiled production control B, bounding run-to-run noise around the
+   candidate; and
+4. a nonconforming profiled-control context arm, bounding the candidate's
+   timing-shim handicap and exposing native `typsend` send-region work.
+
+All decision-bearing steps use:
 
 - the vector-bearing projection;
 - `skip_owner_locality_profile=true`, so both arms run unprofiled production
   payload SQL;
 - the same two eager/lazy-10 runtime variants in the same order;
-- one external run directory and exact fixture reuse for the candidate step;
+- one external run directory and exact fixture reuse for every subsequent step;
 - 200 frozen queries, 20 warmups, and 200 measured iterations;
 - recall prediction output, stage/work counters, and the full materialization
   semantic/failure matrix.
 
-The only cross-step runtime difference is
-`owner_fast_real_array_send=false/true`. Candidate runs additionally fail if
-owner activation telemetry reports zero projected values or binary-send bytes.
-The reuse invariant attests the exact epoch fingerprint at runtime.
+The headline cross-step runtime difference is
+`owner_fast_real_array_send=false/true`. Candidate latency runs fail unless
+fast-path values are nonzero and both generic-array fallbacks and ineligible
+requests are zero. Recall and the correctness matrix keep the session switch
+enabled; id-only/narrow queries exercise the visible native-send degradation
+instead of aborting. The reuse invariant attests the exact epoch fingerprint
+at runtime.
 
-Proposed decision gate: advance to packet 004 only if the matched production
-lazy-10 candidate improves warm mean by at least 5%, does not regress p95 or p99
-by more than 5%, produces byte-identical predictions, and passes both semantic
-matrices. Otherwise Task 224 STOPs after this screen. The expected improvement
-remains bounded by packet 002's 5.148990 ms / 18.258830% endpoint critical path,
-not the 24.709206% summed-owner bucket.
+`allow_debug_extension` is absent from every step. Before the run, all nodes
+must receive a release, non-`pg_test`, attribution-feature build at the reviewed
+HEAD; the fixture preflight must independently attest the unanimous release
+profile and exact git SHA.
+
+Amended decision gate, fixed before measurement:
+
+- Let `C` be the arithmetic mean of control A and control B's matched lazy-10
+  warm means, and `N = abs(A-B) / C` be the measured noise floor.
+- The candidate must improve on `C` by at least 5% **and** at least `2*N`.
+- Candidate p95 and p99 must each be no more than 5% above the arithmetic mean
+  of the corresponding control percentiles.
+- The matched send-region saving (`profiled-control owner_binary_send_ns` minus
+  candidate `owner_binary_send_ns`) must be positive and at least 50% of the
+  end-to-end warm-mean saving. This makes a flat or contradictory send bucket
+  an attribution failure.
+- Candidate fast-path values must be nonzero; fallback and ineligible counters
+  must be zero in the vector-bearing latency arm; cross-step prediction files
+  must be byte-identical; both decision-bearing semantic matrices must pass.
+
+The profiled-control minus `C` warm-mean delta is reported as a conservative
+upper bound on the candidate's asymmetric timing-shim cost: the context arm
+profiles both projected values while the candidate wrapper instruments only
+the `real[]`. A passing observed candidate delta is therefore a lower bound on
+the underlying sender win. Advance to packet 004 only if every gate passes;
+otherwise Task 224 STOPs after this screen. The expected improvement remains
+bounded by packet 002's 5.148990 ms / 18.258830% endpoint critical path, not the
+24.709206% summed-owner bucket.
 
 ## Validation at HEAD
 
 - normal PG18 `cargo check`: pass;
 - feature PG18 `cargo check`: pass;
 - pure wire encoder tests: 2 pass;
-- focused CLI/suite tests: 4 pass;
+- focused CLI/suite tests: 5 pass;
 - focused PG18 byte-equivalence and wrong-type tests: 2 pass;
 - `cargo fmt --all -- --check`: pass.
 
-The SQL byte-equivalence test covers empty arrays, NaN/negative zero,
-multidimensional arrays with non-default lower bounds, and NULL-element fallback
-against PostgreSQL `array_send`. See `artifacts/manifest.md` and the packet-local
-validation logs.
+The corrected SQL byte-equivalence test covers empty arrays, NaN/negative zero,
+multidimensional arrays with non-default lower bounds, NULL-element fallback,
+and a NULL bitmap whose NULL slot was overwritten against PostgreSQL
+`array_send`. The empty-array path also avoids constructing a zero-length slice
+past the allocation. See `artifacts/manifest.md` and the packet-local validation
+logs.
+
+## Response to reviewer seq01
+
+1. **Session-GUC blast radius:** fixed by native-send degradation for
+   projections without `real[]`; new outcome telemetry counts fast values,
+   generic-array fallbacks, and ineligible requests.
+2. **Debug extension:** fixed in preregistration by removing every debug
+   override. The release reinstall and exact-SHA preflight are mandatory run
+   prerequisites, not assertions supplied by the packet.
+3. **Bitmap parity:** fixed by falling back on `ArrayType.dataoffset != 0`; the
+   reviewer's bitmap-without-NULL reproducer is now a PG18 regression case.
+4. **Instrumentation/noise/attribution:** the two extra fixture-reuse steps
+   establish control-repeat noise and a profiled native-send context. The exact
+   usefulness and attribution gates above were fixed before seeing results.
+
+Non-blocking items (a), (b), and (c) are also closed by explicit outcome
+counters with fail-closed CLI assertions, a pinned provenance-suffix unit test,
+and the empty-array early return. Item (d)'s volatility/parallel-safety
+difference is retained and disclosed: this lateral per-row payload expression
+cannot be folded or parallelized in either arm, and any residual planner effect
+is conservative for the candidate.
 
 ## Review questions
 
@@ -87,4 +152,3 @@ validation logs.
 3. Is the preregistered 5% usefulness gate appropriate, or should it be amended
    before the 100k run?
 4. May the live same-generation 100k screen proceed at this HEAD?
-
