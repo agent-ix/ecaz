@@ -1,14 +1,33 @@
 # Task 239: ec_distann Bounded-Read Overfetch
 
-Status: **packet 001 review-closed ACCEPT — exact-main semantic harness
-eager-path 12/10 reproduced; packet 002 review-closed NOT DONE after its sole
-run failed pre-semantics on a 40-row/37-row cross-SHA stage schema; no rerun;
-packet 003 exact-main harness port `21c013079` and main-compatible config
-`0adea669b` landed; code/config/dry review-closed DONE; its sole C1--C5 live run
-passed all nine scenarios and restored the production lazy-10 path to exactly
-6 remote + 4 local = 10 reads for 10 rows with identical 0.9990 predictions;
-HARNESS REGRESSION CORRECTED; outside semantic closeout review-open; no rerun;
-immediate P1 campaign blocker before Task 229 semantic closeout**
+Status: **complete — review-closed ACCEPT. Packet 001 ACCEPT reproduced the
+exact-main 12/10 semantic observation; packet 002 review-closed NOT DONE after
+its sole run failed pre-semantics on a 40-row/37-row cross-SHA stage schema, no
+rerun; packet 003 ported the harness fix onto exact main (`21c013079` +
+main-compatible config `0adea669b`) and its sole C1--C5 live run passed every
+preregistered gate: all nine semantic scenarios exactly once in both logs, seven
+core rows at `control_batch_size=0 candidate_batch_size=10` with exact
+eager/candidate identity and zero duplicates, `exactly_one_window` at 6 remote +
+4 local = 10 reads against an unchanged bound of 10, mixed/outage pass, routed
+DELETE+VACUUM pass, both recall arms 0.9990 over 200 queries / 2,000 trials with
+predictions byte-identical to packet 001. Disposition: HARNESS REGRESSION
+CORRECTED; EXACT-MAIN LAZY-10 SEMANTIC PATH RESTORED TO 10/10. The 12/10 was a
+shared-session batch-size GUC leak in the benchmark harness — a variant at batch
+size 10 emitted no `SET`, so the "lazy-10" arm inherited the eager control's 0 —
+not production bounded-read overfetch; the bound was never widened. `git diff
+41392c011 def565270 -- src` is empty, so no production runtime behavior changed
+and the 10k/50k/100k closeout matrix is NOT triggered: packet
+`004-full-scale-decision` is correctly not required. No rerun was performed or is
+needed; determinism rests on the same 6/4/10 split and digests at three
+independent extension SHAs (task-191 `7883cfcf`, task-198 `2ff72b3e`, this run
+`4ab2aa9a9`). The Task 229 / 230--233 semantic-surface blocker is LIFTED — they
+may now use this surface as closeout evidence. Carried follow-ups (none owned by
+Task 239, all for whichever task next touches the multinode semantic harness):
+mixed/outage failures still emit no structured `pass=false` row;
+`owner_payload_plan_cache` retains the same conditional-`SET` leak shape; the
+recall/latency children's batch size stays inferred rather than attested.
+Closeout feedback:
+`reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-02-reviewer.md`**
 (updated 2026-08-26). Priority: P1 correctness/performance. Decision record:
 `reviews/task-239/001-current-main-reproduction/artifacts/reproduction-decision.md`;
 accepted disposition:
@@ -29,6 +48,10 @@ Packet 003 live authorization:
 `reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-01-reviewer.md`.
 Packet 003 result decision:
 `reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run-decision.md`.
+Packet 003 semantic closeout verdict (task closeout):
+`reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-02-reviewer.md`.
+Closeout verification log:
+`reviews/task-239/003-main-baseline-semantic-proof/artifacts/reviewer-seq02-verification.log`.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
@@ -90,6 +113,9 @@ production behavior or justify a corrected bound with decision-grade evidence.
   byte-identical.
 - Task 229 may begin implementation, but neither it nor Tasks 230--233 may use
   this semantic surface as closeout evidence until Task 239 is review-closed.
+  **Lifted 2026-08-26**: Task 239 is review-closed ACCEPT, so Tasks 229 and
+  230--233 may now use this semantic surface as closeout evidence
+  (`reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-02-reviewer.md`).
 
 ## Acceptance
 
@@ -109,9 +135,12 @@ production behavior or justify a corrected bound with decision-grade evidence.
 
 1. `reviews/task-239/001-current-main-reproduction/`
 2. `reviews/task-239/002-diagnosis-and-correction/`
-3. `reviews/task-239/003-semantic-closeout/`
+3. `reviews/task-239/003-semantic-closeout/` — landed as
+   `reviews/task-239/003-main-baseline-semantic-proof/`
 4. `reviews/task-239/004-full-scale-decision/` (only when runtime behavior
-   changes and the 10k/50k/100k rule applies)
+   changes and the 10k/50k/100k rule applies) — **not triggered**; the
+   correction is harness-only and `git diff 41392c011 def565270 -- src` is
+   empty, so no packet 004 is required
 
 ## References
 

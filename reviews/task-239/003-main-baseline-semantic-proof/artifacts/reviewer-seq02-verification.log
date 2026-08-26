@@ -1,0 +1,284 @@
+# Task 239 packet 003 reviewer seq02 verification log
+
+Read-only reviewer session. No build, install, PostgreSQL, suite, or fixture
+action. Reviewed at branch HEAD def56527047a42a63763346af1402bd57b16f9bf,
+working tree clean, so every hash below is a committed-byte hash.
+
+## 0. Repository state
+
+    $ git rev-parse HEAD
+    def56527047a42a63763346af1402bd57b16f9bf
+    $ git status --porcelain
+    (empty)
+    $ git log --oneline -1 origin/task239-main-port
+    def565270 Record Task 239 exact-main semantic proof
+
+## 1. Generated artifact hashes from committed bytes
+
+    $ sha256sum --check live-artifacts.sha256
+    extension-install-4ab2aa9a9.log: OK
+    live-runner-rebuild-4ab2aa9a9.log: OK
+    pre-run-attestation.log: OK
+    live-suite.log: OK
+    live-run/main-port/distann-local-multinode.log: OK
+    live-run/main-port/distann-multinode-summary.log: OK
+    live-run/main-port/node1-postgres.log: OK
+    live-run/main-port/node2-postgres.log: OK
+    live-run/main-port/node3-postgres.log: OK
+    live-run/main-port/physical-eager-control-latency.log: OK
+    live-run/main-port/physical-eager-control-latency.memory-series.log: OK
+    live-run/main-port/physical-eager-control-predictions.json: OK
+    live-run/main-port/physical-eager-control-recall.log: OK
+    live-run/main-port/physical-head-membership.json: OK
+    live-run/main-port/physical-lazy10-production-latency.log: OK
+    live-run/main-port/physical-lazy10-production-latency.memory-series.log: OK
+    live-run/main-port/physical-lazy10-production-predictions.json: OK
+    live-run/main-port/physical-lazy10-production-recall.log: OK
+    live-run/results.jsonl: OK
+    live-run/suite-manifest.json: OK
+    (20/20)
+
+    $ sha256sum live-artifacts.sha256
+    fbf4bce68f03bb0884a853544f792da91f346fe6e339444884fd7728343cecf9
+
+Independent recomputation from git objects (`git show HEAD:<path> | sha256sum`),
+compared against the eight digests quoted in `manifest.md:138-153`:
+
+    015cece64e0faf7e627335ae427b8e8d9254b934749bb8184f834b8f15becd92  live-run/suite-manifest.json
+    7ede530aa2fc8bb3fd58d3d74bf7add35b4f9a94f1ca1c5737814dc0cbbdb1aa  live-run/results.jsonl
+    c2c5da71e75243082aae5e065d35c10ff6ea858c89741864db0bd2ee22bad8b4  live-run/main-port/distann-local-multinode.log
+    2adc0db4e686e3e9a97800b55ab2c30fcc3011b593a8d685942f79f8d38b9874  live-run/main-port/distann-multinode-summary.log
+    7eee08659c8c49e1224722b2ee5c38aff661276599a1237e98cdb13e6d9c236f  live-suite.log
+    c14f8c8e12d1cc758f21b2e4f8415bbf4201961faf1c9473a4898ca266b1e3dd  pre-run-attestation.log
+    c548d1362efd03f7ff3dfc6891ee3322fae3f89afbe6c75dfa3fd875c6d5ff33  extension-install-4ab2aa9a9.log
+    00dcaa75a5a972ff98ba0ebd74f67c9539aacd7bf32ee6f0eb8b8a3def0e408d  live-runner-rebuild-4ab2aa9a9.log
+
+All eight match `manifest.md` exactly.
+
+## 2. Gate 1 — runner / extension / config provenance
+
+Suite manifest (`live-run/suite-manifest.json`):
+
+    runner_git_commit = 4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c
+    config_sha256     = 53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532
+    dry_run           = False
+    steps             = 1
+    step: name=main-port-semantics-10k kind=distann-local-multinode selected=True
+          status=succeeded exit_code=0 duration_ms=149237
+          started 2026-08-26T03:46:25.888  finished 2026-08-26T03:49:04.121
+
+Config hash recomputed from three sources — worktree, `0adea669b`, `4ab2aa9a9`:
+
+    53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  (all three)
+
+Extension preflight, `distann-local-multinode.log:4`:
+
+    release_profile_preflight status=passed nodes=3 unanimous=true
+      extension_git_sha=4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c
+      extension_build_profile=release
+      extension_features=distann-head-attribution-benchmark,pg18
+      debug_override=false
+
+    $ grep -c release_profile_preflight distann-local-multinode.log
+    1
+
+No `pg_test` / `pg-test` token appears anywhere in the live logs.
+
+Install log (`extension-install-4ab2aa9a9.log:4-15`) — the installed shared
+library is the release build; the later `dev` profile line is pgrx's
+`pgrx_embed` SQL-entity generator, not the installed `.so`:
+
+    Running command "cargo" "build" "--lib" "--release" "--features"
+      "pg18,distann-head-attribution-benchmark pg18" "--no-default-features" ...
+    Finished `release` profile [optimized] target(s) in 4m 37s
+    Copying shared library to .pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+    Rebuilding pgrx_embed, in debug mode, for SQL generation ...
+    Script done on 2026-08-26 03:35:04-07:00 [COMMAND_EXIT_CODE="0"]
+
+## 3. C1--C5 conditions
+
+C2/C3 pre-run attestation (`pre-run-attestation.log`, verbatim):
+
+    2026-08-26T03:46:25-07:00
+    4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c
+    worktree_clean=true
+    ce5bfeb1ea486c2fbed3027a703bba49122ac5123f46672cd0aaf1b4b0eb5163  /home/peter/.cargo-target/release/ecaz
+    53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  crates/ecaz-cli/suites/task239-main-port-semantics-10k.json
+    ports_free=true
+
+Attestation timestamp 03:46:25 vs manifest `generated_at` 03:46:25.869 and step
+start 03:46:25.888 — contiguous, same invocation. Binary hash matches
+`manifest.md:65`. `runner_git_commit` is `4ab2aa9a9...`, not `-dirty`, and the
+run log line 1 reads
+`repo=/home/peter/dev/ecaz/.worktrees/task239-main-port-run-build`, so C3's
+detached-checkout invocation holds.
+
+C4 invocation count. Single expanded command in `live-suite.log`:
+
+    main-port-semantics-10k -> ... dev distann-multicluster local-multinode-pg18 --pg 18
+      --nodes 3 --physical-benchmark --distann-stage-counters --skip-single-control
+      --skip-concurrency-drill --materialization-correctness --benchmark-iterations 1
+      --benchmark-warmup-iterations 0 --sample-backend-memory --memory-sample-interval-ms 25
+      --base-port 44070 --graph-degree 32 --build-shards 1 --head-index-cap 4096
+      --beam-width 4 --candidate-heap-limit 32 --hop-rounds 100
+      --benchmark-seed-variant eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on
+      --benchmark-seed-variant lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on
+      --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_10k
+      --staged-dir /home/peter/dev/ecaz/data/staged-current
+
+No `--continue-on-error`, `--only`, `--only-tag`, resume, or replacement.
+Corroborating single-invocation evidence: exactly one `release_profile_preflight`
+(one cluster bringup), one step record in the manifest, and one commit in
+history that adds any file under `artifacts/live-run/`:
+
+    $ git log --oneline --all -- reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run
+    def565270 Record Task 239 exact-main semantic proof
+
+C5 fixture removal:
+
+    $ ls /home/peter/.ecaz/clusters/ | grep task239
+    (no match; 26 unrelated task-* directories remain)
+
+## 4. Gate 2 — nine semantic rows, exactly once, in both logs
+
+    scenario                            main log   summary
+    fewer_than_window                      1          1
+    exactly_one_window                     1          1
+    more_than_window                       1          1
+    reject_first_window                    1          1
+    reject_multiple_windows                1          1
+    null_payload                           1          1
+    toasted_projection_qual                1          1
+    mixed_local_remote                     1          1
+    post_first_batch_remote_failure        1          1
+    total physical_materialization_correctness rows: 9 / 9
+    semantic pass=false rows:                        0 / 0
+    candidate_default_quality_gate_failed (Task 167): 0 / 0
+    physical_materialization_feature_isolation:       0 / 0
+
+    $ diff <(grep 'physical_materialization_correctness ' distann-local-multinode.log) \
+           <(grep 'physical_materialization_correctness ' distann-multinode-summary.log)
+    IDENTICAL_SEMANTIC_ROWS_BOTH_LOGS
+
+`results.jsonl`: 221 records, of which 9 are
+`metric=physical_materialization_correctness`.
+
+Only `pass=false` line in the summary is the carved-out
+`physical_benchmark_insert_throughput_ab ... reason=single_control_skipped`
+(summary line 215), which gate 2 excludes and which packet 001 also emitted on
+a `status=succeeded` step.
+
+## 5. Gate 3--5, G-b — seven core rows
+
+Programmatic check over the summary log (identity, batch sizes, duplicates,
+bound):
+
+    fewer_than_window        identity=ok cbs=0/10 dup=0 reads=8<=10
+    exactly_one_window       identity=ok cbs=0/10 dup=0 reads=10<=10
+    more_than_window         identity=ok cbs=0/10 dup=0 reads=15<=20
+    reject_first_window      identity=ok cbs=0/10 dup=0 reads=20<=1024
+    reject_multiple_windows  identity=ok cbs=0/10 dup=0 reads=48<=1024
+    null_payload             identity=ok cbs=0/10 dup=0 reads=20<=1024
+    toasted_projection_qual  identity=ok cbs=0/10 dup=0 reads=58<=1024
+    core rows checked: 7
+
+Full digests as recorded (all seven, eager == candidate):
+
+    fewer_than_window        08efa6098f4a7cbfb47641ffc22b015d68f6294d8a5276b9c7424ff0d2017dfc
+    exactly_one_window       df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d
+    more_than_window         82f675ad84705e13d0fc9789311c7ae31afcde99bb87a32e6b11df42638e4013
+    reject_first_window      3568e635d294a8ea2e7454f1913f652a8d20cb9f1844d1926e4c5466eeb44755
+    reject_multiple_windows  f4aeaffeb10657ae0907039af6ec9bc91a8637e140a270dee419a3f7ce37f73c
+    null_payload             fef30f6c6a27365ecc1f08e73aefeb1a5bcbc06c44e2593983b13297f23f8fb8
+    toasted_projection_qual  001d1fa653aef3470989267a7446a9575b9dcae8f00c240f4f726b6b01e878d4
+
+Counter splits: `fewer_than_window` remote 6 / local 2 / reads 8 / bound 10;
+`exactly_one_window` remote 6 / local 4 / reads 10 / bound 10. Both equal the
+preregistered gate-4 and gate-5 values exactly; no G-a adjudication is needed.
+
+Cross-run identity against packet 001's production lane:
+
+    $ diff <(digests from task-239/001 .../production-run/production/distann-multinode-summary.log) \
+           <(digests from packet 003 summary)
+    CORE_DIGESTS_IDENTICAL_TO_PACKET001
+
+Independent 10/10 precedent at an unrelated extension SHA, task-198 packet 003
+(`artifacts/run/replica-lifecycle-smoke-10k/distann-multinode-summary.log`):
+
+    scenario=exactly_one_window pass=true rows=10 eager_digest=df979e2df3cc...
+    remote_requested=6  local_consumed=4  payload_reads=10
+
+Task-191 packet 002 semantic run records the same scenario/digest.
+
+## 6. Gate 6 — mixed and outage
+
+    scenario=mixed_local_remote pass=true rows=10 candidate_batch_size=10
+      remote_consumed=6 local_consumed=4 duplicate_requested=0
+    scenario=post_first_batch_remote_failure pass=true first_rows=10
+      candidate_batch_size=10 first_remote_requested=6 duplicate_requested=0
+      error_digest=bd4f381db7f19a7cd8e37e25d5d4ebb6f8c05e89a598f3434343f55a9c99e02f
+
+Mixed: 6 + 4 = 10, both positive, zero duplicates. Outage: the emitted
+`pass=true` row is only reachable when the first batch returned 10 rows with
+positive remote requests (`distann_multicluster.rs:6331-6338`), duplicates are
+zero (`:6371-6375`), and a later error actually occurred
+(`:6377-6379` — `bail!` on "returned a complete prefix without error"). Fail-closed
+is structurally enforced, not merely reported.
+
+## 7. Gate 7 — recall and prediction identity
+
+    variant=eager-control      queries=200 trials=2000 recall=0.9990 membership_recall=0.9990 distinct_recall=0.9990
+    variant=lazy10-production  queries=200 trials=2000 recall=0.9990 membership_recall=0.9990 distinct_recall=0.9990
+
+    $ sha256sum physical-eager-control-predictions.json physical-lazy10-production-predictions.json
+    801f6a0b83237047fea6ebd92cb1b85f07aa8dd80ee6dbd5c7877153e724fb6e  (both)
+    $ cmp <the two files>
+    PREDICTIONS_BYTE_IDENTICAL
+
+Packet 001 comparison — all four packet-001 prediction files:
+
+    801f6a0b83237047fea6ebd92cb1b85f07aa8dd80ee6dbd5c7877153e724fb6e
+      001/.../production-run/production/physical-eager-control-predictions.json
+      001/.../production-run/production/physical-lazy10-production-predictions.json
+      001/.../attribution-run/attribution/physical-eager-control-predictions.json
+      001/.../attribution-run/attribution/physical-lazy10-production-predictions.json
+
+## 8. Routed drill
+
+    distann-multinode-summary.log:227  physical_routed_delete_vacuum pass=true
+
+## 9. Regression baseline and root cause
+
+Packet 001 attribution lane, the observation Task 239 exists to explain
+(`001/.../attribution-run/attribution/distann-local-multinode.log:24`):
+
+    materialization correctness scenario exactly_one_window failed:
+      rows=10/10 identity=true null_ok=true external_toast_ok=true
+      remote_requested=8 local_consumed=4 payload_reads=12/10 duplicate_requested=0
+
+Root cause is visible in the ported hunk `git show 21c013079`:
+
+    -    if variant.materialization_batch_size != 10 {
+    -        ... "SET ec_distann.benchmark_materialization_batch_size = {}" ...
+    +        "SET ec_distann.benchmark_materialization_batch_size = {}",
+    +        variant.materialization_batch_size
+
+A variant at batch size 10 previously emitted no `SET`, so in the shared
+attribution session the "lazy-10" candidate inherited the eager control's 0 and
+the measured arm was not the production policy. The port also reads the value
+back with `current_setting(..., true)` per arm and fails closed if absent, which
+is what the `control_batch_size=0 candidate_batch_size=10` fields on every core
+row now attest.
+
+## 10. No production source change
+
+    $ git diff --stat 41392c011106cb040095fd6004c4d5c0f136f1a0 def56527047a42a63763346af1402bd57b16f9bf -- src
+    (empty)
+    $ git diff --stat <same range> -- src crates
+     crates/ecaz-cli/src/commands/dev/distann_multicluster.rs | 171 +++++++++-----
+     crates/ecaz-cli/suites/task239-main-port-semantics-10k.json |  86 +++++++
+     2 files changed, 217 insertions(+), 40 deletions(-)
+
+Extension source is byte-identical to main at HEAD, so the repository's
+10k/50k/100k runtime-change closeout matrix is not triggered and packet 004 is
+not required.
