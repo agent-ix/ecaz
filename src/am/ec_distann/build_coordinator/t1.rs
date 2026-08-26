@@ -320,11 +320,15 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             super::super::routine::indexed_ecvector_attnum(control.as_ptr())?,
         )
         .map_err(|_| "EC_SCHEMA_UNSUPPORTED: indexed vector attnum exceeds u16".to_owned())?;
-        let _resolved_payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+        let resolved_payload_cover = super::super::payload_sidecar::resolve_payload_cover(
             &row_schema,
             indexed_vector_attnum,
             options.covering_payload_attnums.as_deref(),
         )?;
+        let payload_cover_descriptor_digest = resolved_payload_cover
+            .as_ref()
+            .map(|cover| cover.digest())
+            .transpose()?;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
@@ -334,6 +338,7 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             build_id,
             epoch,
             row_schema_fingerprint,
+            payload_cover_descriptor_digest,
             compatibility_digest,
             source_relation_oid,
         )? {
@@ -373,6 +378,7 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             &roster_snapshot,
             frozen_roster_digest,
             row_schema_fingerprint,
+            payload_cover_descriptor_digest,
             compatibility_digest,
             &participants,
         )?;

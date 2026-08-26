@@ -38,7 +38,8 @@ use super::manifest_v2::{
 use super::roster_digest;
 use super::row_schema::resolve_relation_schema;
 
-const BUILD_REGISTRATION_VERSION: u16 = 1;
+const BUILD_REGISTRATION_V1_VERSION: u16 = 1;
+const BUILD_REGISTRATION_V2_VERSION: u16 = 2;
 const BUILD_REGISTRATION_DOMAIN: &[u8] = b"ec_distann_build_registration_v1\0";
 const BUILD_ROSTER_SNAPSHOT_VERSION: u16 = 1;
 
@@ -639,13 +640,18 @@ fn encode_registration(
     roster_snapshot: &[u8],
     roster_digest: [u8; 32],
     row_schema_fingerprint: [u8; 32],
+    payload_cover_descriptor_digest: Option<[u8; 32]>,
     compatibility_digest: [u8; 32],
     participants: &[DesiredParticipant],
 ) -> Result<Vec<u8>, String> {
     let mut encoder = CanonicalEncoder::with_capacity(
         192 + roster_snapshot.len() + participants.len().saturating_mul(160),
     );
-    encoder.put_u16(BUILD_REGISTRATION_VERSION);
+    encoder.put_u16(if payload_cover_descriptor_digest.is_some() {
+        BUILD_REGISTRATION_V2_VERSION
+    } else {
+        BUILD_REGISTRATION_V1_VERSION
+    });
     encoder.put_u32(u32::from(index_oid));
     encoder.put_fixed(logical_index_uuid.as_bytes());
     encoder.put_u32(u32::from(source_relation_oid));
@@ -655,6 +661,9 @@ fn encode_registration(
     encoder.put_len_prefixed(roster_snapshot)?;
     encoder.put_fixed(&roster_digest);
     encoder.put_fixed(&row_schema_fingerprint);
+    if let Some(digest) = payload_cover_descriptor_digest {
+        encoder.put_fixed(&digest);
+    }
     encoder.put_fixed(&compatibility_digest);
     encoder.put_u32(
         u32::try_from(participants.len())
@@ -684,6 +693,7 @@ fn registration_digest(
     roster_snapshot: &[u8],
     roster_digest: [u8; 32],
     row_schema_fingerprint: [u8; 32],
+    payload_cover_descriptor_digest: Option<[u8; 32]>,
     compatibility_digest: [u8; 32],
     participants: &[DesiredParticipant],
 ) -> Result<[u8; 32], String> {
@@ -699,6 +709,7 @@ fn registration_digest(
             roster_snapshot,
             roster_digest,
             row_schema_fingerprint,
+            payload_cover_descriptor_digest,
             compatibility_digest,
             participants,
         )?,
@@ -723,6 +734,7 @@ fn replay_registration(
     build_id: Uuid,
     epoch: u64,
     current_row_schema_fingerprint: [u8; 32],
+    current_payload_cover_descriptor_digest: Option<[u8; 32]>,
     current_compatibility_digest: [u8; 32],
     source_relation_oid: pg_sys::Oid,
 ) -> Result<Option<([u8; 32], bool)>, String> {
@@ -930,6 +942,7 @@ fn replay_registration(
         &stored.roster_snapshot,
         stored.roster_digest,
         stored.row_schema_fingerprint,
+        current_payload_cover_descriptor_digest,
         current_compatibility_digest,
         &participants,
     )?;
@@ -1342,6 +1355,7 @@ mod tests {
             &snapshot,
             roster_digest(&roster).unwrap(),
             [0x11; 32],
+            None,
             [0x22; 32],
             &participants,
         )
@@ -1364,8 +1378,28 @@ mod tests {
                 &snapshot,
                 roster_digest(&roster).unwrap(),
                 [0x11; 32],
+                None,
                 [0x22; 32],
                 &changed,
+            )
+            .unwrap()
+        );
+
+        assert_ne!(
+            digest,
+            registration_digest(
+                pg_sys::Oid::from(1234_u32),
+                Uuid::from_bytes(sample_rfc4122_v4_uuid(0xA1)),
+                pg_sys::Oid::from(5678_u32),
+                7,
+                Uuid::from_bytes(sample_rfc4122_v4_uuid(0xAB)),
+                9,
+                &snapshot,
+                roster_digest(&roster).unwrap(),
+                [0x11; 32],
+                Some([0x33; 32]),
+                [0x22; 32],
+                &participants,
             )
             .unwrap()
         );
