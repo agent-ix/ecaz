@@ -1,12 +1,15 @@
 # Task 224 packet 003 live-screen decision
 
-Disposition: **FAIL CLOSED — STOP MAT-26 as implemented. Do not advance to
-packet 004 or a 10k/50k/100k release matrix.**
+Disposition: **STOP — MAT-26's latency effect is unmeasured, the candidate
+axis is void, and Task 224 has no finalist. Do not advance to packet 004 or a
+10k/50k/100k release matrix.**
 
-This is a preregistered screen failure, not evidence that the exact sender is
-slower. Both live suites stopped before they could produce a complete candidate
-comparison. Production remains unchanged; the candidate is feature-only and
-default-off.
+The semantic suite failed its native-control bounded-read gate. The timing
+suite stopped at an activation assertion that no runnable configuration could
+satisfy, so its five zero outcome counters carry no information about whether
+the exact sender ran. This is neither evidence that the sender is slower nor
+evidence that it was inactive. Production remains unchanged; the candidate is
+feature-only and default-off.
 
 ## Run identity
 
@@ -109,19 +112,41 @@ preflight. Its eager recall predictions are byte-identical to both control-A
 prediction files; all three SHA-256 values are
 `3dbd83a5591960affef89f3225d5a650f7c3fdaa2f7af325be98fe24cd3701ae`.
 Its raw eager timing was mean 26.3 ms, p95 29.8 ms, p99 31.6 ms, but it is not a
-decision-bearing candidate result because the activation gate failed and the
-candidate production lazy-10 arm never ran.
+decision-bearing candidate result because activation is unobservable and the
+candidate production lazy-10 and control-B arms never ran. Control A eager was
+44.6 ms on the same frozen generation, so run position/warmth alone produced a
+41% swing—roughly eight times the registered 5% usefulness threshold. This
+retrospectively confirms why control B was mandatory and bars the raw 26.3 ms
+from any latency-win claim.
+
+The activation assertion was structurally unsatisfiable:
+
+1. the CLI requires `owner_fast_real_array_send` together with
+   `skip_owner_locality_profile`;
+2. `generation_read.rs` makes the fast sender and locality profiling mutually
+   exclusive;
+3. without the locality profile, `tid_profile` is empty and
+   `owner_requested_tids` remains zero;
+4. `remote_transport.rs` records projected values, binary-send bytes, fast
+   values, fallbacks, and ineligible requests only inside
+   `if owner_requested_tids > 0`; and
+5. the CLI then requires the first three exported values to be nonzero.
+
+The candidate did reach owner payload work—400 remote owners, 6,328 remote
+candidates and installed payloads, 12,656 payload columns, and 77,960,960
+payload bytes—but the sender may or may not have activated. The available
+telemetry cannot distinguish those cases.
 
 The candidate eager latency emitted 200 scans and these registered outcome
 metrics:
 
 | Metric | Value | Gate |
 | --- | ---: | --- |
-| `owner_projected_values` | 0 | **FAIL: required >0** |
-| `owner_binary_send_bytes` | 0 | **FAIL: required >0** |
-| `owner_fast_real_array_values` | 0 | **FAIL: required >0** |
-| `owner_fast_real_array_fallback_values` | 0 | pass: required 0 |
-| `owner_fast_real_array_ineligible_requests` | 0 | pass: required 0 |
+| `owner_projected_values` | 0 | **UNOBSERVABLE: coordinator suppressed** |
+| `owner_binary_send_bytes` | 0 | **UNOBSERVABLE: coordinator suppressed** |
+| `owner_fast_real_array_values` | 0 | **UNOBSERVABLE: coordinator suppressed** |
+| `owner_fast_real_array_fallback_values` | 0 | **VACUOUS: coordinator suppressed** |
+| `owner_fast_real_array_ineligible_requests` | 0 | **VACUOUS: coordinator suppressed** |
 
 Source:
 `run/candidate/physical-eager-control-vector_bearing-latency.log`. The harness
@@ -137,9 +162,9 @@ owner_projected_values`; source:
 | timing same-generation reuse | **PASS** through candidate fixture decision |
 | semantic control exit + exact nine-set | **FAIL** |
 | semantic candidate exit + exact nine-set | **FAIL / NOT RUN** |
-| candidate fast values >0 | **FAIL**, value 0 |
-| candidate fallback =0 | pass in the only executed candidate latency arm |
-| candidate ineligible =0 | pass in the only executed candidate latency arm |
+| candidate fast values >0 | **UNOBSERVABLE**: activation assertion is structurally unsatisfiable |
+| candidate fallback =0 | **VACUOUS / UNOBSERVABLE**: exported default zero |
+| candidate ineligible =0 | **VACUOUS / UNOBSERVABLE**: exported default zero |
 | eager control/candidate prediction identity | **PASS**, byte-identical |
 | lazy-10 control/candidate prediction identity | **FAIL / candidate missing** |
 | `C`, control envelope `N`, >=5%, and >=`2*N` | **NOT COMPUTABLE**: control B and candidate lazy-10 missing |
@@ -148,23 +173,25 @@ owner_projected_values`; source:
 | finite positive `R` in `(0,1]` | **NOT COMPUTABLE** |
 | `D_attr > 0` and >=50% of end-to-end saving | **NOT COMPUTABLE** |
 
-The preregistration says a failed activation/precondition fails the gate rather
-than permitting post-hoc normalization or a rerun, and that Task 224 STOPs
-unless every gate passes. Multiple independent gates failed; the missing terms
-do not create ambiguity or authorize a replacement measurement.
+The preregistration requires every gate to pass and does not permit post-hoc
+normalization or a replacement run. The semantic composite failed, and every
+candidate usefulness, tail, and attribution term is unavailable. The
+activation assertion itself cannot classify the candidate. Those facts support
+STOP, while leaving MAT-26's latency effect explicitly unmeasured.
 
 ## Decision and carry-forward
 
-1. **STOP MAT-26 as implemented.** Do not run packet 004 or productionize the
-   exact sender.
-2. Do not interpret the raw eager 26.3 ms context as a candidate win: control B
-   was intentionally required to bound control A's build/position warmth and
-   never ran, while activation was zero.
-3. Production behavior is unchanged. Outside review must rule whether the
-   feature-only candidate/instrumentation should remain as diagnostic code or
-   be removed before merge.
-4. Carry the native semantic control's 12/10 bounded-read failure explicitly;
-   outside review must rule whether it needs a separate correctness/harness
-   follow-up. It does not reopen or rescue MAT-26.
-5. Task 225 has no Task 224 finalist from this screen; its conditional entry
-   remains unsatisfied unless separately justified by its own measured premise.
+1. **STOP MAT-26 with its latency effect unmeasured.** The candidate axis was
+   void; Task 224 has no finalist and will not run packet 004.
+2. Bar the raw eager 26.3 ms context from any candidate claim. The matched
+   44.6→26.3 ms, 41% position/warmth swing is about eight times the decision
+   threshold, and control B never bounded it.
+3. Retain the feature-only, default-off candidate and instrumentation as
+   diagnostic code. Production behavior remains unchanged.
+4. Carry the independent native semantic control's 12/10 bounded-read
+   divergence to Task 239 for exact-current-main reproduction, diagnosis, and
+   fix or evidence-based invariant disposition. Do not blindly widen the bound.
+5. Task 225 remains conditional on its own finalist-stability and hideable-RTT
+   premise; Task 224 neither satisfies nor rejects that premise. Task 229 is the
+   next mandatory prototype, with Task 239 required before its semantic
+   closeout.

@@ -2482,6 +2482,12 @@ impl RetainedGenerationScan {
             ));
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
+        // Production-SQL parity intentionally makes the fast sender and the
+        // locality profiler mutually exclusive. That also leaves
+        // `owner_requested_tids` at zero, so the coordinator currently
+        // suppresses every fast-sender outcome counter. Those exported zeros
+        // are unobservable defaults, not evidence that the sender was idle.
+        // See Task 224 packet 003 reviewer feedback seq05.
         if fast_real_array_send && locality_profile_enabled {
             return Err(DistannExpandError::BadInput(
                 "Task 224 fast real[] sender requires unprofiled production payload SQL".to_owned(),

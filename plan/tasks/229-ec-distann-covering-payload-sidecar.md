@@ -1,6 +1,7 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
-Status: **proposed — operator-selected mandatory prototype** (2026-08-22).
+Status: **proposed — operator-selected mandatory prototype; implementation may
+proceed, but Task 239 blocks semantic closeout** (updated 2026-08-25).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
@@ -36,6 +37,9 @@ DML cost.
    so the baseline owner cost is decomposed rather than inferred.
 3. The control is frozen at the post-224 production disposition. Later layout
    tasks compare against this same unstacked control, even if this task wins.
+4. Task 239 reproduces and diagnoses the current native 12/10 bounded-read
+   divergence before this task claims semantic closeout. Do not widen the
+   materialization bound merely to make the matrix green.
 
 ## Required implementation
 
@@ -108,9 +112,8 @@ Tasks 230--232 from the operator-selected comparison.
 
 ## References
 
-- Tasks 222--224
+- Tasks 222--224 and Task 239
 - Task 218 production lazy-10 attribution
 - Roadmap MAT-27 / ARCH-06
 - FR-076, FR-079, FR-082, FR-083, NFR-016, NFR-018, NFR-021, NFR-022
-
 

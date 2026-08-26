@@ -8458,6 +8458,12 @@ async fn run_physical_benchmarks(
                     work_rows.len()
                 );
             }
+            // Task 224 packet 003 retained this diagnostic gate even though it
+            // is structurally unobservable today: the accepted fast-sender
+            // argv disables locality profiling, which leaves
+            // `owner_requested_tids` at zero and makes the coordinator suppress
+            // all five outcome metrics below. Zero is therefore not evidence of
+            // sender inactivity. See reviewer feedback seq05 in that packet.
             if args.owner_fast_real_array_send {
                 for metric in [
                     "owner_projected_values",

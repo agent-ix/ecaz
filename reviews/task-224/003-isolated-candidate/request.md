@@ -36,8 +36,17 @@ exact nine-scenario set. Neither suite may run until seq04 accepts it.
 
 Reviewer seq04 returned **DONE** and authorized both suites
 (`feedback/2026-08-25-04-reviewer.md`). The exact detached-SHA live screen has
-now run and failed closed in both suites. The requested disposition is **STOP
+now run: the semantic control failed its bounded-read gate, and the timing suite
+stopped before a complete comparison. The requested disposition is **STOP
 MAT-26 as implemented**, with no packet 004/full-scale matrix.
+
+Reviewer seq05 accepted that STOP and prohibited a replacement run, but found
+that the timing activation assertion was structurally unsatisfiable
+(`feedback/2026-08-25-05-reviewer.md`). The corrections below therefore state
+the exact outcome: MAT-26's latency effect is unmeasured, the candidate axis is
+void, and Task 224 has no finalist. They also retain the feature-only diagnostic
+code, carry the independent 12/10 semantic divergence to Task 239, and leave
+Task 225 conditional on its own premise.
 
 ## Candidate
 
@@ -257,33 +266,41 @@ Full gate accounting and provenance are in
 - Timing control A completed on a fresh 100k generation. Its production
   lazy-10 context was mean 27.7 ms, p95 30.9 ms, p99 32.8 ms, recall 0.9285.
 - The candidate reused the same generation and produced byte-identical eager
-  predictions, but its first latency arm reported zero `owner_projected_values`,
-  zero `owner_binary_send_bytes`, and zero `owner_fast_real_array_values`.
-  The preregistered activation assertion stopped the step before candidate
-  lazy-10, control B, or profiled control ran.
+  predictions. Its first latency arm exported zero `owner_projected_values`,
+  `owner_binary_send_bytes`, and `owner_fast_real_array_values`, but those are
+  suppressed defaults: the required unprofiled fast-sender configuration leaves
+  `owner_requested_tids=0`, and coordinator accounting records all five outcome
+  counters only when that locality-derived field is nonzero. The CLI's nonzero
+  assertion was therefore unsatisfiable and stopped the step before candidate
+  lazy-10, control B, or profiled control ran. The zeros do not show whether the
+  sender activated; the candidate did reach 400 remote owners and install all
+  6,328 requested remote payloads.
 - The usefulness/noise/tail/attribution equations are therefore not
   computable. This is itself a fail-closed outcome, not permission for a
   replacement run. The raw candidate eager 26.3 ms context has no decision
-  weight because activation was zero and the required control envelope never
-  completed.
+  weight: control-A eager was 44.6 ms on the same frozen generation, so run
+  position/warmth produced a 41% swing—about eight times the 5% decision
+  threshold—and the required control envelope never completed.
 
 The preregistration requires every semantic, activation, usefulness, tail, and
 attribution gate to pass and otherwise STOPs Task 224 after this screen.
-Multiple gates failed independently. Production remains unchanged; the exact
-sender stays feature-only/default-off pending the reviewer's ruling on whether
-diagnostic code should be retained or removed before merge. The native-control
-12/10 over-read is carried separately for reviewer classification and cannot
-rescue MAT-26.
+The semantic composite failed and all candidate usefulness, tail, and
+attribution terms are unavailable. **STOP with MAT-26's latency effect
+unmeasured: the candidate axis is void and Task 224 has no finalist.**
+Production remains unchanged; the exact sender stays feature-only/default-off
+as retained diagnostic code. Task 239 owns exact-current-main reproduction and
+diagnosis of the native-control 12/10 over-read; it cannot rescue MAT-26 and its
+bound must not be widened without evidence.
 
 ## Review questions
 
-1. Does the evidence support the preregistered STOP, with no packet 004 or
-   replacement run?
-2. Is the raw eager candidate context correctly barred from any latency-win
-   claim because activation and the control envelope are missing?
-3. Should the feature-only candidate/instrumentation remain as diagnostic code
-   or be removed before merge?
-4. Does the native semantic control's 12/10 bounded-read failure require a
-   separate follow-up task?
-5. With no Task 224 finalist, is Task 225's conditional entry unsatisfied so
-   the campaign should proceed to the mandatory Task 229 storage prototype?
+1. Do these corrections accurately state the accepted STOP as unmeasured, with
+   a void candidate axis and no Task 224 finalist?
+2. Do the code-chain explanation and two vacuous-zero classifications close the
+   activation-observability finding?
+3. Is the 44.6→26.3 ms position/warmth confound sufficiently explicit to bar
+   the raw candidate timing from future use?
+4. Does Task 239 correctly carry the independent bounded-read divergence while
+   allowing Task 229 implementation to proceed?
+5. Are the retained diagnostic code and Task 225's independently conditional
+   status aligned with seq05's rulings?

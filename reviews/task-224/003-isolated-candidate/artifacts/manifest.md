@@ -8,8 +8,9 @@
 - Host/lane: Intel local, PG18, `distann-head-attribution-benchmark`
 - Candidate: MAT-26 exact `real[]` binary sender, feature-only and default-off
 - Measurement status: live screen run after reviewer seq04 authorization;
-  semantic control and timing candidate both failed closed; STOP disposition
-  is review-open
+  semantic control failed closed and the timing activation gate was
+  structurally unobservable; reviewer seq05 accepted STOP with MAT-26
+  unmeasured/no finalist, and the decision-record correction is review-open
 
 ## Preregistered suite
 
@@ -193,6 +194,14 @@ and authorized both suites with no gate amendment. Both were then invoked from
 the clean detached `b834b7fb...` checkout, so the CWD-derived runner SHA and the
 compiled extension/CLI SHA agree.
 
+Reviewer seq05 (`feedback/2026-08-25-05-reviewer.md`) accepted STOP/no rerun but
+identified the structurally unobservable activation gate and required
+decision-record, tracking, and diagnostic-comment corrections. Those changes
+do not alter runtime behavior. `review-fix3-cargo-fmt-check.log` records
+`cargo fmt --all -- --check` passing with exit 0; SHA-256
+`82aea97006f3560b7ec6e933b059b9b03f1c688e575197f138cc6ec135cb6433`.
+No behavior test was rerun for comment/documentation-only corrections.
+
 ## Live screen artifacts and result
 
 - Decision record: `screen-decision.md`; full provenance, all gate terms, raw
@@ -217,11 +226,20 @@ compiled extension/CLI SHA agree.
 The 10k native semantic control failed `exactly_one_window` with correct and
 identical 10/10 results but `remote_requested=8`, `local_consumed=4`, and
 `payload_reads=12/10`. The 100k candidate passed exact-SHA reuse and emitted a
-byte-identical eager prediction file, but its executed latency arm reported
-zero projected values, zero binary-send bytes, and zero fast-array values. The
-registered activation gate stopped it before candidate lazy-10. Consequently
-`C`, `N`, the usefulness and tail comparisons, `R`, and `D_attr` are not
-computable and fail closed; no post-hoc rerun was attempted.
+byte-identical eager prediction file. Its executed latency arm exported five
+zero outcome counters, but the accepted unprofiled fast-sender configuration
+leaves locality-derived `owner_requested_tids=0`, and coordinator accounting
+suppresses all five counters in that case. The CLI activation assertion was
+therefore unsatisfiable: the zeros carry no sender information, including the
+two formerly labelled passes. The candidate reached 400 remote owners, 6,328
+remote candidates/payloads, 12,656 payload columns, and 77,960,960 payload
+bytes; whether the exact sender activated is unknown.
+
+The raw eager 44.6→26.3 ms control/candidate movement is a 41% run-position and
+fixture-warmth confound—about eight times the 5% decision threshold—not a
+candidate result. Candidate lazy-10, control B, and profiled control never ran,
+so `C`, `N`, the usefulness and tail comparisons, `R`, and `D_attr` are not
+computable. No post-hoc rerun was attempted or authorized.
 
 Corpus provenance:
 
@@ -234,11 +252,14 @@ Corpus provenance:
 
 All live-run files are enumerated with byte hashes in
 `live-artifact-sha256.txt`; ledger SHA-256
-`0506b59400c0b8f153ad3bfab5102a627a2695458ba8999479d2d95f287d85b1`.
+`e41ad0bcba7b9bfc3f5ea70a29597aadc9540b87701bf4d710bdd11c53a31040`.
 Temporary cluster directories were stopped by the harness and are removed
 after this record was captured.
 
-Disposition: **STOP MAT-26 as implemented.** Do not advance to packet 004 or a
-full-scale matrix. Production remains unchanged. Outside review must rule on
-retaining versus removing the feature-only diagnostic candidate and on the
-independent native-control bounded-read failure.
+Disposition: **STOP with MAT-26's latency effect unmeasured, a void candidate
+axis, and no Task 224 finalist.** Do not advance to packet 004 or a full-scale
+matrix. Production remains unchanged and the feature-only/default-off
+candidate remains as diagnostic code. Task 239 carries the independent native
+12/10 bounded-read divergence; Task 225 remains conditional on its own premise,
+and Task 229 is the next mandatory prototype once that semantic blocker is
+closed.
