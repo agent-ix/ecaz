@@ -1,0 +1,16 @@
+2026-08-26 03:46:29.169 PDT [1013783] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-26 03:46:29.179 PDT [1013783] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-26 03:46:29.179 PDT [1013783] LOG:  listening on IPv4 address "127.0.0.1", port 44070
+2026-08-26 03:46:29.188 PDT [1013789] LOG:  database system was shut down at 2026-08-26 03:46:26 PDT
+2026-08-26 03:46:29.196 PDT [1013783] LOG:  database system is ready to accept connections
+2026-08-26 03:48:40.524 PDT [1013955] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-26 03:48:40.524 PDT [1013955] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), 4, 42));
+2026-08-26 03:49:00.832 PDT [1013864] ERROR:  [EC_INTERNAL] physical generation RPC failed: connection closed
+2026-08-26 03:49:00.832 PDT [1013864] STATEMENT:  FETCH FORWARD ALL FROM task184_materialization_cursor
+2026-08-26 03:49:03.116 PDT [1013783] LOG:  received fast shutdown request
+2026-08-26 03:49:03.127 PDT [1013783] LOG:  aborting any active transactions
+2026-08-26 03:49:03.128 PDT [1013783] LOG:  background worker "logical replication launcher" (PID 1013792) exited with exit code 1
+2026-08-26 03:49:03.134 PDT [1013787] LOG:  shutting down
+2026-08-26 03:49:03.138 PDT [1013787] LOG:  checkpoint starting: shutdown immediate
+2026-08-26 03:49:03.788 PDT [1013787] LOG:  checkpoint complete: wrote 15157 buffers (92.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 19 recycled; write=0.068 s, sync=0.486 s, total=0.655 s; sync files=315, longest=0.195 s, average=0.002 s; distance=304560 kB, estimate=304560 kB; lsn=0/140C0590, redo lsn=0/140C0590
+2026-08-26 03:49:03.815 PDT [1013783] LOG:  database system is shut down

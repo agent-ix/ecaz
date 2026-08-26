@@ -1,15 +1,14 @@
 # Task 239: ec_distann Bounded-Read Overfetch
 
 Status: **packet 001 review-closed ACCEPT — exact-main semantic harness
-eager-path 12/10 reproduced; same-fixture separate-process production lazy-10
-requested 6 remote and consumed 4 local for 10 returned rows (diagnostic, not a
-semantic bound); packet 002 review-closed NOT DONE after its sole run failed
-pre-semantics on a 40-row/37-row cross-SHA stage schema; no rerun; packet 003
-exact-main harness port `21c013079` and main-compatible config `0adea669b`
-landed; exact `4ab2aa9a9` validation passed and packet 003 code/config/dry
-review-closed DONE; exactly one packet-003 live run authorized under C1--C5 and
-not yet started; immediate P1 campaign blocker before Task 229 semantic
-closeout**
+eager-path 12/10 reproduced; packet 002 review-closed NOT DONE after its sole
+run failed pre-semantics on a 40-row/37-row cross-SHA stage schema; no rerun;
+packet 003 exact-main harness port `21c013079` and main-compatible config
+`0adea669b` landed; code/config/dry review-closed DONE; its sole C1--C5 live run
+passed all nine scenarios and restored the production lazy-10 path to exactly
+6 remote + 4 local = 10 reads for 10 rows with identical 0.9990 predictions;
+HARNESS REGRESSION CORRECTED; outside semantic closeout review-open; no rerun;
+immediate P1 campaign blocker before Task 229 semantic closeout**
 (updated 2026-08-26). Priority: P1 correctness/performance. Decision record:
 `reviews/task-239/001-current-main-reproduction/artifacts/reproduction-decision.md`;
 accepted disposition:
@@ -28,6 +27,8 @@ Packet 003 review request:
 `reviews/task-239/003-main-baseline-semantic-proof/request.md`.
 Packet 003 live authorization:
 `reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-01-reviewer.md`.
+Packet 003 result decision:
+`reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run-decision.md`.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.

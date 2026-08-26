@@ -8,6 +8,30 @@ seq: 01
 
 # Task 239 packet 003 — exact-main harness port and semantic proof preregistration
 
+## Post-run closeout request
+
+Outside pre-run review seq01 returned DONE and authorized exactly one live run
+under conditions C1--C5. That invocation has now completed successfully, no
+continuation or replacement was attempted, and the external fixture was
+removed after capture.
+
+Every fixed gate below passes. Both the main log and summary contain each of
+the nine semantic scenarios exactly once; all pass with zero duplicates. The
+production lazy-10 `exactly_one_window` arm reports 6 remote + 4 local = 10
+payload reads for 10 returned rows, with the fixed digest. Both recall children
+report 0.9990 over 200 queries / 2,000 trials and their prediction files are
+byte-identical to packet 001. The release runner, unanimous release extension,
+feature set, config hash, and routed DELETE+VACUUM drill all match the
+preregistered contract.
+
+Result classification: **HARNESS REGRESSION CORRECTED; EXACT-MAIN LAZY-10
+SEMANTIC PATH RESTORED TO 10/10**. Please perform outside semantic closeout and
+rule whether Task 239 may close without packet 004. The proposed answer is yes:
+the only executable correction is in the CLI harness, `src/**` remains exact
+main, and therefore no production runtime behavior changed to trigger the
+10k/50k/100k matrix. See `artifacts/live-run-decision.md` and the updated
+artifact manifest.
+
 Packet 002 review-closed NOT DONE after its only run failed before semantics:
 the later Task 224 CLI asserted 40 stage rows against exact-main's 37-row
 extension. Reviewer seq03 prohibited a packet-002 rerun and authorized this
@@ -132,6 +156,7 @@ authoritative failure-path evidence.
 - Dry-run: runner `4ab2aa9a9...`, exact config hash, one selected dry step;
   expanded command contains stage counters, both variants, semantic
   correctness, recall, and no unsupported routed-drill skip.
-- Packet-003 live run directory remains absent.
+- The sole packet-003 live run completed successfully; its stopped 1.2 GB
+  external fixture was removed after capture and remains absent.
 
 See `artifacts/manifest.md` for commands and final artifact hashes.

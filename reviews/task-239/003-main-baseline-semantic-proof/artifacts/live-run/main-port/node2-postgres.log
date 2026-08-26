@@ -1,0 +1,27 @@
+2026-08-26 03:46:29.292 PDT [1013796] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-26 03:46:29.304 PDT [1013796] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-26 03:46:29.304 PDT [1013796] LOG:  listening on IPv4 address "127.0.0.1", port 44071
+2026-08-26 03:46:29.314 PDT [1013802] LOG:  database system was shut down at 2026-08-26 03:46:27 PDT
+2026-08-26 03:46:29.323 PDT [1013796] LOG:  database system is ready to accept connections
+2026-08-26 03:47:33.127 PDT [1013879] LOG:  skipping analyze of "_ecdz_row_17796_71717171717141718171717171717171" --- lock not available
+2026-08-26 03:47:33.127 PDT [1013879] LOG:  skipping analyze of "_ecdz_graph_17796_71717171717141718171717171717171" --- lock not available
+2026-08-26 03:49:00.628 PDT [1013796] LOG:  received immediate shutdown request
+2026-08-26 03:49:00.650 PDT [1013796] LOG:  database system is shut down
+2026-08-26 03:49:00.846 PDT [1014110] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-26 03:49:00.858 PDT [1014110] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-26 03:49:00.858 PDT [1014110] LOG:  listening on IPv4 address "127.0.0.1", port 44071
+2026-08-26 03:49:00.869 PDT [1014116] LOG:  database system was interrupted; last known up at 2026-08-26 03:46:29 PDT
+2026-08-26 03:49:01.120 PDT [1014116] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-26 03:49:01.125 PDT [1014116] LOG:  redo starts at 0/1754600
+2026-08-26 03:49:01.273 PDT [1014116] LOG:  invalid record length at 0/74EF530: expected at least 24, got 0
+2026-08-26 03:49:01.273 PDT [1014116] LOG:  redo done at 0/74EF4F8 system usage: CPU: user: 0.09 s, system: 0.06 s, elapsed: 0.14 s
+2026-08-26 03:49:01.287 PDT [1014114] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-26 03:49:01.622 PDT [1014114] LOG:  checkpoint complete: wrote 13490 buffers (82.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=0.058 s, sync=0.234 s, total=0.339 s; sync files=290, longest=0.031 s, average=0.001 s; distance=95851 kB, estimate=95851 kB; lsn=0/74EF530, redo lsn=0/74EF530
+2026-08-26 03:49:01.631 PDT [1014110] LOG:  database system is ready to accept connections
+2026-08-26 03:49:03.817 PDT [1014110] LOG:  received fast shutdown request
+2026-08-26 03:49:03.865 PDT [1014110] LOG:  aborting any active transactions
+2026-08-26 03:49:03.865 PDT [1014110] LOG:  background worker "logical replication launcher" (PID 1014119) exited with exit code 1
+2026-08-26 03:49:03.865 PDT [1014114] LOG:  shutting down
+2026-08-26 03:49:03.869 PDT [1014114] LOG:  checkpoint starting: shutdown immediate
+2026-08-26 03:49:03.908 PDT [1014114] LOG:  checkpoint complete: wrote 87 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.018 s, total=0.043 s; sync files=26, longest=0.007 s, average=0.001 s; distance=570 kB, estimate=86323 kB; lsn=0/757DDC8, redo lsn=0/757DDC8
+2026-08-26 03:49:03.934 PDT [1014110] LOG:  database system is shut down

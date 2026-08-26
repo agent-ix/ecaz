@@ -1,0 +1,111 @@
+{
+  "suite": "task239-main-port-semantics-10k",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task239-main-port-run-build/crates/ecaz-cli/suites/task239-main-port-semantics-10k.json",
+  "config_sha256": "53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787741185869,
+  "runner_git_commit": "4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "main-port-semantics-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task239-main-port/reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run/main-port",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task239-main-port-semantics-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task239-main-port/reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run/main-port/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--materialization-correctness",
+        "--benchmark-iterations",
+        "1",
+        "--benchmark-warmup-iterations",
+        "0",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "44070",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on",
+        "--benchmark-seed-variant",
+        "lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task239",
+        "main_baseline_port",
+        "attribution",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "eager-control",
+          "id": "task239-main-port-eager",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Harness-only eager semantic control and one-iteration diagnostic context; no latency decision weight."
+        },
+        {
+          "variant": "lazy10-production",
+          "id": "task239-main-port-lazy10",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Corrected semantic candidate explicitly set and attested at batch size 10; one-iteration timing remains non-decision context."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task239-main-port/reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run/main-port/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task239-main-port/reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run/main-port/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787741185888,
+      "finished_at_unix_ms": 1787741344121,
+      "duration_ms": 149237,
+      "exit_code": 0
+    }
+  ]
+}
