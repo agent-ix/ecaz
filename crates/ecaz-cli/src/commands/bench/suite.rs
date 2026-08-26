@@ -3438,20 +3438,24 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 rows.push(("physical_materialization_correctness".into(), values));
             }
         } else if let Some(pass_idx) = body.find(" pass=") {
-            // A generic drill-outcome line: `<label> pass=<bool>`.
+            // A generic drill-outcome line: `<label> pass=<bool|skipped>`.
+            // Preserve an explicit skip and its reason without turning it into
+            // either a passing or failing measured drill.
             let label = body[..pass_idx].trim();
-            let pass_token = body[pass_idx + " pass=".len()..]
-                .split_whitespace()
-                .next()
-                .unwrap_or("");
-            if (pass_token == "true" || pass_token == "false") && !label.is_empty() {
-                let mut values = BTreeMap::new();
+            let outcome = &body[pass_idx + 1..];
+            if let Some(mut values) = parse_space_key_values(outcome) {
+                let pass_token = values.get("pass").cloned().unwrap_or_default();
+                if !matches!(pass_token.as_str(), "true" | "false" | "skipped") || label.is_empty()
+                {
+                    continue;
+                }
                 values.insert("drill".into(), sanitize_drill_label(label));
-                values.insert("pass".into(), pass_token.to_owned());
-                values.insert(
-                    "pass_numeric".into(),
-                    if pass_token == "true" { "1" } else { "0" }.into(),
-                );
+                if pass_token != "skipped" {
+                    values.insert(
+                        "pass_numeric".into(),
+                        if pass_token == "true" { "1" } else { "0" }.into(),
+                    );
+                }
                 rows.push(("drill_outcome".into(), values));
             }
         }
@@ -7456,6 +7460,24 @@ psql header noise\n\
                 && values.get("scoring_mode").map(String::as_str) == Some("exact_landmark_scan")
                 && values.get("training_queries").map(String::as_str) == Some("200")
         }));
+    }
+
+    #[test]
+    fn distann_skipped_drill_is_structured_without_claiming_pass() {
+        let raw = "[distann-multicluster] physical_routed_delete_vacuum pass=skipped reason=skip_routed_delete_vacuum_drill\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "drill_outcome");
+        assert_eq!(
+            rows[0].1.get("drill").map(String::as_str),
+            Some("physical_routed_delete_vacuum")
+        );
+        assert_eq!(rows[0].1.get("pass").map(String::as_str), Some("skipped"));
+        assert_eq!(
+            rows[0].1.get("reason").map(String::as_str),
+            Some("skip_routed_delete_vacuum_drill")
+        );
+        assert!(!rows[0].1.contains_key("pass_numeric"));
     }
 
     #[test]

@@ -10545,9 +10545,6 @@ async fn drive_physical_fixture(
         .collect::<Vec<_>>()
         .join(";");
     let physical_concurrency_ok = if args.skip_concurrency_drill {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query pass=skipped reason=skip_concurrency_drill"
-        );
         true
     } else {
         physical_concurrency_drill(
@@ -10566,8 +10563,13 @@ async fn drive_physical_fixture(
     // vec_ids discovered in other nodes' neighbour lists. It is not the
     // number of forward edges selected by inserted nodes; the controlled
     // two-writer target assertion below is the separate backlink invariant.
+    let physical_concurrency_outcome = if args.skip_concurrency_drill {
+        "pass=skipped reason=skip_concurrency_drill".to_owned()
+    } else {
+        format!("pass={physical_concurrency_ok}")
+    };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
+        "[distann-multicluster] physical_concurrent_insert_query {physical_concurrency_outcome}"
     );
     if !physical_concurrency_ok {
         bail!("physical TC-043 concurrent insert/query drill failed");
@@ -10593,6 +10595,11 @@ async fn drive_physical_fixture(
     if !physical_delete_vacuum_ok {
         bail!("physical routed DELETE + VACUUM drill failed");
     }
+    let physical_delete_vacuum_outcome = if args.skip_routed_delete_vacuum_drill {
+        "pass=skipped reason=skip_routed_delete_vacuum_drill".to_owned()
+    } else {
+        format!("pass={physical_delete_vacuum_ok}")
+    };
     if args.drop_extension_cleanup_drill {
         let unpublished_build_id = "72727272-7272-4272-8272-727272727272";
         coordinator
@@ -10659,10 +10666,10 @@ async fn drive_physical_fixture(
         "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
     ));
     summary.push_str(&format!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
+        "[distann-multicluster] physical_concurrent_insert_query {physical_concurrency_outcome}\n"
     ));
     summary.push_str(&format!(
-        "[distann-multicluster] physical_routed_delete_vacuum pass={physical_delete_vacuum_ok}\n"
+        "[distann-multicluster] physical_routed_delete_vacuum {physical_delete_vacuum_outcome}\n"
     ));
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
