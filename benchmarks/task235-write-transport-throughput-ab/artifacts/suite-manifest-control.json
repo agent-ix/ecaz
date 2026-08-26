@@ -4,8 +4,8 @@
   "config": "benchmarks/task235-write-transport-throughput-ab/suite.json",
   "config_sha256": "86159b17b6646f587c4732397f9494795010791664224bc14ece835454025f97",
   "dry_run": false,
-  "generated_at_unix_ms": 1787757615139,
-  "runner_git_commit": "7e7b4c0d3d23b14a53ee21fb9176ec9c7ca66d1d",
+  "generated_at_unix_ms": 1787770252653,
+  "runner_git_commit": "a93bcd8ed45c2c22b7d6c60156347b909eadcce6-dirty",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -77,9 +77,9 @@
         "benchmarks/task235-write-transport-throughput-ab/artifacts/run/control-10k/physical-head-membership.json"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1787757615163,
-      "finished_at_unix_ms": 1787758175702,
-      "duration_ms": 560783,
+      "started_at_unix_ms": 1787770252680,
+      "finished_at_unix_ms": 1787770848963,
+      "duration_ms": 596743,
       "exit_code": 0
     },
     {
@@ -145,9 +145,9 @@
         "benchmarks/task235-write-transport-throughput-ab/artifacts/run/control-50k/physical-head-membership.json"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1787758175703,
-      "finished_at_unix_ms": 1787759837151,
-      "duration_ms": 1662267,
+      "started_at_unix_ms": 1787770848964,
+      "finished_at_unix_ms": 1787772482657,
+      "duration_ms": 1635132,
       "exit_code": 0
     },
     {
@@ -213,9 +213,9 @@
         "benchmarks/task235-write-transport-throughput-ab/artifacts/run/control-100k/physical-head-membership.json"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1787759837152,
-      "finished_at_unix_ms": 1787762983258,
-      "duration_ms": 3147838,
+      "started_at_unix_ms": 1787772482658,
+      "finished_at_unix_ms": 1787775621586,
+      "duration_ms": 3142075,
       "exit_code": 0
     },
     {
