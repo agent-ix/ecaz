@@ -1,7 +1,27 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **proposed, conditional on Task 223 attribution** (2026-08-21).
-Priority: P2 latency.
+Status: **complete — packet 003 review-closed ACCEPT, STOP; MAT-26 latency
+unmeasured, candidate axis void, no finalist;
+feature-only/default-off exact `real[]` sender and CLI gate retained on the
+reviewed campaign stack as diagnostic code by ruling and not productionized;
+native 12/10 bounded-read divergence resolved by Task 239; MAT-25 retired**
+(updated 2026-08-25). Request
+`reviews/task-224/003-isolated-candidate/request.md`; decision record
+`reviews/task-224/003-isolated-candidate/artifacts/screen-decision.md`;
+authorization verdict
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-04-reviewer.md`.
+STOP and follow-up ruling:
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
+Correction review and final closeout:
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-06-reviewer.md` and
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`.
+Priority: P2 latency. The
+vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner
+work, while the endpoint critical path bounds any serial saving to at most
+5.148990 ms / 18.258830%. MAT-25 is retired: 6.785 requested TIDs occupy 6.770
+blocks and sorting moves 72% of rows for essentially no coalescing. Final
+verdict:
+`reviews/task-224/002-locality-attribution/feedback/2026-08-25-02-reviewer.md`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.
@@ -27,7 +47,9 @@ block-batched detoast/binary-send work.
    displacement, buffer/cache observations where safely available, toasted
    attribute count/bytes, and detoast/send time.
 3. No candidate is built unless heap/detoast work is at least 1 ms/scan or 5%
-   of warm end-to-end mean at 100k.
+   of warm end-to-end mean at 100k. Summed owner work establishes bucket size,
+   but the independently measured endpoint critical path bounds the achievable
+   serial share and must be printed beside it.
 
 ## Scope
 
@@ -35,7 +57,9 @@ block-batched detoast/binary-send work.
   100k without changing production behavior.
 - Pre-register and implement at most one candidate from MAT-25/MAT-26.
 - Preserve request/result rank ordering after any physical reorder.
-- Run a same-generation 100k A/B, then 10k/50k/100k only for a useful result.
+- Run a same-generation 100k A/B with both arms in the same instrumentation
+  state, preferably unprofiled production SQL; never reuse packet 002's
+  profiled warm means as a baseline. Run 10k/50k/100k only for a useful result.
 
 ## Non-goals
 
@@ -63,5 +87,3 @@ block-batched detoast/binary-send work.
 
 - Tasks 222 and 223
 - Roadmap MAT-25 / MAT-26
-
-

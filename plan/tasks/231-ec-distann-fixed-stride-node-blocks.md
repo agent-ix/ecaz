@@ -77,6 +77,9 @@ B-tree + graph heap + row-tier vector path.
   `ecaz bench suite`, with both the standard warm protocol and a suite-driven
   controlled-residency/cold-read profile where available. Extend the suite
   runner first if that profile is missing.
+- Compare arms at matched fixture position, or use a preregistered
+  counterbalanced envelope that separates position/warmth from the candidate.
+  Never compare a fresh-build control only against a reused candidate.
 - Report directory probes, graph/vector block reads, bytes requested/read,
   buffer hits, decode/score time, traversal rounds, owner/transport work,
   latency/tails, recall, build/DML time, storage padding, and conformance.
@@ -123,5 +126,4 @@ experiment even if this isolated arm closes STOP.
 - `DISTRIBUTEDANN` §2.1--2.3 (arXiv:2509.06046)
 - FR-076, FR-079, FR-082, FR-083
 - NFR-016, NFR-018, NFR-021, NFR-022
-
 

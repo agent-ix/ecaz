@@ -1,6 +1,7 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
-Status: **proposed — operator-selected mandatory prototype** (2026-08-22).
+Status: **ready — operator-selected mandatory prototype; all entry conditions
+satisfied, including Task 239 review-closed ACCEPT** (updated 2026-08-26).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
@@ -36,6 +37,11 @@ DML cost.
    so the baseline owner cost is decomposed rather than inferred.
 3. The control is frozen at the post-224 production disposition. Later layout
    tasks compare against this same unstacked control, even if this task wins.
+4. Task 239 reproduces and diagnoses the current native 12/10 bounded-read
+   divergence before this task claims semantic closeout. **Satisfied:** Task
+   239 review-closed ACCEPT identifies a shared-session harness GUC leak and
+   restores exact-main production lazy-10 to 6 remote + 4 local = 10 reads for
+   10 rows without widening the bound.
 
 ## Required implementation
 
@@ -71,6 +77,9 @@ DML cost.
 - Run isolated sidecar-off/on A/B cells at 10k, 50k, and 100k through a checked-in
   `ecaz bench suite` config. The arms must otherwise share projection policy,
   generation inputs, search settings, and release provenance.
+- Compare arms at matched fixture position, or use a preregistered
+  counterbalanced envelope that separates position/warmth from the candidate.
+  Never compare a fresh-build control only against a reused candidate.
 - Report result/recall identity, mean/p50/p95/p99/max, owner stages, heap and
   sidecar reads, bytes by attribute, wire bytes, build time, DML work, per-node
   storage, and NFR-021/NFR-022 conformance.
@@ -108,9 +117,7 @@ Tasks 230--232 from the operator-selected comparison.
 
 ## References
 
-- Tasks 222--224
+- Tasks 222--224 and Task 239
 - Task 218 production lazy-10 attribution
 - Roadmap MAT-27 / ARCH-06
 - FR-076, FR-079, FR-082, FR-083, NFR-016, NFR-018, NFR-021, NFR-022
-
-

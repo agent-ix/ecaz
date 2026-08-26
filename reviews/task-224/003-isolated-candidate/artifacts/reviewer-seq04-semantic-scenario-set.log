@@ -1,0 +1,32 @@
+preregistered set (request.md:150-156, manifest.md:65-71):
+   fewer_than_window
+   exactly_one_window
+   more_than_window
+   reject_first_window
+   reject_multiple_windows
+   null_payload
+   toasted_projection_qual
+   mixed_local_remote
+   post_first_batch_remote_failure
+
+reviews/task-220/002-isolated-candidate/artifacts/run/results.jsonl
+  step=mat16-packed-payload-ab-100k rows=9 distinct=9
+   set_matches_gate = True  each_exactly_once = True
+   missing = []  extra = []
+
+reviews/task-198/003-lifecycle-and-faults/artifacts/run/results.jsonl
+  step=replica-lifecycle-smoke-10k rows=9 distinct=9
+   set_matches_gate = True  each_exactly_once = True
+   missing = []  extra = []
+
+emission sites (crates/ecaz-cli/src/commands/dev/distann_multicluster.rs):
+5986:        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} attribution_available={has_attribution_hooks} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
+6317:        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local} duplicate_requested={duplicate_requested}"
+6393:        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} duplicate_requested={duplicate_requested} error_digest={}",
+
+single call site of run_materialization_correctness:
+5992:async fn run_materialization_correctness(
+9173:            run_materialization_correctness(
+
+code/config drift b834b7fb3..HEAD under src/ and crates/:
+''

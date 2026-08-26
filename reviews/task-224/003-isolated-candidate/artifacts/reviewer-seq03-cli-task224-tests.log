@@ -1,0 +1,25 @@
+# Reviewer seq03: focused Task 224 CLI/suite tests + reuse-exclusion test at HEAD 9726b34c104c5c84f9e8c24678b95ed2361cc65d
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-8892c85f4878be67)
+
+running 6 tests
+test commands::bench::latency::tests::task224_payload_shapes_preserve_knn_order_and_select_registered_columns ... ok
+test commands::dev::distann_multicluster::tests::task224_arm_provenance_pins_profile_and_fast_sender_state ... ok
+test commands::bench::suite::tests::task224_mat26_semantics_use_two_isolated_nonreuse_fixtures ... ok
+test commands::bench::suite::tests::task224_mat26_candidate_requires_unprofiled_vector_projection ... ok
+test commands::bench::suite::tests::task224_mat26_preregistered_suite_validates_as_same_generation_ab ... ok
+test commands::bench::suite::tests::task224_owner_payload_locality_is_suite_addressable_and_structured ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 536 filtered out; finished in 0.00s
+
+
+--- reused_fixture_rejects_every_fixture_mutating_drill ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-8892c85f4878be67)
+
+running 1 test
+test commands::bench::suite::tests::reused_fixture_rejects_every_fixture_mutating_drill ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 541 filtered out; finished in 0.00s
+

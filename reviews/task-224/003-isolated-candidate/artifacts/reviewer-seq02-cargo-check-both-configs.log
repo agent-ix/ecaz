@@ -1,0 +1,14 @@
+$ cargo check --no-default-features --features pg18
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality)
+   Compiling rustls v0.23.43
+    Checking rustls-webpki v0.103.15
+    Checking tokio-rustls v0.26.4
+    Checking tokio-postgres-rustls v0.14.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.97s
+exit=0
+
+$ cargo check --no-default-features --features pg18,distann-head-attribution-benchmark
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.62s
+exit=0

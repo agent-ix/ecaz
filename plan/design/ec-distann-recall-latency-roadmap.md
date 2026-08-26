@@ -125,13 +125,13 @@ validity requirements.
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
-| 223 | Direct owner tuple materialization | proposed — attribution unblocked by 222 | direct implementation requires a refreshed residual of at least 1 ms/scan or 5% warm mean; Task 222's 100k whole-bucket result is 0.515 ms payload SQL / 0.818 ms endpoint work |
-| 224 | Owner payload heap locality | proposed — conditional on 223 attribution | measure block dispersion and detoast/send share; at most one TID reorder or block-batched detoast candidate |
-| 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
+| 223 | Direct owner tuple materialization | **complete — review-closed ACCEPT; STOP** (2026-08-25) | the reviewer accepted the 0.514999 ms / 4.439647% whole-bucket dominance proof, retired substage instrumentation as decision-obviated, and authorized no direct candidate |
+| 224 | Owner payload heap locality | **complete — packet 003 review-closed ACCEPT, STOP; MAT-26 unmeasured/no finalist; MAT-25 retired** | activation gate structurally unobservable; raw 41% eager gap is unattributable across both position/warmth and the sender flag; feature-only diagnostics remain on the reviewed campaign stack and were not productionized; native 12/10 divergence resolved by Task 239; final verdict `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`; no packet 004 |
+| 225 | Finalist materialization overlap | proposed — independently conditional | Task 224's no-finalist STOP neither satisfies nor rejects its finalist-stability/hideable-RTT premise |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 | 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
 | 228 | RTT/BatANN trigger | proposed — measurement-only after 222–237 | post-layout/post-hardening production-TLS RTT, concurrency, framing, pool, and backpressure curve; reauthor BatANN planning only if ADR-085 D4's >=50% transport-share trigger is met |
-| 229 | Covering scalar payload sidecar | proposed — mandatory prototype | owner-local generation sidecar for declared common scalar projections; exact fallback, Task 167 lifecycle, and full 10k/50k/100k evidence required |
+| 229 | Covering scalar payload sidecar | ready — mandatory prototype; Tasks 222–224 and 239 entry conditions review-closed | owner-local generation sidecar for declared common scalar projections; exact fallback, Task 167 lifecycle, and full 10k/50k/100k evidence required |
 | 230 | Hot/cold vertical row tier | proposed — mandatory after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; exact reconstruction and full retrieval/storage/DML matrix |
 | 231 | Fixed-stride graph/vector blocks | proposed — mandatory after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
 | 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
@@ -148,8 +148,8 @@ validity requirements.
 Task 222 removed the dominant payload-projection waste: at 100k owner payload
 SQL fell from 7.683 ms/scan to 0.515 ms/scan and owner endpoint work fell from
 7.978 to 0.818 ms/scan, with byte-identical predictions and storage. Tasks 223
-and 224 therefore begin as reviewed ceiling/attribution closeouts, not assumed
-implementations. Task 225 remains conditional on a separately measured
+and 224 closed as reviewed ceiling/attribution STOPs without production
+candidates. Task 225 remains conditional on a separately measured
 finalist-stability and hideable-RTT premise.
 
 The operator-selected storage sequence remains mandatory and unstacked:
@@ -350,8 +350,8 @@ remain controls rather than new candidates.
 | MAT-22 | Return row-tier locator with expanded candidates | **rejected — Task 221 review-closed STOP (2026-08-10)**: the lookup saving (0.311 ms/scan) was smaller than the added expand/wire work; end-to-end +1.2–1.6% at 100k with byte-identical predictions; a revisit must carry tombstone state in the locator payload (reviewer P3) |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
-| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional Task 224 after refreshed heap-locality counters |
-| MAT-26 | Batch detoast/binary-send work by physical block | conditional Task 224 after refreshed varlena/detoast attribution |
+| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **review-closed retired by Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
+| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 review-closed ACCEPT, STOP; latency unmeasured, candidate axis void, no finalist**: exact release provenance passed, but native semantics exceeded 12/10 bounded reads and the timing activation gate was structurally unobservable; raw 41% eager gap is unattributable across both fixture position/warmth and the sender flag; feature-only diagnostics remain on the reviewed campaign stack and were not productionized; final verdict `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`; no packet 004 |
 | MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
