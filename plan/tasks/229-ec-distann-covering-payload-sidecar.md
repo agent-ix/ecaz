@@ -1,10 +1,9 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
-Status: **implementation pending — packet 001 seq-01 findings closed; seq-02's
-two local-read blockers addressed; short rereview-open on exact current main;
-no source change yet; all entry conditions satisfied** (updated 2026-08-26;
-packet `reviews/task-229/001-plan/`; latest verdict
-`feedback/2026-08-26-02-reviewer.md`).
+Status: **implementation in progress — packet 001 review-closed ACCEPT; packet
+002 format/lifecycle underway; all entry conditions satisfied** (updated
+2026-08-26; final plan verdict
+`reviews/task-229/001-plan/feedback/2026-08-26-03-reviewer.md`).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
