@@ -1,13 +1,13 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **attribution implementation and 100k gate complete; packets 001/002
-review-open; coder proposes MAT-26 GO and MAT-25 no-advance** (updated
-2026-08-25). Priority: P2 latency. On one exact reusable generation, the
-vector-bearing binary-send bucket is 6.967996 ms/scan, 24.709206% of its
-28.20 ms warm mean. The toasted SPI-minus-send MAT-25 ceiling also passes the
-absolute gate at 1.617951 ms/scan but reaches only 3.509655%; the registered
-single-candidate tie-break therefore selects MAT-26. No candidate is authorized
-until outside review of `reviews/task-224/002-locality-attribution/`.
+Status: **reviewer accepts the MAT-26-only gate; seq-01 evidence blockers
+addressed; packet 002 re-review-open; packet 003 not yet authorized** (updated
+2026-08-25). Priority: P2 latency. The vector-bearing binary-send bucket is
+6.967996 ms/scan / 24.709206% summed owner work, while the endpoint critical
+path bounds any serial saving to at most 5.148990 ms / 18.258830%. MAT-25 is
+retired: 6.785 requested TIDs occupy 6.770 blocks and sorting moves 72% of rows
+for essentially no coalescing. Response and evidence:
+`reviews/task-224/002-locality-attribution/`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.
@@ -33,7 +33,9 @@ block-batched detoast/binary-send work.
    displacement, buffer/cache observations where safely available, toasted
    attribute count/bytes, and detoast/send time.
 3. No candidate is built unless heap/detoast work is at least 1 ms/scan or 5%
-   of warm end-to-end mean at 100k.
+   of warm end-to-end mean at 100k. Summed owner work establishes bucket size,
+   but the independently measured endpoint critical path bounds the achievable
+   serial share and must be printed beside it.
 
 ## Scope
 

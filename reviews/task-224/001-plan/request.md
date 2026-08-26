@@ -59,3 +59,26 @@ candidate tie-break prevents an unregistered combined optimization.
 
 This is planning-only. No code was changed and no tests or benchmarks were
 run.
+
+## Coder addendum after packet-001 feedback
+
+Packet 002 realized this plan with the following explicit reviewer-requested
+constraints:
+
+- summed per-owner stages establish bucket size, while
+  `materialize_owner_endpoint_critical` bounds achievable serial share and is
+  printed beside the summed result;
+- the attribution run has no uninstrumented production-SQL denominator, so its
+  profiled warm means are not candidate baselines; packet 003 must compare
+  both arms under the same instrumentation state, preferably production SQL;
+- SQL result `LIMIT 10` is distinct from the harness's swept
+  `ec_distann.top_k=32` search GUC, and `client_result_rows=10` confirms the
+  former; and
+- id-only is the shipped control, narrow-scalar is shipped-capable,
+  vector-bearing is shipped-capable exploratory stress, and toasted is
+  synthetic exploratory stress. An exploratory arm may authorize only an
+  isolated candidate screen, never default-on production behavior.
+
+The packet-002 reviewer accepted this plan as realized and accepted the
+MAT-26-only decision on substance. Its seq-01 evidence/reporting blockers are
+addressed in the packet-002 response and await final re-review.

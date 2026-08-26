@@ -7,8 +7,13 @@ Date: 2026-08-25 (America/Los_Angeles)
   `3328b1be1e6dc4e4b014c4dbcf3a75ddc625243c`
 - Lane: local Intel Core i9-10900K x86_64, three-owner physical PG18, release
   extension with `pg18,distann-head-attribution-benchmark`
-- Fixture: `ec_real_100k`, 100,000 rows, 200 held-out queries, top-k 10,
-  persisted head 4096, BW4/L32/H100, production lazy-10 materialization
+- Fixture: `ec_real_100k`, 100,000 rows, 200 held-out queries, SQL `LIMIT 10`,
+  persisted head 4096, BW4/L32/H100, production lazy-10 materialization. The
+  latency table's `top_k=32` column is the separately swept
+  `ec_distann.top_k` search GUC, not the SQL result limit; the fixture passes
+  `--k 10` and the exact `client_result_rows=10.000000` counter confirms it.
+  Task 223 used the same hardcoded GUC sweep at 32, so its 11.60 ms id-only
+  result and this packet's 11.80 ms id-only replication are comparable.
 - Isolation / reuse: the id-only step created one fresh three-owner generation;
   narrow-scalar, vector-bearing, and toasted steps reused that exact fixture.
   All four result rows report epoch fingerprint
@@ -49,6 +54,28 @@ is a four-shape attribution gate, not a candidate A/B, so its one-scale
 NFR-021 aggregate is expectedly `unavailable` and is not used as a scaling
 claim.
 
+## Projection-arm status
+
+| Shape | Status | Meaning |
+| --- | --- | --- |
+| id-only | shipped control | Task 222's current production benchmark projection |
+| narrow scalar | shipped-capable | normal production SQL selecting `id, source_id`; not the default benchmark target |
+| vector-bearing | shipped-capable exploratory stress | normal SQL can select `source real[1536]`, but this packet does not establish it as a common deployment workload |
+| toasted | synthetic exploratory stress | fixture-only forced-external `payload_note` plus matching predicate |
+
+The preregistered plan permits an exploratory arm to authorize only an
+isolated candidate screen, not productionization. Packet 003 must therefore
+show a same-generation win on the supported vector-bearing projection and may
+not turn MAT-26 on by default merely because the stress arm passed its entry
+gate.
+
+All four warm means in this packet use the feature-only profiled SQL wrapper;
+there is no uninstrumented production-SQL denominator per arm. The exact
+binary-send numerator remains valid and the wrapper can only inflate its
+denominator, so the MAT-26 GO is unaffected. These means are attribution-only
+and must not be reused as packet-003 baselines. Packet 003's A/B must keep both
+arms in the same instrumentation state, preferably both on production SQL.
+
 ## Key cited results
 
 | Shape | Warm mean / p95 / p99 (ms) | Payload SPI (ms/scan) | Binary send (ms/scan) | SPI-minus-send (ms/scan) |
@@ -58,10 +85,26 @@ claim.
 | vector-bearing | 28.20 / 31.40 / 33.90 | 7.799571 | 6.967996 | 0.831575 |
 | toasted | 46.10 / 69.90 / 74.40 | 2.049820 | 0.431869 | 1.617951 |
 
-The registered tie-break selects MAT-26's 24.709206% vector-bearing ceiling
-over MAT-25's 3.509655% per-scan toasted ceiling. See
-`gate-calculation.md` for timer scope, locality counters, alternative toasted
-query normalization, and arithmetic.
+The registered summed-owner comparison selects MAT-26's 24.709206%
+vector-bearing ceiling over MAT-25's 3.509655% per-scan toasted ceiling. The
+vector arm's independently reported endpoint critical path is 5.148990 ms, so
+the achievable serial saving is at most 18.258830% of the 28.20 ms profiled
+warm mean and is lower still after subtracting non-send endpoint work. See
+`gate-calculation.md` for timer scope, locality counters, critical-path and
+alternative toasted normalizations, and arithmetic.
+
+## Skipped-drill correction
+
+The immutable packet-002 run predates commit `a96bfdc29`, which fixes skipped-
+drill reporting. Its stdout truthfully says
+`physical_routed_delete_vacuum pass=skipped` with reason
+`skip_routed_delete_vacuum_drill`, but the old summary emitter wrote
+`pass=true`; that false-positive summary row propagated into `results.jsonl`.
+Do not cite that `drill_outcome` row as executed coverage. Fixture reuse is
+proved instead by the 100,000-row reused topology, exact epoch identity, zero
+non-owned/orphan rows, and skipped insert-throughput arm. Future suite output
+preserves `pass=skipped` and its reason without a numeric pass value. No
+measurement rerun is needed for the attribution decision.
 
 ## Build and validation artifacts
 
@@ -80,6 +123,8 @@ query normalization, and arithmetic.
   1 passed.
 - `artifacts/test-ecaz-cli-task224.log`: payload-shape SQL and suite expansion /
   structured-row tests, 2 passed.
+- `artifacts/test-skipped-drill-reporting.log`: reviewer-response regression
+  test for normalized `pass=skipped` plus reason and no numeric pass, 1 passed.
 
 ## Durable SHA-256 identities
 
@@ -89,12 +134,13 @@ query normalization, and arithmetic.
 - Suite log: `4ebc9544783665e6fd0354d7e73623028fcd0ffc9e500d622a7abae3a674dce4`
 - Dry-run manifest: `b55f257d76918f8f3e565ded4d78f6ede493851b0ee19c342fb14e02e0082d3f`
 - Dry-run log: `b616b2558e370ea0d6295b2b88cd805109b22c77664bf8c64bec500c5bf0cd77`
-- PG18 install log: `61ef429bfd85b5d451a44e68a343823195d78a9b7fb7f9140dc02a48ee06ab92`
-- CLI release-build log: `aff5e136142b3c8ba3273dce9f8ffebc312ec97b65946a457e41e62a0019b9e3`
-- TID-profile test log: `3881db9ff9629ab5b3e530428ca5c36c41e444a2dd32ad94a97ca58e11be5cb8`
-- Profiled-SQL test log: `7072c785ffcd3659b19c2c136373eb4a17365f2aca619071790d9e93a78c7df9`
-- Production-SQL test log: `8f6f95781ae6a4219e8ba3d1902f77c9dc493a9823f0e6c4ee664a3566e738b6`
-- CLI Task 224 test log: `03e57455653d775141f350fc8c4ba73f89cefe3fa4f42debb171a857fce0d14a`
+- PG18 install log: `1199f52f33556f9ae355acc2295665ebf364964125cb34ae7aeca28dfc3279d5`
+- CLI release-build log: `beab99020a218b81f888d9749b4a90cea19a72017d4e6eac14e65a0cd59278b0`
+- TID-profile test log: `a7f21de358eacf3df756dc2ebb1369b356e9d73dd2fc8ef5f9c63621fe603d65`
+- Profiled-SQL test log: `9ec33dcf749ebb4ee8d8473da67a53cca604a59abe50651799a9b6ef526bd75b`
+- Production-SQL test log: `d87c28ad6aaa02067c770bbb68b3141e204bf0f10596c34dd44582ef82d7c37b`
+- CLI Task 224 test log: `b559fb82fc7e1cf8f2da7754bbe3401a836cb913262ab5af880395824327eb56`
+- Skipped-drill test log: `2d9166d064f4e343976067eb9ed5c775d4a4167f80ee68e9a532f5fd5196b338`
 
 No corpus/query/truth data, PGDATA, tunnel state, polling exhaust, or failed-run
 artifact tree is committed. The successful reusable fixture was intentionally
