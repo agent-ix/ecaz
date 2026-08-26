@@ -10,7 +10,8 @@
 - Measurement status: live screen run after reviewer seq04 authorization;
   semantic control failed closed and the timing activation gate was
   structurally unobservable; reviewer seq05 accepted STOP with MAT-26
-  unmeasured/no finalist, and the decision-record correction is review-open
+  unmeasured/no finalist; reviewer seq07 review-closed packet 003 ACCEPT after
+  the seq06 correction round
 
 ## Preregistered suite
 

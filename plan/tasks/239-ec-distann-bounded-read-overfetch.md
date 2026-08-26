@@ -7,7 +7,9 @@ authorization; proposed — immediate P1 campaign blocker required before Task
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
 The operator's standing “GET IT DONE” campaign authorization includes creating
-this bounded follow-up rather than leaving the accepted P1 divergence unnamed.
+this bounded follow-up rather than leaving the accepted P1 divergence unnamed;
+Task 224 closeout reviewer seq07 accepted that authorization record as
+consistent (`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`).
 
 ## Why
 

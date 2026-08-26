@@ -1,7 +1,7 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **packet 003 STOP accepted by reviewer seq05; MAT-26 latency unmeasured,
-candidate axis void, no finalist; decision-record correction review-open;
+Status: **complete — packet 003 review-closed ACCEPT, STOP; MAT-26 latency
+unmeasured, candidate axis void, no finalist;
 feature-only/default-off exact `real[]` sender and CLI gate retained as
 diagnostic code by ruling; native 12/10 bounded-read divergence carried to
 Task 239; MAT-25 retired**
@@ -12,6 +12,9 @@ authorization verdict
 `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-04-reviewer.md`.
 STOP and follow-up ruling:
 `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
+Correction review and final closeout:
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-06-reviewer.md` and
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`.
 Priority: P2 latency. The
 vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner
 work, while the endpoint critical path bounds any serial saving to at most
