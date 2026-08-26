@@ -10,4 +10,3 @@
 The source artifact records the current code surfaces inspected before the
 concrete design was written. It contains no benchmark result and makes no
 performance claim.
-
