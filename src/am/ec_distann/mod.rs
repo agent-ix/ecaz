@@ -60,6 +60,7 @@ mod options;
 pub mod page;
 mod participant_lifecycle;
 mod payload_projection;
+mod payload_sidecar;
 mod physical_dml;
 pub(crate) mod placement;
 pub(crate) mod quantizer;

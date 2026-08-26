@@ -314,9 +314,18 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
         // Registry operations and begin-build share this row lock after the
         // retained coordinator-control relation lock. This includes replay.
         let registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
-        let row_schema_fingerprint = resolve_relation_schema(source_relation_oid)?
-            .descriptor
-            .fingerprint()?;
+        let row_schema = resolve_relation_schema(source_relation_oid)?.descriptor;
+        let options = super::super::options::relation_options(control.as_ptr());
+        let indexed_vector_attnum = u16::try_from(
+            super::super::routine::indexed_ecvector_attnum(control.as_ptr())?,
+        )
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: indexed vector attnum exceeds u16".to_owned())?;
+        let _resolved_payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+            &row_schema,
+            indexed_vector_attnum,
+            options.covering_payload_attnums.as_deref(),
+        )?;
+        let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
         if let Some((existing, requires_source_lock)) = replay_registration(

@@ -220,6 +220,16 @@ pub(super) fn build_epoch(
         }
         let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
         let row_schema = resolve_relation_schema(source_relation_oid)?.descriptor;
+        let options = super::super::options::relation_options(control.as_ptr());
+        let indexed_vector_attnum = u16::try_from(
+            super::super::routine::indexed_ecvector_attnum(control.as_ptr())?,
+        )
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: indexed vector attnum exceeds u16".to_owned())?;
+        let _resolved_payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+            &row_schema,
+            indexed_vector_attnum,
+            options.covering_payload_attnums.as_deref(),
+        )?;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
@@ -318,7 +328,6 @@ pub(super) fn build_epoch(
             index_relation.heap_relation_oid(),
         )
         .ok_or_else(|| "EC_BUILD_INCOMPLETE: source heap could not open".to_owned())?;
-        let options = super::super::options::relation_options(index_relation.as_ptr());
         options.validate_head_sizing_inputs()?;
         let index_info = crate::am::common::index_info::IndexInfoGuard::build(
             index_relation.as_ptr(),
