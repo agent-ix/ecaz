@@ -1,0 +1,12 @@
+Script started on 2026-08-25 21:39:13-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.26s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-8892c85f4878be67)
+
+running 1 test
+test commands::bench::suite::tests::reused_fixture_rejects_every_fixture_mutating_drill ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 541 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-25 21:39:14-07:00 [COMMAND_EXIT_CODE="0"]

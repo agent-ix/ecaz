@@ -1,0 +1,133 @@
+# Task archive cross-cutting packet 013 - reviewer seq01 verification log
+
+reviewed HEAD: 7b37dece73392a1d13355ee753e4b9b5c464abf2
+origin/main:   2adf3d543b7e08b031563dc4ee15e6204d9c0038
+worktree:      /home/peter/dev/ecaz/.worktrees/distann-campaign-ledger-v2
+date:          2026-08-26
+note: read-only review. No PostgreSQL, build, install, or runtime change was run.
+
+## 1. Imported task-definition set
+
+$ git diff origin/main...HEAD --name-status -- plan/tasks/
+A	plan/tasks/223-ec-distann-direct-owner-tuple-materialization.md
+A	plan/tasks/224-ec-distann-owner-payload-locality.md
+A	plan/tasks/225-ec-distann-finalist-materialization-overlap.md
+A	plan/tasks/228-ec-distann-rtt-batann-trigger.md
+A	plan/tasks/229-ec-distann-covering-payload-sidecar.md
+A	plan/tasks/230-ec-distann-hot-cold-row-tier.md
+A	plan/tasks/231-ec-distann-fixed-stride-node-blocks.md
+A	plan/tasks/232-ec-distann-packed-columnar-row-tier.md
+A	plan/tasks/233-ec-distann-hybrid-node-columnar-generation.md
+A	plan/tasks/234-ec-distann-read-rpc-deadline-cancellation-parity.md
+A	plan/tasks/235-ec-distann-write-lifecycle-rpc-cancellation.md
+A	plan/tasks/237-ec-distann-protocol-errors-explain-observability.md
+A	plan/tasks/238-ec-distann-retry-snapshot-use-after-free.md
+M	plan/tasks/README.md
+
+$ git ls-tree -r --name-only origin/main plan/tasks/ | grep -E "/(22[0-9]|23[0-9])"
+plan/tasks/220-ec-distann-owner-array-materialization.md
+plan/tasks/221-ec-distann-owner-expanded-locator.md
+plan/tasks/222-ec-distann-qual-aware-payload-projection.md
+plan/tasks/226-ec-distann-current-head-bw8-transfer.md
+plan/tasks/227-ec-distann-recall-residual-adaptive-search.md
+plan/tasks/236-ec-distann-secure-transport-secret-resolution.md
+plan/tasks/239-ec-distann-bounded-read-overfetch.md
+
+## 2. No runtime surface touched
+
+$ git diff origin/main...HEAD --name-only | grep -E "^(src|crates|sql|spec)/"
+(no matches - clean)
+
+$ git diff origin/main...HEAD --name-only | grep -vE "^(plan|reviews)/"
+(no matches - only plan/ and reviews/ changed)
+
+## 3. Main accepted rows 222/226/227/236/239 byte-identity and uniqueness
+
+task 222  main_sha=49be0c367a16fb7e  head_sha=49be0c367a16fb7e  rows_in_head=1  IDENTICAL
+task 226  main_sha=96e807cf0da40eb6  head_sha=96e807cf0da40eb6  rows_in_head=1  IDENTICAL
+task 227  main_sha=fc91c6807a6fc52d  head_sha=fc91c6807a6fc52d  rows_in_head=1  IDENTICAL
+task 236  main_sha=123d6c7399baa544  head_sha=123d6c7399baa544  rows_in_head=1  IDENTICAL
+task 239  main_sha=d0ea7fa9cff2c295  head_sha=d0ea7fa9cff2c295  rows_in_head=1  IDENTICAL
+
+## 4. Packet provenance - imported trees vs source branches
+
+reviews/task-223 HEAD                                 d0cde6d0c246f4a25c5feef12f37be0d7583d98a
+reviews/task-223 origin/task223-owner-substage-attr.  d0cde6d0c246f4a25c5feef12f37be0d7583d98a
+reviews/task-224 HEAD                                 b6f9d2bd699f69fb2b2289df93ae837320b27f8d
+reviews/task-224 origin/task224-owner-payload-locality b6f9d2bd699f69fb2b2289df93ae837320b27f8d
+reviews/task-238 HEAD                                 e8146a5ef40c9df200a2c27cc1e379148bc50e35
+reviews/task-238 origin/integrate/distann-followup-campaign e8146a5ef40c9df200a2c27cc1e379148bc50e35
+
+## 5. Banned-artifact scan (AGENTS.md never-commit list)
+
+$ git diff origin/main...HEAD --name-only | grep -Ei "\.tsv(\.gz)?$|tunnel|awsrunShellScript|ssm-command-invocation|list-command-invocations|truth-cache|\.tunneled\.json|diagnostic-while-|pg-readonly-status\.log"
+(no matches - clean)
+
+$ git diff origin/main...HEAD --name-only | git check-ignore --stdin
+(no gitignored path was force-added)
+
+## 6. Packet weight
+
+files changed: 176
+total bytes:   51692476
+
+largest 10 imported files:
+20201056 reviews/task-224/002-locality-attribution/artifacts/run/results.jsonl
+6231239 reviews/task-224/002-locality-attribution/artifacts/run/toasted/distann-local-multinode.log
+6230032 reviews/task-224/002-locality-attribution/artifacts/run/toasted/distann-multinode-summary.log
+3587492 reviews/task-224/003-isolated-candidate/artifacts/run/control-a/distann-local-multinode.log
+3580673 reviews/task-224/003-isolated-candidate/artifacts/run/control-a/distann-multinode-summary.log
+1595660 reviews/task-224/002-locality-attribution/artifacts/run/id-only/distann-local-multinode.log
+1593449 reviews/task-224/002-locality-attribution/artifacts/run/vector-bearing/distann-local-multinode.log
+1593244 reviews/task-224/002-locality-attribution/artifacts/run/narrow-scalar/distann-local-multinode.log
+1592510 reviews/task-224/002-locality-attribution/artifacts/run/id-only/distann-multinode-summary.log
+1592207 reviews/task-224/002-locality-attribution/artifacts/run/vector-bearing/distann-multinode-summary.log
+
+near-duplicate cluster stdout pair (toasted arm):
+$ diff .../toasted/distann-local-multinode.log .../toasted/distann-multinode-summary.log | wc -l -> 12 differing diff lines over 12460 log lines
+
+## 7. Cited-path existence sweep over new/changed planning text
+
+$ grep -rhoE "(reviews|benchmarks|plan)/[A-Za-z0-9._/-]+\.(md|json|jsonl|log|txt)" plan/tasks/README.md plan/design/ec-distann-recall-latency-roadmap.md plan/tasks/22[3-9]*.md plan/tasks/23[0-9]*.md | sort -u   (57 unique paths)
+MISSING: reviews/task-222/002-contract-and-correctness/feedback/2026-08-24-01-reviewer.md
+(all other cited paths resolve in this checkout)
+
+## 8. Provenance of the two Task 238 commits cited by the ledger
+
+15f7fcf5f  on_origin_main=YES
+  subject: Retain DistANN retry snapshots across traversal
+  contained in: origin/fix/task236-closeout-index-dedup,origin/integrate/distann-campaign-ledger-v2,origin/integrate/distann-followup-campaign,origin/integrate/task222-payload-projection,origin/integrate/task226-bw8-evidence,origin/integrate/task227-residual-attribution,origin/integrate/task234-read-rpc-cancellation,origin/integrate/task236-secure-transport,origin/main,origin/task-167-recovery,origin/task223-owner-substage-attribution,origin/task224-owner-payload-locality,origin/task234-current-tls,origin/task235-write-lifecycle-cancellation,origin/task239-bounded-read-overfetch,origin/task239-main-port
+3b8b872d6  on_origin_main=NO
+  subject: Restore DistANN PG18 retry regression coverage
+  contained in: origin/integrate/distann-followup-campaign,origin/task223-owner-substage-attribution,origin/task224-owner-payload-locality,origin/task234-current-tls,origin/task235-write-lifecycle-cancellation,origin/task239-bounded-read-overfetch
+
+$ git show --stat --format= 3b8b872d6
+ src/am/ec_distann/options.rs               | 38 +++++++++++++++++++++++++++
+ src/tests/ec_distann_physical_lifecycle.rs | 41 ++++++++++++++++++++++++++++++
+ src/tests/mod.rs                           |  4 ++-
+ 3 files changed, 82 insertions(+), 1 deletion(-)
+
+## 9. Missing Task 238 reference - where it actually lives
+
+cited: reviews/task-222/002-contract-and-correctness/feedback/2026-08-24-01-reviewer.md
+present in this checkout (from main): 2026-08-23-02-reviewer.md,2026-08-23-03-reviewer.md
+present on origin/integrate/distann-followup-campaign: 2026-08-23-02-reviewer.md,2026-08-23-03-reviewer.md
+found only on: refs/remotes/origin/plan/distann-materialization-followups 
+
+## 10. PR base refs for the campaign stack (gh)
+
+PR 85 task223 -> base integrate/distann-followup-campaign merged 2026-08-25T22:40:17Z
+PR 87 task224 -> base integrate/distann-followup-campaign merged 2026-08-26T06:59:51Z
+PR 83 campaign -> base main state OPEN
+PR 84 task234 -> base integrate/distann-followup-campaign state OPEN
+PR 86 task235 -> base task234-current-tls state OPEN
+
+$ git diff --stat origin/main...origin/task235-write-lifecycle-cancellation -- src crates | tail -3
+ src/tests/ec_distann_physical_lifecycle.rs         |   41 +
+ src/tests/mod.rs                                   |    4 +-
+ 10 files changed, 4581 insertions(+), 964 deletions(-)
+
+## 11. Task 224 diagnostic code is not on main
+
+$ git grep -nE "benchmark_owner_locality_profile|owner_locality_profile" origin/main -- src crates
+(no matches - Task 224 diagnostics absent from main)

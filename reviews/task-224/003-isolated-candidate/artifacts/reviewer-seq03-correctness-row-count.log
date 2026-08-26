@@ -1,0 +1,39 @@
+# Reviewer seq03: physical_materialization_correctness row count under the attribution build
+# HEAD 9726b34c104c5c84f9e8c24678b95ed2361cc65d
+
+## Code: seven core scenarios, plus two more when attribution hooks are present
+6197:            "fewer_than_window",
+6205:            "exactly_one_window",
+6213:            "more_than_window",
+6221:            "reject_first_window",
+6229:            "reject_multiple_windows",
+6237:            "null_payload",
+6245:            "toasted_projection_qual",
+6272:    if !has_attribution_hooks {
+6274:            "physical_materialization_feature_isolation scale={scale} normal_release=true attribution_hooks_absent=true semantic_scenarios=7"
+6317:        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local} duplicate_requested={duplicate_requested}"
+6393:        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} duplicate_requested={duplicate_requested} error_digest={}",
+
+## Empirical: two real attribution-build runs, per step
+reviews/task-220/002-isolated-candidate/artifacts/run/results.jsonl
+  step=mat16-packed-payload-ab-100k rows=9
+     exactly_one_window
+     fewer_than_window
+     mixed_local_remote
+     more_than_window
+     null_payload
+     post_first_batch_remote_failure
+     reject_first_window
+     reject_multiple_windows
+     toasted_projection_qual
+reviews/task-198/003-lifecycle-and-faults/artifacts/run/results.jsonl
+  step=replica-lifecycle-smoke-10k rows=9
+     exactly_one_window
+     fewer_than_window
+     mixed_local_remote
+     more_than_window
+     null_payload
+     post_first_batch_remote_failure
+     reject_first_window
+     reject_multiple_windows
+     toasted_projection_qual

@@ -1,0 +1,11 @@
+Script started on 2026-08-25 18:58:27-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-8892c85f4878be67)
+
+running 1 test
+test commands::bench::suite::tests::distann_skipped_drill_is_structured_without_claiming_pass ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 536 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-25 18:58:28-07:00 [COMMAND_EXIT_CODE="0"]

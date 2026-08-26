@@ -1,0 +1,83 @@
+Script started on 2026-08-25 18:27:42-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-23f5d273892c5c2d)
+
+running 1 test
+test am::ec_distann::remote_endpoint::packed_payload_sql_tests::locality_projection_profiles_only_non_null_binary_sends ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2597 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (/home/peter/.cargo-target/debug/deps/approx_score_study-496af0e59ae7852a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (/home/peter/.cargo-target/debug/deps/pgrx_embed_ecaz-31c56538b6edfdbc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (/home/peter/.cargo-target/debug/deps/simd_bench-1fd972104c657179)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (/home/peter/.cargo-target/debug/deps/kani_item_pointer-b78f7d3551e3b402)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-368137646cf0c0b0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (/home/peter/.cargo-target/debug/deps/proptest_page-b498d83ebabffc65)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (/home/peter/.cargo-target/debug/deps/proptest_quant-6a6cdfcc33ad7e1f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (/home/peter/.cargo-target/debug/deps/recall_integration-0b181df55daa9d20)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (/home/peter/.cargo-target/debug/deps/simd_diff-5e15f2db71749e69)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (/home/peter/.cargo-target/debug/deps/size_of_assertions-0616780a3053cde6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-e24637c4d624b2b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (/home/peter/.cargo-target/debug/deps/wal_policy-5f7f40805c3325d0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-25 18:27:42-07:00 [COMMAND_EXIT_CODE="0"]
