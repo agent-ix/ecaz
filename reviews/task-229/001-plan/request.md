@@ -5,16 +5,16 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-26
-seq: 03
+seq: 04
 ---
 
 # Task 229 covering payload sidecar — revised concrete plan
 
-This revision requests rereview against exact current main
+This revision requests the short seq-02 rereview against exact current main
 `3419c9c758bea7d9940b27d9afbcf9e627e84879`. It supersedes request seq-02 and
-addresses every P1/P2 item in
-`feedback/2026-08-26-01-reviewer.md`; the itemized disposition is
-`artifacts/seq01-disposition.md`.
+seq-03. Seq-02 confirmed every seq-01 P1/P2 finding closed and left only two
+local-read blockers; both are addressed below. Dispositions are
+`artifacts/seq01-disposition.md` and `artifacts/seq02-disposition.md`.
 
 No source, SQL, test, fixture, or benchmark result is under review. Source
 grounding remains `artifacts/current-main-architecture.md`.
@@ -77,8 +77,16 @@ keyed by that version's frozen `row_tid`; superseded entries follow the row
 tier's append-only retention rule and disappear only at generation reclaim.
 `vec_id` is retained as a non-key identity echo and digest-order field.
 
-A read resolves one bounded batch with ordered
+Remote reads resolve one bounded batch with ordered
 `unnest(row_tids, vec_ids) WITH ORDINALITY` against the single unique index.
+For local physical hits, eligible `Frozen(row_tid)` outputs become
+`FrozenPayloadPending { vec_id, row_tid }` at ranking time, when both identities
+are available. `materialize_pending_physical_window` is generalized to gather
+all local and remote pending rows in the demanded lazy-10 window; eager mode
+uses one batch over the proven set. It executes at most one local SPI
+`unnest(row_tids, vec_ids) WITH ORDINALITY` lookup per snapshot attempt and
+window, never SPI per row. The pending variant makes both returned `row_tid`
+and `vec_id` echoes checkable before conversion to a virtual local payload row.
 There is no query per row, second sidecar variant, coordinator copy, or O(N)
 state.
 
@@ -124,27 +132,35 @@ through local and remote physical materialization:
 - selection is per request and all-or-nothing. No row is reconstructed from a
   mix of sidecar and row tier.
 
-The owner repeats the descriptor and subset validation. Failure modes split as
-follows:
+The owner repeats the descriptor and subset validation. Structural failures
+are common to both owner classes:
 
-- ERROR for structural corruption: descriptor declares a cover but either
-  sidecar relation is absent; cover/schema mismatch after catalog resolution;
-  returned key or vec_id echo mismatch; malformed length/null shape; visible
-  row-tier tuple with no matching visible sidecar tuple; or any decode failure.
-- Existing `tuple_payload_missing -> RemoteSkipped` semantics for a sidecar
-  tuple not visible under the read snapshot. On a miss, the owner probes only
-  that exact row-tier TID under the same snapshot: if the row-tier tuple is also
-  not visible, return the normal missing marker; if it is visible, error as
-  corruption. Because both tuples are inserted by the same transaction, their
-  legal visibility event is identical.
+- ERROR when the descriptor declares a cover but either sidecar relation is
+  absent; cover/schema mismatch after catalog resolution; returned key or
+  vec_id echo mismatch; malformed length/null shape; a visible row-tier tuple
+  with no matching visible sidecar tuple; or any decode failure.
 
-The sidecar applies to both physical owner classes. Eligible remote hits retain
-the production semantic payload response shape. Eligible
-`CustomScanOutputRow::Frozen(row_tid)` local hits become virtual projected rows
-from the local sidecar, preserving the same visibility rule. The legacy
-`CustomScanOutputRow::Local(tid)` path addresses the user's own heap and is
-untouched. A frozen row-tier TID was never a coordinator user-table ctid;
-converting only `Frozen` rows does not add ctid/EPQ/`FOR UPDATE` capability, and
+Remote visibility retains the existing remote-only behavior. A sidecar miss
+probes that exact row-tier TID under the remote request snapshot: row tier also
+not visible returns the existing `tuple_payload_missing -> RemoteSkipped`
+marker; row tier visible is corruption. No local row becomes skippable through
+this rule.
+
+Local `FrozenPayloadPending` visibility matches the current `Frozen` control
+attempt-for-attempt. The first batched sidecar lookup runs under
+`estate.es_snapshot`. For initial misses, the same exact row-tier TIDs are
+probed under `es_snapshot`: a visible row tier with no sidecar is corruption.
+Rows invisible in both stores retry together in one batch under the exact
+snapshot installed by `ActiveSnapshotGuard::latest()`—the active-SPI form of
+the same `GetLatestSnapshot` retry the current direct fetch performs with
+`RegisteredSnapshotGuard::latest()`. A second sidecar miss probes the exact row-
+tier TID under that latest guard. Visible row tier is corruption; both still
+invisible raise the existing error verbatim:
+`EC_GENERATION_MISSING: published row-tier tuple ({},{}) disappeared`. They do
+not skip. Successful pending rows become virtual local payload rows; the legacy
+`CustomScanOutputRow::Local(tid)` path addresses the user's heap and is
+untouched. A frozen row-tier TID was never a coordinator user-table ctid, so
+converting only physical `Frozen` rows adds no ctid/EPQ/`FOR UPDATE` capability;
 `custom_scan_recheck` retains its existing unconditional virtual-row contract.
 
 ## 4. Backward-compatible identity and lifecycle
@@ -237,8 +253,11 @@ delete does not invalidate publication, restart, or retained-predecessor reads.
 5. Extend benchmark-only physical response telemetry—without changing the
    production semantic payload fields—with owner sidecar selected/fallback
    reason, lookup time, requested/returned/missing rows, payload bytes, and
-   row-tier visibility probes. The coordinator aggregates those response fields
-   into stage/work counters; the fixture also records per-node topology sizes.
+   row-tier visibility probes. Record local batched SPI initial/retry work and
+   remote owner lookup work as separate stages, including local batch count and
+   rows per batch, so per-row SPI cannot hide in the primary endpoint. The
+   coordinator aggregates remote response fields into stage/work counters; the
+   fixture also records per-node topology sizes.
 
 ### Packet 003 — correctness and DML
 
@@ -350,5 +369,6 @@ do not override the explicit gates above.
 
 ## Rereview request
 
-Please confirm that P1-1 through P1-4 and P2-1 through P2-9 are closed, and
-authorize packet 002 implementation only if this revised plan is DONE.
+Please confirm only that seq-02 B1/B2 are closed without reopening its accepted
+format, descriptor, catalog, lifecycle, DML, threshold, or evidence rulings,
+and authorize packet 002 implementation only if this revised plan is DONE.

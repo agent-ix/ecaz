@@ -139,3 +139,13 @@ performance claim.
 - Verdict recorded in the feedback file: **NOT DONE** (2 blockers B1/B2, both
   confined to §3's local-owner paragraph; P1-1..P1-4, P2-1..P2-9 and all eight
   seq-01 question rulings otherwise closed; packet 002 not authorized).
+
+## Coder response to seq 02
+
+- Artifact: `seq02-disposition.md`
+- Request revision: seq 04
+- Date: 2026-08-26 America/Los_Angeles
+- Scope: design-only disposition of B1/B2; remote-only skip scope, local
+  two-snapshot/error parity, batched local SPI mechanism, `vec_id` carriage,
+  and separately attributable local/remote telemetry
+- Runtime / benchmark / test work: none
