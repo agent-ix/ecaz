@@ -131,3 +131,69 @@ policy. This checkpoint makes no runtime or performance claim.
 
 No PostgreSQL, `cargo pgrx test`, fixture, corpus, or benchmark command was
 run. This checkpoint makes no runtime or performance claim.
+
+## Reviewer provenance — seq 02 (2026-08-26)
+
+- Agent / role / model: Agent IX / reviewer / claude-opus-5
+- Head SHA at review: `cd7ab0baa761ae860d76c6a092dd6455bea6b205`
+- Source commit reviewed: `255081d74aa6ce430a2a21ee5555e9569c0a0fa7`
+- Base SHA: `3419c9c758bea7d9940b27d9afbcf9e627e84879` (confirmed to be both the
+  real `git merge-base` of HEAD and main **and** current `origin/main`, not
+  just a claimed base)
+- Task bucket / packet: `reviews/task-229/002-format-and-lifecycle/`
+- Review scope: checkpoint 2 only — `DistannPayloadCoverDescriptorV1` canonical
+  bytes/digest/schema binding, the compact null/value entry codec, TID and
+  `vec_id` echo corruption checks, conditional no-cover-V1 / covered-V2
+  registration identity, and the checkpoint-1 carry-in dispositions in
+  `seq01-disposition.md`. Generation-descriptor V2/V3, receipt V1/V2, manifest
+  V2/V3, fingerprint and lifecycle-wire dual decode, catalog OIDs, physical
+  relation ownership, read path, DML, and telemetry were not required to exist
+  and were not reviewed.
+- Lane / fixture / storage format / rerank mode: not applicable — static code
+  review of a codec/identity checkpoint; no index, corpus, or fixture was built
+  or read
+- Isolated vs shared surfaces: not applicable — no table or index was created
+- Verdict: **DONE**; checkpoint 3 authorized (generation descriptor V2/V3 plus
+  dual-version receipt/manifest/fingerprint/lifecycle-wire persistence), with
+  five carry-ins recorded in `feedback/2026-08-26-02-reviewer.md` (item 1,
+  covering the descriptor decode-rejection arms with tests, must be closed in
+  checkpoint 3)
+
+### `reviewer-seq02-verification.log`
+
+- Command: read-only static inspection via `git log`, `git show`, `git diff`,
+  `git merge-base`, `git rev-parse`, `grep`, `sed`, and file reads against the
+  worktree at
+  `/home/peter/dev/ecaz/.worktrees/task229-covering-payload-sidecar`
+- Timestamp: 2026-08-26
+- Result: thirteen checks X1-X13 — scope/base confirmation, descriptor
+  canonical-byte unambiguity and byte-identical re-encode, new digest domain vs
+  unchanged existing domains, the eleven-arm descriptor validation inventory,
+  fingerprint plus per-attribute schema binding, the compact entry codec's
+  encode/decode symmetry and fail-closed arms, `decode_row` TID/`vec_id` echo
+  ordering, conditional V1/V2 registration bytes plus the preserved golden
+  digest, the three-direction T1/T2 reloption-drift matrix, a full cross-check
+  of every coder artifact against `request.md`, the checkpoint-1 carry-in
+  disposition audit, the codec test-coverage inventory, and the per-row
+  allocation cost of `validate()`
+- Key result lines cited by the feedback file: X1 (source commit touches only
+  four files under `src/am/ec_distann/`; declared base is both the real
+  merge-base and current `origin/main`), X2 (every field fixed-width or
+  length-prefixed, so `encode(decode(b)) == b` for every accepted `b`), X3
+  (`ec_distann_payload_cover_descriptor_v1\0` is new; `BUILD_REGISTRATION_DOMAIN`
+  and every other existing domain are unchanged), X4/X5 (eleven validation arms;
+  the empty-collation gate cannot trip a legitimate cover because all eleven
+  allowlist types have `typcollation = 0`), X7 (all three `decode_row` checks
+  precede value exposure; `ItemPointer` derives `PartialEq`), X8 (no-cover bytes
+  byte-identical to main, golden `c5a90122...25ab` unchanged and passing;
+  `encode_registration` output is never persisted, so no registration decoder is
+  owed), X9 (cover changed / removed / added between T1 and T2 all move the
+  expected digest and error before `capture_source_snapshot`; `t1.rs:335` and
+  `t2.rs:241` are the only `replay_registration` callers), X10 (all seven coder
+  artifacts read in full and consistent with `request.md`; `src/lib.rs:57`
+  `#[allow(dead_code)] mod am;` means the clean `cargo check --lib` does not
+  prove the codec is wired), X12 (fourteen validator/codec rejection arms have
+  no test), X13 (`validate()` costs ~5 heap allocations per attribute per call
+  and runs once per encoded and per decoded row)
+- No PostgreSQL, pgrx, cargo, test, fixture, corpus, or benchmark command was
+  executed by the reviewer.
