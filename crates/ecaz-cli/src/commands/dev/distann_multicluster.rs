@@ -629,9 +629,6 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.secure_remote_transport && mode != FixtureMode::Physical {
         bail!("--secure-remote-transport requires the physical fixture");
     }
-    if args.secure_remote_transport && args.reuse_fixture {
-        bail!("--secure-remote-transport cannot reuse a prior fixture");
-    }
     if args.tls_security_matrix
         && (!args.secure_remote_transport
             || args.nodes < 3
@@ -1072,7 +1069,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         })
         .collect();
     let secure_transport_fixture = if args.secure_remote_transport {
-        Some(prepare_secure_remote_transport_fixture(&run_dir).await?)
+        Some(if args.reuse_fixture {
+            existing_secure_remote_transport_fixture(&run_dir)?
+        } else {
+            prepare_secure_remote_transport_fixture(&run_dir).await?
+        })
     } else {
         None
     };
@@ -1258,7 +1259,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         }
     }
 
-    if secure_transport_fixture.is_some() {
+    if secure_transport_fixture.is_some() && !args.reuse_fixture {
         for node in &nodes {
             run_psql_file(
                 &psql,
@@ -1343,6 +1344,52 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         );
     }
     result
+}
+
+fn existing_secure_remote_transport_fixture(
+    run_dir: &Path,
+) -> Result<SecureRemoteTransportFixture> {
+    let tls_dir = run_dir.join("task236-tls");
+    let fixture = SecureRemoteTransportFixture {
+        ca_cert: tls_dir.join("ca.crt"),
+        client_cert: tls_dir.join("distann-rpc-client.crt"),
+        client_key: tls_dir.join("distann-rpc-client.key"),
+        rotated_client_cert: tls_dir.join("distann-rpc-client-rotated.crt"),
+        rotated_client_key: tls_dir.join("distann-rpc-client-rotated.key"),
+        wrong_ca_cert: tls_dir.join("wrong-ca.crt"),
+        incorrect_client_cert: tls_dir.join("incorrect-client.crt"),
+        incorrect_client_key: tls_dir.join("incorrect-client.key"),
+        expired_client_cert: tls_dir.join("expired-client.crt"),
+        expired_client_key: tls_dir.join("expired-client.key"),
+        future_client_cert: tls_dir.join("future-client.crt"),
+        future_client_key: tls_dir.join("future-client.key"),
+        server_cert: tls_dir.join("server.crt"),
+        server_key: tls_dir.join("server.key"),
+    };
+    for path in [
+        &fixture.ca_cert,
+        &fixture.client_cert,
+        &fixture.client_key,
+        &fixture.rotated_client_cert,
+        &fixture.rotated_client_key,
+        &fixture.wrong_ca_cert,
+        &fixture.incorrect_client_cert,
+        &fixture.incorrect_client_key,
+        &fixture.expired_client_cert,
+        &fixture.expired_client_key,
+        &fixture.future_client_cert,
+        &fixture.future_client_key,
+        &fixture.server_cert,
+        &fixture.server_key,
+    ] {
+        if !path.is_file() {
+            bail!(
+                "--reuse-fixture secure transport artifact is absent: {}",
+                path.display()
+            );
+        }
+    }
+    Ok(fixture)
 }
 
 /// libpq conninfo for a node over the shared socket dir.
@@ -11042,17 +11089,24 @@ async fn drive_physical_fixture(
     if !physical_concurrency_ok {
         bail!("physical TC-043 concurrent insert/query drill failed");
     }
-    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        nodes,
-        args,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
+    let physical_delete_vacuum_ok = if args.skip_fault_drills {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_routed_delete_vacuum pass=skipped reason=skip_fault_drills"
+        );
+        true
+    } else {
+        physical_routed_delete_vacuum_drill(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            nodes,
+            args,
+            &fixture_roster,
+            &concurrency_table,
+            &fingerprint,
+        )
+        .await?
+    };
     if !physical_delete_vacuum_ok {
         bail!("physical routed DELETE + VACUUM drill failed");
     }
