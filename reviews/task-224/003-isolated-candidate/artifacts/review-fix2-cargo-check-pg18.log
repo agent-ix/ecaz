@@ -1,0 +1,10 @@
+Script started on 2026-08-25 21:38:08-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.07s
+
+Script done on 2026-08-25 21:38:20-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,10 +1,11 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **packet 003 reviewer seq01 NOT DONE; four blockers corrected at
-`7cafbd202`; rereview open; 100k screen remains unauthorized; MAT-25 retired**
+Status: **packet 003 reviewer seq02 NOT DONE; B1--B4 corrected at
+`b834b7fb3`; seq03 rereview open; both suites remain unauthorized; MAT-25
+retired**
 (updated 2026-08-25). Request
 `reviews/task-224/003-isolated-candidate/request.md`; NOT DONE verdict
-`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-01-reviewer.md`.
+`reviews/task-224/003-isolated-candidate/feedback/2026-08-25-02-reviewer.md`.
 Priority: P2 latency. The
 vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner
 work, while the endpoint critical path bounds any serial saving to at most

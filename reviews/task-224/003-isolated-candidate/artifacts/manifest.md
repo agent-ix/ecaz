@@ -1,26 +1,36 @@
 # Task 224 packet 003 artifact manifest
 
 - Initial code SHA: `0ad5d63930bb021114585f64da5ab3622e4ddf7b`
-- Corrected code SHA: `7cafbd2027b05365afd47c6f8b34c0415e6b78fc`
+- Seq01 correction SHA: `7cafbd2027b05365afd47c6f8b34c0415e6b78fc`
+- Seq02 correction / required run SHA:
+  `b834b7fb3715b8fea27d78bbf577c2b47b55d220`
 - Task/packet: `task-224/003-isolated-candidate`
 - Host/lane: Intel local, PG18, `distann-head-attribution-benchmark`
 - Candidate: MAT-26 exact `real[]` binary sender, feature-only and default-off
-- Measurement status: not yet run; reviewer seq01 returned NOT DONE and the
-  corrected checkpoint/preregistration require rereview before the 100k screen
+- Measurement status: not yet run; reviewers seq01 and seq02 returned NOT DONE;
+  the seq02 correction requires rereview before either suite may run
 
 ## Preregistered suite
 
-- Config: `crates/ecaz-cli/suites/task224-mat26-fast-real-array-100k.json`
-- SHA-256:
-  `d9b086cc4664390dd8833e2ff8db8965e98a41a35965159cce14feda7834e941`
+- Timing config:
+  `crates/ecaz-cli/suites/task224-mat26-fast-real-array-100k.json`
+- Timing config SHA-256:
+  `47234e2880271108685c49114c92ab12b2d792cea9542153a622e668a25abff2`
+- Semantic config: `crates/ecaz-cli/suites/task224-mat26-semantics-10k.json`
+- Semantic config SHA-256:
+  `d3a57b8b6d93bdf8d41bf5c9b31f9be6d5e6204b9cfb8d7a8ffd8cd714e09cb2`
 - Scale/fixture: `ec_real_100k`, one immutable generation, three owners
 - Projection: vector-bearing
 - Storage format/rerank/search: identical frozen generation, production
   payload projection, RaBitQ neighbors, persisted head, BW4/H100/L32,
   eager-0 and production lazy-10 variants in both decision-bearing steps;
   repeat/context steps rerun only matched production lazy-10
-- Ordered steps: unprofiled control A, candidate, unprofiled control B, and a
+- Timing steps: unprofiled control A, candidate, unprofiled control B, and a
   nonconforming profiled-control context arm, all on the same reused generation
+  and with no correctness matrix or crash/restart drill
+- Semantic steps: native control and fast-sender candidate, each a fresh 10k
+  non-reuse fixture with its own run directory/ports; each runs the seven-case
+  eager/lazy-10 correctness/failure matrix and has no timing decision weight
 - Headline instrumentation state: control A/B disable the Task 224 locality SQL
   wrapper; the candidate keeps that SQL wrapper disabled but its feature-only
   sender carries the timing/buffer shim needed for activation attribution. The
@@ -28,17 +38,40 @@
   wrapping both projected values, conservatively upper-bounds the candidate's
   one-value shim cost.
 - Isolated headline variable: `owner_fast_real_array_send=false/true`
-- Noise floor: `N = abs(control_a-control_b) / mean(control_a,control_b)`;
-  usefulness requires both >=5% and >=`2*N` warm-mean improvement
-- Attribution gate: profiled-native send-region saving versus candidate must be
-  positive and explain at least 50% of the headline end-to-end warm-mean saving
+- Control-envelope floor:
+  `N = abs(control_a-control_b) / mean(control_a,control_b)`; because control B
+  is a later lazy-10-only `stage_counter_only` step, `N` includes protocol and
+  position drift and can only inflate the required `2*N` improvement bar
+- Attribution gate: select the unique lazy-10/physical/vector-bearing
+  `physical_benchmark_stage` rows for `materialize_owner_binary_send_work`,
+  `materialize_owner_endpoint_critical`, and
+  `materialize_owner_endpoint_work`; require every `scans` field to equal its
+  latency-row `count` and all counts to equal 200. With
+  `R=min(P_critical/P_work,F_critical/F_work)` in `(0,1]`, require
+  `D_attr=(P_send-F_send-0.005083)*R > 0` and
+  `D_attr >= 0.5*(C-candidate_mean)`. The fixed 0.005083 ms subtraction is
+  packet 002's measured scalar-send cost, 0.073% of the vector send bucket.
 - Activation gate: candidate fast values >0; fallback values =0; ineligible
   requests =0 for vector-bearing latency
-- Build gate: every step leaves `allow_debug_extension=false`; the run requires
-  a release, non-`pg_test`, attribution-feature extension at the reviewed SHA
+- Build gate: all six steps leave `allow_debug_extension=false`; the extension
+  must be a release, non-`pg_test` attribution build and the CLI must be a
+  release build from exact SHA
+  `b834b7fb3715b8fea27d78bbf577c2b47b55d220`. Preflight must be unanimous and
+  every normalized row must repeat that exact SHA/profile.
 - Run directory: `/home/peter/.ecaz/clusters/task224-mat26-100k` (outside the
   repository, required for exact fixture reuse across suite steps; remove after
   cited results are captured)
+- Semantic run directories:
+  `/home/peter/.ecaz/clusters/task224-mat26-semantic-control-10k` and
+  `/home/peter/.ecaz/clusters/task224-mat26-semantic-candidate-10k`; remove both
+  after their cited matrix rows are captured
+- Volatility/parallel safety: the fast function remains
+  `volatile, parallel_restricted` while `array_send` is immutable/parallel-safe.
+  The value is consumed inside a per-row lateral payload expression where
+  neither arm can be folded or parallelized; any residual planner effect is a
+  candidate handicap. The profiled context's extra scalar wrapper is instead
+  anti-conservative for attribution, so its measured 0.005083 ms/scan cost is
+  explicitly subtracted by the gate above.
 
 ## Validation artifacts
 
@@ -65,7 +98,7 @@ The following corrected-checkpoint logs were generated at code head
   SHA-256 `7fbdbe9dcd82828892bdaf045395777deba132d0da254861d3c38b8ca0588f9d`
 - `review-fix-cargo-test-ecaz-cli-task224.log` — all five Task 224 CLI,
   preregistered-suite, and provenance tests pass; SHA-256
-  `8ae333ce18038ed19f53b5c332ac1f8b7fab73d536d957d9381b093acce01bd4a`
+  `8ae333ce18038ed19f53b5c332ac1f8b7fab73d536d957d9381b093acce01bd4`
 - `review-fix-cargo-test-fast-real-array-encoder.log` — two pure encoder tests
   pass; SHA-256
   `ca41b7277d5993d2518aeeb73324c07a61866bfeb391101e7737355318e19679`
@@ -92,6 +125,51 @@ telemetry, falls back for every bitmap-bearing array, removes debug overrides,
 adds control-repeat and profiled-context steps, and pins the provenance suffix.
 The PG18 regression now includes the exact bitmap-without-NULL reproducer and
 the encoder returns before forming an empty-array data slice.
+
+Reviewer seq02
+(`feedback/2026-08-25-02-reviewer.md`) accepted the sender, bitmap parity,
+native fallback, outcome telemetry, release preflight, provenance, feature
+isolation, endpoint arity, and 5% usefulness threshold. It withheld run
+authorization because the timing candidate combined fixture reuse with a
+fixture-mutating correctness matrix, control A's matrix would restart owners
+before the candidate, the attribution rule was not executable from named
+artifact rows, and the hash above had an extra trailing character.
+
+The following seq02-correction logs were generated at exact code/config head
+`b834b7fb3715b8fea27d78bbf577c2b47b55d220`:
+
+- `review-fix2-cargo-check-pg18.log` — normal PG18 build, pass; SHA-256
+  `8f340b3fb841716084ea50d25a83f33012a2624e409d5afcd4c4d7d3ac732ef4`
+- `review-fix2-cargo-check-pg18-feature.log` — attribution-feature PG18 build,
+  pass; SHA-256
+  `b5aaa44738330514d22eebeca04b3af16d27ab67002d3fb0e27f07847cba47b6`
+- `review-fix2-cargo-test-ecaz-cli-task224.log` — all six Task 224 CLI,
+  timing-suite, semantic-suite, and provenance tests pass; SHA-256
+  `e55d9ac54cc90f1630bc5f6b111e09bc145853009672debeb23915308d6cebed`
+- `review-fix2-cargo-test-reuse-exclusions.log` — the focused suite validator
+  test covers all three fixture-mutating drill exclusions; one pass; SHA-256
+  `946889ea5f04d57b92e095b48243b67e1fc92028cdc5a696f6e723b62c4aa86a`
+- `review-fix2-cargo-fmt-check.log` — formatter gate, pass; SHA-256
+  `56faf67e0b699d69d624bcc1db0d37c4ee02b06f91ad8e7186ff7fbeb7206930`
+
+The exact-checkpoint dry runs are retained under `artifacts/dry-run/`:
+
+- `timing.log` — four timing commands expand without
+  `--materialization-correctness`; SHA-256
+  `2f8ba0db248230193917fdd1c074b5efd21f1c709b6eff92390544eaf2c82127`
+- `timing/suite-manifest.json` — runner SHA is exact `b834b7fb...`, control A
+  is the only non-reuse timing step, and no step enables the debug bypass;
+  SHA-256
+  `4217a631dfb013d0d50580481896176bbc7ff2f54205a02c32a730c18073338a`
+- `semantics.log` — two isolated semantic commands expand with
+  `--materialization-correctness` and without `--reuse-fixture`; SHA-256
+  `0d3e76d0c1cbdaf6f85f727697904c52225d6f703dd6b21851c75ed287cf504f`
+- `semantics/suite-manifest.json` — runner SHA is exact `b834b7fb...` and no
+  step enables the debug bypass; SHA-256
+  `7753af463e7ebf20d54aa89e08226df398864febd4460e977cb332b59bbbb551`
+
+These dry runs validate argument construction only. They are not measurement
+evidence and carry no latency, recall, storage, or semantic decision weight.
 
 Live `suite-manifest.json`, `results.jsonl`, recall/latency/storage/build/DML
 logs, exact generation identity, and the A/B decision will be added after
