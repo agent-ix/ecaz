@@ -733,6 +733,14 @@ struct DistannLocalMultinodeStep {
     metrics_mode: Option<DistannMetricsMode>,
     #[serde(default)]
     distann_stage_counters: bool,
+    /// Task 224 owner heap/TOAST locality attribution projection. Four suite
+    /// steps reuse one fixture to cover the registered shapes.
+    #[serde(default)]
+    owner_payload_shape: Option<String>,
+    #[serde(default)]
+    skip_owner_locality_profile: bool,
+    #[serde(default)]
+    owner_fast_real_array_send: bool,
     #[serde(default)]
     stage_counter_only: bool,
     #[serde(default)]
@@ -745,6 +753,9 @@ struct DistannLocalMultinodeStep {
     /// matrix when a dedicated concurrency gate is run separately.
     #[serde(default)]
     skip_concurrency_drill: bool,
+    /// Preserve physical row count for a subsequent reuse-fixture step.
+    #[serde(default)]
+    skip_routed_delete_vacuum_drill: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -845,7 +856,10 @@ struct DistannLocalMultinodeStep {
 impl DistannLocalMultinodeStep {
     fn effective_metrics_mode(&self) -> DistannMetricsMode {
         self.metrics_mode.unwrap_or({
-            if self.distann_stage_counters || self.stage_counter_only || self.sample_backend_memory
+            if self.distann_stage_counters
+                || self.owner_payload_shape.is_some()
+                || self.stage_counter_only
+                || self.sample_backend_memory
             {
                 DistannMetricsMode::FullMetrics
             } else {
@@ -1729,6 +1743,7 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.run_dir, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.reuse_provenance_dir, &artifact_dir);
             }
             SuiteStep::SpirePipeline(step) => {
                 rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
@@ -3427,20 +3442,24 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 rows.push(("physical_materialization_correctness".into(), values));
             }
         } else if let Some(pass_idx) = body.find(" pass=") {
-            // A generic drill-outcome line: `<label> pass=<bool>`.
+            // A generic drill-outcome line: `<label> pass=<bool|skipped>`.
+            // Preserve an explicit skip and its reason without turning it into
+            // either a passing or failing measured drill.
             let label = body[..pass_idx].trim();
-            let pass_token = body[pass_idx + " pass=".len()..]
-                .split_whitespace()
-                .next()
-                .unwrap_or("");
-            if (pass_token == "true" || pass_token == "false") && !label.is_empty() {
-                let mut values = BTreeMap::new();
+            let outcome = &body[pass_idx + 1..];
+            if let Some(mut values) = parse_space_key_values(outcome) {
+                let pass_token = values.get("pass").cloned().unwrap_or_default();
+                if !matches!(pass_token.as_str(), "true" | "false" | "skipped") || label.is_empty()
+                {
+                    continue;
+                }
                 values.insert("drill".into(), sanitize_drill_label(label));
-                values.insert("pass".into(), pass_token.to_owned());
-                values.insert(
-                    "pass_numeric".into(),
-                    if pass_token == "true" { "1" } else { "0" }.into(),
-                );
+                if pass_token != "skipped" {
+                    values.insert(
+                        "pass_numeric".into(),
+                        if pass_token == "true" { "1" } else { "0" }.into(),
+                    );
+                }
                 rows.push(("drill_outcome".into(), values));
             }
         }
@@ -3910,6 +3929,25 @@ fn validate_nfr_021_registration(
         bail!(
             "distann-local-multinode step {step_name:?}{subject} cannot use an NFR-021-nonconforming {} arm for a decision",
             registration.role.label()
+        )
+    }
+    Ok(())
+}
+
+fn validate_reused_fixture_drills(
+    step_name: &str,
+    reuse_fixture: bool,
+    traversal_replica_enospc_drill: bool,
+    drop_extension_cleanup_drill: bool,
+    materialization_correctness: bool,
+) -> Result<()> {
+    if reuse_fixture
+        && (traversal_replica_enospc_drill
+            || drop_extension_cleanup_drill
+            || materialization_correctness)
+    {
+        bail!(
+            "distann-local-multinode step {step_name:?} reuse_fixture cannot combine with fixture-mutating drills"
         )
     }
     Ok(())
@@ -4701,6 +4739,7 @@ impl SuiteStep {
                 }
                 if step.metrics_mode == Some(DistannMetricsMode::Benchmark)
                     && (step.distann_stage_counters
+                        || step.owner_payload_shape.is_some()
                         || step.stage_counter_only
                         || step.sample_backend_memory)
                 {
@@ -4721,6 +4760,42 @@ impl SuiteStep {
                 if step.distann_stage_counters && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.owner_payload_shape.is_some()
+                    && (!step.physical_benchmark
+                        || !step.distann_stage_counters
+                        || step.effective_metrics_mode() != DistannMetricsMode::FullMetrics)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_payload_shape requires physical_benchmark, distann_stage_counters, and full_metrics",
+                        step.name
+                    )
+                }
+                if step.owner_payload_shape.as_deref().is_some_and(|shape| {
+                    !matches!(
+                        shape,
+                        "id-only" | "narrow-scalar" | "vector-bearing" | "toasted"
+                    )
+                }) {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_payload_shape must be id-only, narrow-scalar, vector-bearing, or toasted",
+                        step.name
+                    )
+                }
+                if step.skip_owner_locality_profile && step.owner_payload_shape.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} skip_owner_locality_profile requires owner_payload_shape",
+                        step.name
+                    )
+                }
+                if step.owner_fast_real_array_send
+                    && (step.owner_payload_shape.as_deref() != Some("vector-bearing")
+                        || !step.skip_owner_locality_profile)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_fast_real_array_send requires vector-bearing owner_payload_shape and skip_owner_locality_profile",
                         step.name
                     )
                 }
@@ -4903,6 +4978,19 @@ impl SuiteStep {
                 if step.stage_counter_only && step.materialization_correctness {
                     bail!(
                         "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
+                        step.name
+                    )
+                }
+                validate_reused_fixture_drills(
+                    &step.name,
+                    step.reuse_fixture,
+                    step.traversal_replica_enospc_drill,
+                    step.drop_extension_cleanup_drill,
+                    step.materialization_correctness,
+                )?;
+                if step.skip_routed_delete_vacuum_drill && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} skip_routed_delete_vacuum_drill requires physical_benchmark",
                         step.name
                     )
                 }
@@ -6056,6 +6144,15 @@ fn expand_distann_local_multinode(
     if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
     }
+    if let Some(shape) = step.owner_payload_shape.as_deref() {
+        args.extend(["--owner-payload-shape".into(), shape.to_owned()]);
+    }
+    if step.skip_owner_locality_profile {
+        args.push("--skip-owner-locality-profile".into());
+    }
+    if step.owner_fast_real_array_send {
+        args.push("--owner-fast-real-array-send".into());
+    }
     if step.stage_counter_only {
         args.push("--stage-counter-only".into());
     }
@@ -6070,6 +6167,9 @@ fn expand_distann_local_multinode(
     }
     if step.skip_concurrency_drill {
         args.push("--skip-concurrency-drill".into());
+    }
+    if step.skip_routed_delete_vacuum_drill {
+        args.push("--skip-routed-delete-vacuum-drill".into());
     }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
@@ -7414,6 +7514,24 @@ psql header noise\n\
     }
 
     #[test]
+    fn distann_skipped_drill_is_structured_without_claiming_pass() {
+        let raw = "[distann-multicluster] physical_routed_delete_vacuum pass=skipped reason=skip_routed_delete_vacuum_drill\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "drill_outcome");
+        assert_eq!(
+            rows[0].1.get("drill").map(String::as_str),
+            Some("physical_routed_delete_vacuum")
+        );
+        assert_eq!(rows[0].1.get("pass").map(String::as_str), Some("skipped"));
+        assert_eq!(
+            rows[0].1.get("reason").map(String::as_str),
+            Some("skip_routed_delete_vacuum_drill")
+        );
+        assert!(!rows[0].1.contains_key("pass_numeric"));
+    }
+
+    #[test]
     fn shell_join_with_pgoptions_renders_environment_prefix() {
         let command = vec![
             "--database".into(),
@@ -8497,6 +8615,208 @@ psql header noise\n\
             rows[1].1.get("metric").map(String::as_str),
             Some("remote_candidates_requested")
         );
+    }
+
+    #[test]
+    fn task224_owner_payload_locality_is_suite_addressable_and_structured() {
+        let raw = r#"{
+          "name": "task224-owner-locality",
+          "schema_version": 1,
+          "artifact_dir": "reviews/task-224/002-locality-attribution/artifacts/run",
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "locality-100k",
+            "artifact_dir": "${artifact_dir}/toasted",
+            "reuse_fixture": true,
+            "reuse_provenance_dir": "${artifact_dir}/id-only",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "stage_counter_only": true,
+            "skip_routed_delete_vacuum_drill": true,
+            "owner_payload_shape": "toasted",
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        apply_artifact_dir_templates(&mut config);
+        let SuiteStep::DistannLocalMultinode(step) = &config.steps[0] else {
+            panic!("expected DistANN local multinode step");
+        };
+        assert_eq!(
+            step.artifact_dir.as_deref(),
+            Some(Path::new(
+                "reviews/task-224/002-locality-attribution/artifacts/run/toasted"
+            ))
+        );
+        assert_eq!(
+            step.reuse_provenance_dir.as_deref(),
+            Some(Path::new(
+                "reviews/task-224/002-locality-attribution/artifacts/run/id-only"
+            ))
+        );
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--distann-stage-counters".into()));
+        assert!(command.contains(&"--stage-counter-only".into()));
+        assert!(command.contains(&"--skip-routed-delete-vacuum-drill".into()));
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--owner-payload-shape", "toasted"] }));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control payload_shape=toasted arm=physical stage=materialize_owner_binary_send_work scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n\
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=control payload_shape=toasted arm=physical metric=owner_external_toast_values scans=50 value=500 mean_per_scan=10.0\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].1.get("payload_shape").map(String::as_str),
+            Some("toasted")
+        );
+        assert_eq!(
+            rows[1].1.get("metric").map(String::as_str),
+            Some("owner_external_toast_values")
+        );
+    }
+
+    #[test]
+    fn task224_mat26_candidate_requires_unprofiled_vector_projection() {
+        let raw = r#"{
+          "name": "task224-mat26",
+          "schema_version": 1,
+          "artifact_dir": "reviews/task-224/003-isolated-candidate/artifacts/run",
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-100k",
+            "artifact_dir": "${artifact_dir}/candidate",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "stage_counter_only": true,
+            "owner_payload_shape": "vector-bearing",
+            "skip_owner_locality_profile": true,
+            "owner_fast_real_array_send": true,
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        apply_artifact_dir_templates(&mut config);
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--skip-owner-locality-profile".into()));
+        assert!(command.contains(&"--owner-fast-real-array-send".into()));
+
+        let invalid = raw.replace(
+            "\"skip_owner_locality_profile\": true",
+            "\"skip_owner_locality_profile\": false",
+        );
+        let invalid: SuiteConfig = serde_json::from_str(&invalid).expect("invalid suite parses");
+        assert!(validate_config(&invalid).is_err());
+    }
+
+    #[test]
+    fn task224_mat26_preregistered_suite_validates_as_same_generation_ab() {
+        let raw = include_str!("../../../suites/task224-mat26-fast-real-array-100k.json");
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        assert_eq!(config.steps.len(), 4);
+        let SuiteStep::DistannLocalMultinode(control) = &config.steps[0] else {
+            panic!("expected control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(candidate) = &config.steps[1] else {
+            panic!("expected candidate DistANN step");
+        };
+        assert!(!control.reuse_fixture);
+        assert!(candidate.reuse_fixture);
+        assert_eq!(control.run_dir, candidate.run_dir);
+        assert!(!control.allow_debug_extension);
+        assert!(!candidate.allow_debug_extension);
+        assert!(control.skip_owner_locality_profile);
+        assert!(candidate.skip_owner_locality_profile);
+        assert!(!control.owner_fast_real_array_send);
+        assert!(candidate.owner_fast_real_array_send);
+        assert!(!control.materialization_correctness);
+        assert!(!candidate.materialization_correctness);
+        assert_eq!(control.benchmark_seed_variants.len(), 2);
+        assert_eq!(candidate.benchmark_seed_variants.len(), 2);
+        for (left, right) in control
+            .benchmark_seed_variants
+            .iter()
+            .zip(&candidate.benchmark_seed_variants)
+        {
+            assert_eq!(left.name, right.name);
+            assert_eq!(
+                left.materialization_batch_size,
+                right.materialization_batch_size
+            );
+        }
+        let SuiteStep::DistannLocalMultinode(control_repeat) = &config.steps[2] else {
+            panic!("expected repeated control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(profiled_control) = &config.steps[3] else {
+            panic!("expected profiled control DistANN step");
+        };
+        assert!(control_repeat.reuse_fixture);
+        assert!(control_repeat.stage_counter_only);
+        assert!(control_repeat.skip_owner_locality_profile);
+        assert!(!control_repeat.owner_fast_real_array_send);
+        assert!(!control_repeat.allow_debug_extension);
+        assert!(profiled_control.reuse_fixture);
+        assert!(profiled_control.stage_counter_only);
+        assert!(!profiled_control.skip_owner_locality_profile);
+        assert!(!profiled_control.owner_fast_real_array_send);
+        assert!(!profiled_control.allow_debug_extension);
+        assert_eq!(control_repeat.run_dir, control.run_dir);
+        assert_eq!(profiled_control.run_dir, control.run_dir);
+        assert!(config.steps.iter().all(|step| {
+            let SuiteStep::DistannLocalMultinode(step) = step else {
+                return false;
+            };
+            !step.materialization_correctness
+        }));
+    }
+
+    #[test]
+    fn task224_mat26_semantics_use_two_isolated_nonreuse_fixtures() {
+        let raw = include_str!("../../../suites/task224-mat26-semantics-10k.json");
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        assert_eq!(config.steps.len(), 2);
+        let SuiteStep::DistannLocalMultinode(control) = &config.steps[0] else {
+            panic!("expected semantic control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(candidate) = &config.steps[1] else {
+            panic!("expected semantic candidate DistANN step");
+        };
+        for step in [control, candidate] {
+            assert!(!step.reuse_fixture);
+            assert!(step.materialization_correctness);
+            assert!(step.skip_recall);
+            assert_eq!(step.benchmark_iterations, Some(1));
+            assert!(!step.allow_debug_extension);
+        }
+        assert_ne!(control.run_dir, candidate.run_dir);
+        assert!(!control.owner_fast_real_array_send);
+        assert!(candidate.owner_fast_real_array_send);
+    }
+
+    #[test]
+    fn reused_fixture_rejects_every_fixture_mutating_drill() {
+        assert!(validate_reused_fixture_drills("ok", true, false, false, false).is_ok());
+        for (enospc, drop_cleanup, correctness) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let error =
+                validate_reused_fixture_drills("reused", true, enospc, drop_cleanup, correctness)
+                    .expect_err("reused fixtures must reject mutating drills");
+            assert!(error
+                .to_string()
+                .contains("reuse_fixture cannot combine with fixture-mutating drills"));
+        }
     }
 
     #[test]

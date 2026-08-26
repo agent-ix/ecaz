@@ -1,6 +1,48 @@
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
+    #[cfg(all(
+        feature = "pg_test",
+        feature = "distann-head-attribution-benchmark"
+    ))]
+    #[pg_test]
+    fn task224_fast_real_array_send_is_byte_identical_to_array_send() {
+        Spi::run(
+            "CREATE TEMP TABLE task224_bitmap_no_null (value real[]);
+             INSERT INTO task224_bitmap_no_null VALUES (ARRAY[1, NULL, 3]::real[]);
+             UPDATE task224_bitmap_no_null SET value[2] = 5::real",
+        )
+        .expect("Task 224 bitmap-without-NULL fixture is created");
+        let byte_identical = Spi::get_one::<bool>(
+            "SELECT ec_distann_fast_real_array_send('{}'::real[]) = array_send('{}'::real[])
+                    AND ec_distann_fast_real_array_send(
+                            ARRAY[1.25::real, '-0'::real, 'NaN'::real]
+                        ) = array_send(ARRAY[1.25::real, '-0'::real, 'NaN'::real])
+                    AND ec_distann_fast_real_array_send(
+                            '[0:1][7:8]={{1,2},{3,4}}'::real[]
+                        ) = array_send('[0:1][7:8]={{1,2},{3,4}}'::real[])
+                    AND ec_distann_fast_real_array_send(
+                            ARRAY[1::real, NULL::real, 3::real]
+                        ) = array_send(ARRAY[1::real, NULL::real, 3::real])
+                    AND (SELECT ec_distann_fast_real_array_send(value) = array_send(value)
+                           FROM task224_bitmap_no_null)",
+        )
+        .expect("Task 224 exact-byte SQL probe executes")
+        .expect("Task 224 exact-byte SQL probe returns a value");
+        assert!(byte_identical);
+    }
+
+    #[cfg(all(
+        feature = "pg_test",
+        feature = "distann-head-attribution-benchmark"
+    ))]
+    #[pg_test]
+    #[should_panic(expected = "ec_distann Task 224 fast sender requires pg_catalog.real[]")]
+    fn task224_fast_real_array_send_rejects_other_types() {
+        Spi::run("SELECT ec_distann_fast_real_array_send(1::integer)")
+            .expect("wrong-type probe must fail closed");
+    }
+
     #[cfg(feature = "pg_test")]
     #[pg_extern]
     fn ec_distann_test_read_rpc_probe(
@@ -1505,7 +1547,9 @@
             .expect("user query should succeed")
             .expect("user should exist");
 
-        format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
+        format!(
+            "host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1 sslmode=disable"
+        )
     }
 
     struct TestCoordinatorInsertPrepareResult {

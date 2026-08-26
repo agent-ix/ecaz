@@ -1,0 +1,24 @@
+# Reviewer seq03 probe: timing candidate + semantic candidate argument vectors from the committed dry-run logs
+# HEAD 9726b34c104c5c84f9e8c24678b95ed2361cc65d
+
+## timing step mat26-candidate-100k
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+
+   0: [91m--reuse-fixture requested but run directory does not exist: /home/peter/.ecaz/clusters/task224-mat26-100k[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m1049[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+exit=1

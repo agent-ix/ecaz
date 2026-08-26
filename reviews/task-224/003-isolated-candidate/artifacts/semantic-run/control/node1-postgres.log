@@ -1,0 +1,14 @@
+2026-08-25 22:25:54.259 PDT [951677] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 22:25:54.274 PDT [951677] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 22:25:54.274 PDT [951677] LOG:  listening on IPv4 address "127.0.0.1", port 43950
+2026-08-25 22:25:54.284 PDT [951683] LOG:  database system was shut down at 2026-08-25 22:25:51 PDT
+2026-08-25 22:25:54.296 PDT [951677] LOG:  database system is ready to accept connections
+2026-08-25 22:28:10.302 PDT [951849] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-25 22:28:10.302 PDT [951849] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), 4, 42));
+2026-08-25 22:28:22.084 PDT [951677] LOG:  received fast shutdown request
+2026-08-25 22:28:22.089 PDT [951677] LOG:  aborting any active transactions
+2026-08-25 22:28:22.089 PDT [951677] LOG:  background worker "logical replication launcher" (PID 951686) exited with exit code 1
+2026-08-25 22:28:22.110 PDT [951681] LOG:  shutting down
+2026-08-25 22:28:22.114 PDT [951681] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 22:28:22.496 PDT [951681] LOG:  checkpoint complete: wrote 13204 buffers (80.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 18 recycled; write=0.064 s, sync=0.227 s, total=0.387 s; sync files=309, longest=0.025 s, average=0.001 s; distance=301727 kB, estimate=301727 kB; lsn=0/13DFC1B8, redo lsn=0/13DFC1B8
+2026-08-25 22:28:22.524 PDT [951677] LOG:  database system is shut down

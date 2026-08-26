@@ -1,0 +1,195 @@
+# Task 224 packet 003 — reviewer seq05 evidence verification
+# reviewer HEAD: c826cc5aa375cc0649cf8e6822038b1cdc871df0
+# branch: task224-owner-payload-locality
+
+== 1. live-artifact ledger: sha256sum -c live-artifact-sha256.txt ==
+release-build-cli-b834b7fb.log: OK
+release-install-extension-b834b7fb.log: OK
+run.log: OK
+run/candidate/distann-local-multinode.log: OK
+run/candidate/node1-postgres.log: OK
+run/candidate/node2-postgres.log: OK
+run/candidate/node3-postgres.log: OK
+run/candidate/physical-eager-control-predictions.json: OK
+run/candidate/physical-eager-control-recall.log: OK
+run/candidate/physical-eager-control-vector_bearing-latency.log: OK
+run/candidate/physical-eager-control-vector_bearing-latency.memory-series.log: OK
+run/control-a/distann-local-multinode.log: OK
+run/control-a/distann-multinode-summary.log: OK
+run/control-a/node1-postgres.log: OK
+run/control-a/node2-postgres.log: OK
+run/control-a/node3-postgres.log: OK
+run/control-a/physical-eager-control-predictions.json: OK
+run/control-a/physical-eager-control-recall.log: OK
+run/control-a/physical-eager-control-vector_bearing-latency.log: OK
+run/control-a/physical-eager-control-vector_bearing-latency.memory-series.log: OK
+run/control-a/physical-head-membership.json: OK
+run/control-a/physical-lazy10-production-predictions.json: OK
+run/control-a/physical-lazy10-production-recall.log: OK
+run/control-a/physical-lazy10-production-vector_bearing-latency.log: OK
+run/control-a/physical-lazy10-production-vector_bearing-latency.memory-series.log: OK
+run/suite-manifest.json: OK
+screen-decision.md: OK
+semantic-run.log: OK
+semantic-run/control/distann-local-multinode.log: OK
+semantic-run/control/node1-postgres.log: OK
+semantic-run/control/node2-postgres.log: OK
+semantic-run/control/node3-postgres.log: OK
+semantic-run/control/physical-eager-control-vector_bearing-latency.log: OK
+semantic-run/control/physical-eager-control-vector_bearing-latency.memory-series.log: OK
+semantic-run/control/physical-head-membership.json: OK
+semantic-run/control/physical-lazy10-production-vector_bearing-latency.log: OK
+semantic-run/control/physical-lazy10-production-vector_bearing-latency.memory-series.log: OK
+semantic-run/suite-manifest.json: OK
+
+== 2. ledger self-hash (manifest.md:237 claims 0506b594...85b1) ==
+0506b59400c0b8f153ad3bfab5102a627a2695458ba8999479d2d95f287d85b1  live-artifact-sha256.txt
+
+== 3. preregistered suite configs (request.md:70,74) ==
+47234e2880271108685c49114c92ab12b2d792cea9542153a622e668a25abff2  /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/crates/ecaz-cli/suites/task224-mat26-fast-real-array-100k.json
+d3a57b8b6d93bdf8d41bf5c9b31f9be6d5e6204b9cfb8d7a8ffd8cd714e09cb2  /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/crates/ecaz-cli/suites/task224-mat26-semantics-10k.json
+
+== 4. all manifest.md validation + dry-run artifact hashes ==
+f57f4cf0ea1682b4706580010cacd14867318ef8f47d69874a04776d07bf12a3  cargo-check-pg18.log
+79a9a3cb9119fe91b2751fcf4cc67303fdb064428c54efcbd09fabbf193bc34d  cargo-check-pg18-feature.log
+33bfc6452575ad5c1267884bf8b29283a552dcdc9f7be47833d8fa387c34ad4a  cargo-test-ecaz-cli-task224.log
+10a8249861e185a464d73a2db1faa496a2a88d93ac44df5150bb7977f71f27d8  cargo-pgrx-test-pg18-fast-real-array.log
+a66e66e8bae5d635b7fbd2e4de0042d40fa8deff1ff30bd3ab5478120d08bec2  cargo-fmt-check.log
+f7bdf356cc883cc8aaf791489863cffde263e15ce8b326e5cbde03b9d626ca5a  review-fix-cargo-check-pg18.log
+7fbdbe9dcd82828892bdaf045395777deba132d0da254861d3c38b8ca0588f9d  review-fix-cargo-check-pg18-feature.log
+8ae333ce18038ed19f53b5c332ac1f8b7fab73d536d957d9381b093acce01bd4  review-fix-cargo-test-ecaz-cli-task224.log
+ca41b7277d5993d2518aeeb73324c07a61866bfeb391101e7737355318e19679  review-fix-cargo-test-fast-real-array-encoder.log
+e0e1b05d84e3f99f7957386a937beba1a2887830bab715cdf3e8bb0c4d5a2fee  review-fix-cargo-pgrx-test-pg18-fast-real-array.log
+722edb903790e637ee7ce8645acb7411b38d46fbeeb8b7d870e7f446b7c4c192  review-fix-cargo-fmt-check.log
+8f340b3fb841716084ea50d25a83f33012a2624e409d5afcd4c4d7d3ac732ef4  review-fix2-cargo-check-pg18.log
+b5aaa44738330514d22eebeca04b3af16d27ab67002d3fb0e27f07847cba47b6  review-fix2-cargo-check-pg18-feature.log
+e55d9ac54cc90f1630bc5f6b111e09bc145853009672debeb23915308d6cebed  review-fix2-cargo-test-ecaz-cli-task224.log
+946889ea5f04d57b92e095b48243b67e1fc92028cdc5a696f6e723b62c4aa86a  review-fix2-cargo-test-reuse-exclusions.log
+56faf67e0b699d69d624bcc1db0d37c4ee02b06f91ad8e7186ff7fbeb7206930  review-fix2-cargo-fmt-check.log
+2f8ba0db248230193917fdd1c074b5efd21f1c709b6eff92390544eaf2c82127  dry-run/timing.log
+4217a631dfb013d0d50580481896176bbc7ff2f54205a02c32a730c18073338a  dry-run/timing/suite-manifest.json
+0d3e76d0c1cbdaf6f85f727697904c52225d6f703dd6b21851c75ed287cf504f  dry-run/semantics.log
+7753af463e7ebf20d54aa89e08226df398864febd4460e977cb332b59bbbb551  dry-run/semantics/suite-manifest.json
+
+== 5. suite-manifest provenance + step status ==
+run/suite-manifest.json
+  suite=task224-mat26-fast-real-array-100k config_sha256=47234e2880271108685c49114c92ab12b2d792cea9542153a622e668a25abff2 dry_run=False
+  runner_git_commit=b834b7fb3715b8fea27d78bbf577c2b47b55d220
+  step=None                           status=succeeded  exit=0
+  step=None                           status=failed     exit=1
+  step=None                           status=pending    exit=None
+  step=None                           status=pending    exit=None
+semantic-run/suite-manifest.json
+  suite=task224-mat26-semantics-10k config_sha256=d3a57b8b6d93bdf8d41bf5c9b31f9be6d5e6204b9cfb8d7a8ffd8cd714e09cb2 dry_run=False
+  runner_git_commit=b834b7fb3715b8fea27d78bbf577c2b47b55d220
+  step=None                           status=failed     exit=1
+  step=None                           status=pending    exit=None
+
+== 6. results.jsonl presence (manifest claims none emitted) ==
+(empty above == none emitted, confirmed)
+
+== 7. raw latency rows cited by screen-decision.md:104-105,111 ==
+-- run/control-a/physical-eager-control-vector_bearing-latency.log
+│ 32    ┆ 200   ┆ 44.6 ms ┆ 5.82 ms ┆ 33.0 ms ┆ 43.6 ms ┆ 55.6 ms ┆ 59.6 ms ┆ 69.2 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 8924.9 ms ┆ 22.409 ┆ 166744      ┆ 169220      ┆ 339            │
+-- run/control-a/physical-lazy10-production-vector_bearing-latency.log
+│ 32    ┆ 200   ┆ 27.7 ms ┆ 1.99 ms ┆ 22.8 ms ┆ 27.4 ms ┆ 30.9 ms ┆ 32.8 ms ┆ 34.0 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 5538.8 ms ┆ 36.109 ┆ 165924      ┆ 169216      ┆ 211            │
+-- run/candidate/physical-eager-control-vector_bearing-latency.log
+│ 32    ┆ 200   ┆ 26.3 ms ┆ 1.90 ms ┆ 22.1 ms ┆ 26.1 ms ┆ 29.8 ms ┆ 31.6 ms ┆ 35.8 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 5263.8 ms ┆ 37.996 ┆ 167192      ┆ 168756      ┆ 200            │
+
+== 8. recall (screen-decision.md:104-105 claims 0.9285 both control variants) ==
+0.9285
+0.9285
+0.9285
+0.9285
+-- raw recall logs --
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┬───────────────────┬──────────────────────────┬───────────────────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time ┆ distinct_recall@k ┆ distinct_recall_ci95_low ┆ distinct_recall_ci95_high │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╪═══════════════════╪══════════════════════════╪═══════════════════════════╡
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9285   ┆ 0.9164          ┆ 0.9390           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9915 ┆ 45.21 ms    ┆ 0.9285            ┆ 0.9164                   ┆ 0.9390                    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┴───────────────────┴──────────────────────────┴───────────────────────────┘
+[distann-crown-stats] lane=recall label=task179_physical_100k capacity=0 entries=0 resident_bytes=0 resident_bytes_bound=0 crown_seeds_served=0 crown_fallbacks=0 crown_width_pruned_shards=0 crown_width_pruning_activations=0 fused_head_hops=0 fused_first_round_requested_ids=0
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┬───────────────────┬──────────────────────────┬───────────────────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time ┆ distinct_recall@k ┆ distinct_recall_ci95_low ┆ distinct_recall_ci95_high │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╪═══════════════════╪══════════════════════════╪═══════════════════════════╡
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9285   ┆ 0.9164          ┆ 0.9390           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9915 ┆ 42.96 ms    ┆ 0.9285            ┆ 0.9164                   ┆ 0.9390                    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┴───────────────────┴──────────────────────────┴───────────────────────────┘
+[distann-crown-stats] lane=recall label=task179_physical_100k capacity=0 entries=0 resident_bytes=0 resident_bytes_bound=0 crown_seeds_served=0 crown_fallbacks=0 crown_width_pruned_shards=0 crown_width_pruning_activations=0 fused_head_hops=0 fused_first_round_requested_ids=0
+
+== 5b. corrected step listing (key is 'name', not 'id') ==
+Traceback (most recent call last):
+  File "<string>", line 7, in <module>
+KeyError: 'exit_code'
+run/suite-manifest.json
+  step=mat26-control-a-100k             kind=distann-local-multinode status=succeeded  exit=0
+  step=mat26-candidate-100k             kind=distann-local-multinode status=failed     exit=1
+
+== 9. prediction identity (screen-decision.md:109-110 claims all three byte-identical) ==
+3dbd83a5591960affef89f3225d5a650f7c3fdaa2f7af325be98fe24cd3701ae  run/control-a/physical-eager-control-predictions.json
+3dbd83a5591960affef89f3225d5a650f7c3fdaa2f7af325be98fe24cd3701ae  run/control-a/physical-lazy10-production-predictions.json
+3dbd83a5591960affef89f3225d5a650f7c3fdaa2f7af325be98fe24cd3701ae  run/candidate/physical-eager-control-predictions.json
+
+== 10. candidate activation counters (screen-decision.md:118-124) ==
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_binary_send_bytes scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_fallback_values scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_ineligible_requests scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_values scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_projected_values scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_requested_tids scans=200 value=0 mean_per_scan=0.000000
+
+== 10b. SAME counters in control A eager (fast sender OFF) — identical zeros ==
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_binary_send_bytes scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_values scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_projected_values scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_requested_tids scans=200 value=0 mean_per_scan=0.000000
+
+== 11. the candidate DID drive remote materialization (so the owner endpoint ran) ==
+-- candidate:
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_bytes_returned scans=200 value=77960960 mean_per_scan=389804.800000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_columns_requested scans=200 value=12656 mean_per_scan=63.280000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_candidates_requested scans=200 value=6328 mean_per_scan=31.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_owners_requested scans=200 value=400 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_payloads_installed scans=200 value=6328 mean_per_scan=31.640000
+-- control-a eager:
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_bytes_returned scans=200 value=77960960 mean_per_scan=389804.800000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_columns_requested scans=200 value=12656 mean_per_scan=63.280000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_candidates_requested scans=200 value=6328 mean_per_scan=31.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_owners_requested scans=200 value=400 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_payloads_installed scans=200 value=6328 mean_per_scan=31.640000
+
+== 12. candidate step GUC actually carried the switch ==
+benchmark_fast_real_array_send=on
+benchmark_fast_real_array_send=on
+
+== 13. harness bail message ==
+   0: [91mTask 224 MAT-26 candidate produced zero owner_projected_values[0m
+
+== 5c. full step listing (pending steps omit exit_code) ==
+run/suite-manifest.json
+  step=mat26-control-a-100k             status=succeeded  exit=0
+  step=mat26-candidate-100k             status=failed     exit=1
+  step=mat26-control-b-100k             status=pending    exit=None
+  step=mat26-profiled-control-100k      status=pending    exit=None
+semantic-run/suite-manifest.json
+  step=mat26-semantic-control-10k       status=failed     exit=1
+  step=mat26-semantic-candidate-10k     status=pending    exit=None
+
+== 14. semantic control bounded-read failure (screen-decision.md:61-70) ==
+   0: [91mmaterialization correctness scenario exactly_one_window failed: rows=10/10 identity=true null_ok=true external_toast_ok=true remote_requested=8 local_consumed=4 payload_reads=12/10 duplicate_requested=0[0m
+
+== 15. semantic control preflight ==
+semantic-run/control/distann-local-multinode.log:[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=b834b7fb3715b8fea27d78bbf577c2b47b55d220 extension_build_profile=release extension_features=distann-head-attribution-benchmark,pg18 debug_override=false
+run/candidate/distann-local-multinode.log:[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=b834b7fb3715b8fea27d78bbf577c2b47b55d220 extension_build_profile=release extension_features=distann-head-attribution-benchmark,pg18 debug_override=false
+run/control-a/distann-local-multinode.log:[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=b834b7fb3715b8fea27d78bbf577c2b47b55d220 extension_build_profile=release extension_features=distann-head-attribution-benchmark,pg18 debug_override=false
+
+== 16. prior accepted exactly_one_window rows on the SAME 10k corpus/query sha ==
+scenario=exactly_one_window pass=true rows=10 eager_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d candidate_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d null_ok=true external_toast_ok=true remote_requested=6 local_consumed=4 payload_reads=10 payload_read_bound=10
+scenario=exactly_one_window pass=true rows=10 eager_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d candidate_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d null_ok=true external_toast_ok=true remote_requested=6 local_consumed=4 payload_reads=10 payload_read_bound=10
+(both above: 6 remote + 4 local = 10/10 on query_sha256 a2c191bb... ; this run: 8 remote + 4 local = 12/10 on the same query sha)
+
+== 17. candidate semantic step never ran ==
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+[suite:task224-mat26-semantics-10k] mat26-semantic-control-10k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/control --run-dir /home/peter/.ecaz/clusters/task224-mat26-semantic-control-10k --log-file /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/control/distann-local-multinode.log --nodes 3 --physical-benchmark --distann-stage-counters --owner-payload-shape vector-bearing --skip-owner-locality-profile --skip-recall --skip-single-control --skip-concurrency-drill --skip-routed-delete-vacuum-drill --materialization-correctness --benchmark-iterations 1 --benchmark-warmup-iterations 0 --sample-backend-memory --memory-sample-interval-ms 25 --base-port 43950 --graph-degree 32 --build-shards 1 --head-index-cap 4096 --beam-width 4 --candidate-heap-limit 32 --hop-rounds 100 --benchmark-seed-variant eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on --benchmark-seed-variant lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_10k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+control
+suite-manifest.json

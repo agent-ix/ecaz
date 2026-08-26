@@ -911,6 +911,42 @@ pub(crate) fn build_payload_sql(
     payload_send_functions: &[String],
     typed_locator: bool,
 ) -> Result<String, String> {
+    build_payload_sql_inner(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        false,
+    )
+}
+
+/// Task 224 attribution SQL. This keeps the production projection, locator,
+/// ordinality, and NULL behavior intact while routing non-NULL values through
+/// a feature-only polymorphic sender that can separate TOAST/send work from
+/// the enclosing SPI fetch.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn build_profiled_payload_sql(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+) -> Result<String, String> {
+    build_payload_sql_inner(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        true,
+    )
+}
+
+fn build_payload_sql_inner(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+    profile_binary_send: bool,
+) -> Result<String, String> {
     let mut null_exprs = Vec::with_capacity(payload_columns.len());
     let mut value_exprs = Vec::with_capacity(payload_columns.len());
     let mut projected = Vec::with_capacity(payload_columns.len());
@@ -921,9 +957,14 @@ pub(crate) fn build_payload_sql(
         null_exprs.push(format!(
             "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
         ));
+        let send_expr = if profile_binary_send {
+            format!("ec_distann_profile_binary_send(heap.{ident})")
+        } else {
+            format!("{send}(heap.{ident})")
+        };
         value_exprs.push(format!(
             "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
-                  THEN ''::bytea ELSE {send}(heap.{ident}) END"
+                  THEN ''::bytea ELSE {send_expr} END"
         ));
     }
     let found_projection = if projected.is_empty() {
@@ -1050,6 +1091,8 @@ pub(crate) fn build_packed_payload_sql(
 
 #[cfg(test)]
 mod packed_payload_sql_tests {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    use super::build_profiled_payload_sql;
     use super::{build_packed_payload_sql, build_payload_sql};
 
     #[test]
@@ -1067,6 +1110,25 @@ mod packed_payload_sql_tests {
         assert!(!sql.contains("payload_offsets"));
         assert!(!sql.contains("payload.payload_value_0 ||"));
         assert!(sql.contains("unnest($1::tid[])"));
+        assert!(!sql.contains("ec_distann_profile_binary_send"));
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn locality_projection_profiles_only_non_null_binary_sends() {
+        let sql = build_profiled_payload_sql(
+            "\"bench\".\"items\"",
+            &["id".to_owned(), "description".to_owned()],
+            &["pg_catalog.int8send".to_owned(), "textsend".to_owned()],
+            true,
+        )
+        .expect("valid projection inputs");
+
+        assert_eq!(sql.matches("ec_distann_profile_binary_send").count(), 2);
+        assert!(sql.contains("THEN ''::bytea ELSE ec_distann_profile_binary_send"));
+        assert!(sql.contains("ARRAY[CASE"));
+        assert!(sql.contains("unnest($1::tid[])"));
+        assert!(!sql.contains("pg_catalog.int8send(heap.id)"));
     }
 
     #[test]

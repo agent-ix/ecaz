@@ -109,6 +109,12 @@ static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> = GucSetting::
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 #[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_OWNER_LOCALITY_PROFILE_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -123,6 +129,11 @@ static ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS);
 static ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC: GucSetting<Option<CString>> =
     GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_READ_RPC_DELAY_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 
 /// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
 /// raises an error at the start of the hop round with this 0-based index, after
@@ -539,6 +550,24 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_owner_locality_profile",
+        c"Task 224 benchmark-only owner payload locality profiler.",
+        c"When enabled, owner payload SQL records TID dispersion, backend buffer usage, TOAST representation, and binary-send timing. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_OWNER_LOCALITY_PROFILE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_fast_real_array_send",
+        c"Task 224 benchmark-only exact real[] binary sender candidate.",
+        c"When enabled, projected real[] payloads use the MAT-26 exact-byte direct serializer. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.gateway_copy_capacity",
         c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
@@ -651,6 +680,26 @@ pub(super) fn register_gucs() {
         c"Optional absolute path to a server-owner-readable mode-0600 file containing only the extension-owner password. The control connection never authenticates as the invoking DML user. Leave unset when local peer or certificate authentication is configured. Changes require a configuration reload.",
         &ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC,
         GucContext::Sighup,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_string_guc(
+        c"ec_distann.debug_read_rpc_delay",
+        c"Task 234 test fault: delay one named owner-side read RPC.",
+        c"Accepted nonempty values are physical_head_search, crown_code_export, gateway_routing_export, head_shard_export, and head_shard_import. This GUC exists only in pg_test builds.",
+        &ECDISTANN_DEBUG_READ_RPC_DELAY_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_int_guc(
+        c"ec_distann.debug_read_rpc_delay_ms",
+        c"Task 234 test fault delay in milliseconds.",
+        c"A positive value parks the RPC selected by ec_distann.debug_read_rpc_delay. This GUC exists only in pg_test builds.",
+        &ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC,
+        0,
+        60_000,
+        GucContext::Userset,
         GucFlags::default(),
     );
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -835,6 +884,19 @@ pub(super) fn debug_fail_crown_population() -> bool {
     false
 }
 
+#[cfg(feature = "pg_test")]
+pub(super) fn debug_read_rpc_delay_ms(rpc: &str) -> Option<u64> {
+    let selected = ECDISTANN_DEBUG_READ_RPC_DELAY_GUC
+        .get()
+        .map(|value| value.to_string_lossy().into_owned())?;
+    if selected.trim() != rpc {
+        return None;
+    }
+    u64::try_from(ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC.get())
+        .ok()
+        .filter(|delay| *delay > 0)
+}
+
 pub(super) fn materialization_batch_size() -> usize {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
@@ -888,6 +950,24 @@ pub(super) fn payload_projection_enabled() -> bool {
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     true
+}
+
+pub(super) fn benchmark_owner_locality_profile() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_OWNER_LOCALITY_PROFILE_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
+}
+
+pub(super) fn benchmark_fast_real_array_send() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
 }
 
 pub(super) fn benchmark_traversal_replica_fail_batch() -> Option<usize> {

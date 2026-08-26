@@ -17,7 +17,7 @@
 //! The orchestration (`run`) is a thin DB shell on top; live-Postgres
 //! coverage lands with the integration suite.
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -34,6 +34,14 @@ use crate::profiles;
 use crate::psql::{self, ConnectionOptions};
 
 use super::recall::build_knn_sql;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum DistannPayloadShape {
+    IdOnly,
+    NarrowScalar,
+    VectorBearing,
+    Toasted,
+}
 
 #[derive(Args, Debug)]
 pub struct LatencyArgs {
@@ -120,6 +128,10 @@ pub struct LatencyArgs {
     /// each worker connection. Requires the benchmark measurement extension.
     #[arg(long)]
     pub distann_stage_counters: bool,
+    /// Task 224 owner-payload projection shape. This is benchmark-only and is
+    /// accepted only with the ec_distann profile.
+    #[arg(long, value_enum)]
+    pub distann_payload_shape: Option<DistannPayloadShape>,
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
@@ -132,6 +144,30 @@ pub struct LatencyArgs {
     /// Capture production ec_distann crown activation counters per sweep.
     #[arg(long)]
     pub report_distann_crown_stats: bool,
+}
+
+fn build_latency_knn_sql(
+    profile: &profiles::IndexProfile,
+    corpus_table: &str,
+    payload_shape: Option<DistannPayloadShape>,
+) -> String {
+    let Some(payload_shape) = payload_shape else {
+        return build_knn_sql(profile, corpus_table);
+    };
+    debug_assert_eq!(profile.name, "ec_distann");
+    let (projection, predicate) = match payload_shape {
+        DistannPayloadShape::IdOnly => ("id", ""),
+        DistannPayloadShape::NarrowScalar => ("id, source_id", ""),
+        DistannPayloadShape::VectorBearing => ("id, source", ""),
+        DistannPayloadShape::Toasted => (
+            "id, payload_note",
+            "WHERE payload_note IS NOT NULL AND id % 3 = 1 ",
+        ),
+    };
+    format!(
+        "SELECT {projection} FROM {corpus_table} {predicate}\
+         ORDER BY embedding <#> $1::real[] LIMIT $2"
+    )
 }
 
 pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
@@ -163,6 +199,11 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     if args.report_distann_crown_stats && profile.name != "ec_distann" {
         return Err(eyre!(
             "--report-distann-crown-stats is only supported with --profile ec_distann"
+        ));
+    }
+    if args.distann_payload_shape.is_some() && profile.name != "ec_distann" {
+        return Err(eyre!(
+            "--distann-payload-shape is only supported with --profile ec_distann"
         ));
     }
     let guc = profile
@@ -205,7 +246,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
-    let sql = build_knn_sql(profile, &corpus_table);
+    let sql = build_latency_knn_sql(profile, &corpus_table, args.distann_payload_shape);
 
     // Pull query vectors once into memory. Iterations > n_queries wraps.
     let bootstrap = psql::connect(conn).await?;
@@ -1183,6 +1224,32 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    #[test]
+    fn task224_payload_shapes_preserve_knn_order_and_select_registered_columns() {
+        let scalar = build_latency_knn_sql(
+            &profiles::EC_DISTANN,
+            "physical_corpus",
+            Some(DistannPayloadShape::NarrowScalar),
+        );
+        assert!(scalar.starts_with("SELECT id, source_id FROM physical_corpus"));
+        assert!(scalar.contains("ORDER BY embedding <#> $1::real[] LIMIT $2"));
+
+        let vector = build_latency_knn_sql(
+            &profiles::EC_DISTANN,
+            "physical_corpus",
+            Some(DistannPayloadShape::VectorBearing),
+        );
+        assert!(vector.starts_with("SELECT id, source FROM physical_corpus"));
+
+        let toasted = build_latency_knn_sql(
+            &profiles::EC_DISTANN,
+            "physical_corpus",
+            Some(DistannPayloadShape::Toasted),
+        );
+        assert!(toasted.starts_with("SELECT id, payload_note FROM physical_corpus"));
+        assert!(toasted.contains("payload_note IS NOT NULL AND id % 3 = 1"));
     }
 
     // --- percentile_sorted ---

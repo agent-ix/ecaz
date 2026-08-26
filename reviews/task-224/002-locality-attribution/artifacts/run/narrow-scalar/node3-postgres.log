@@ -1,0 +1,12 @@
+2026-08-25 18:03:46.533 PDT [549897] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 18:03:46.544 PDT [549897] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 18:03:46.544 PDT [549897] LOG:  listening on IPv4 address "127.0.0.1", port 43922
+2026-08-25 18:03:46.553 PDT [549903] LOG:  database system was shut down at 2026-08-25 18:03:46 PDT
+2026-08-25 18:03:46.559 PDT [549897] LOG:  database system is ready to accept connections
+2026-08-25 18:06:25.138 PDT [549897] LOG:  received fast shutdown request
+2026-08-25 18:06:25.144 PDT [549897] LOG:  aborting any active transactions
+2026-08-25 18:06:25.144 PDT [549897] LOG:  background worker "logical replication launcher" (PID 549906) exited with exit code 1
+2026-08-25 18:06:25.144 PDT [549901] LOG:  shutting down
+2026-08-25 18:06:25.150 PDT [549901] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 18:06:25.184 PDT [549901] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.004 s, total=0.041 s; sync files=2, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=0 kB; lsn=0/3FA02E10, redo lsn=0/3FA02E10
+2026-08-25 18:06:25.205 PDT [549897] LOG:  database system is shut down

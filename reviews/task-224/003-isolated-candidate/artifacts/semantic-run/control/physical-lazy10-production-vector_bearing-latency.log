@@ -1,0 +1,241 @@
+┌───────┬───────┬───────────┬─────────┬───────────┬───────────┬───────────┬───────────┬───────────┬─────────────┬───────────────────┬─────────────┬───────────┬───────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean      ┆ stddev  ┆ min       ┆ p50       ┆ p95       ┆ p99       ┆ max       ┆ cache_state ┆ worker_batch_size ┆ concurrency ┆ wall_ms   ┆ qps   ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═══════════╪═════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═════════════╪═══════════════════╪═════════════╪═══════════╪═══════╪═════════════╪═════════════╪════════════════╡
+│ 32    ┆ 1     ┆ 3703.0 ms ┆ 0.00 ms ┆ 3703.0 ms ┆ 3703.0 ms ┆ 3703.0 ms ┆ 3703.0 ms ┆ 3703.0 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 3703.0 ms ┆ 0.270 ┆ 147864      ┆ 154652      ┆ 141            │
+└───────┴───────┴───────────┴─────────┴───────────┴───────────┴───────────┴───────────┴───────────┴─────────────┴───────────────────┴─────────────┴───────────┴───────┴─────────────┴─────────────┴────────────────┘
+[distann-stage-counters] command=latency label=top_k=32 stage=custom_scan_total scans=1 samples=2 elapsed_ns=3683000022 elapsed_ms=3683.000022 mean_ms=3683.000022
+[distann-stage-counters] command=latency label=top_k=32 stage=head_score scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=local_expand scans=1 samples=7 elapsed_ns=967638 elapsed_ms=0.967638 mean_ms=0.967638
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_connection_ready scans=1 samples=1 elapsed_ns=522514 elapsed_ms=0.522514 mean_ms=0.522514
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_coordinator_decode scans=1 samples=1 elapsed_ns=15271 elapsed_ms=0.015271 mean_ms=0.015271
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_map_insert scans=1 samples=1 elapsed_ns=1979 elapsed_ms=0.001979 mean_ms=0.001979
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_output_associate scans=1 samples=2 elapsed_ns=9521 elapsed_ms=0.009521 mean_ms=0.009521
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_binary_send_work scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_critical scans=1 samples=1 elapsed_ns=6437212 elapsed_ms=6.437212 mean_ms=6.437212
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_work scans=1 samples=2 elapsed_ns=10672945 elapsed_ms=10.672945 mean_ms=10.672945
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_node_lookup_work scans=1 samples=2 elapsed_ns=288359 elapsed_ms=0.288359 mean_ms=0.288359
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_open_validate_work scans=1 samples=2 elapsed_ns=27620 elapsed_ms=0.027620 mean_ms=0.027620
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_payload_spi_work scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_payload_sql_work scans=1 samples=2 elapsed_ns=10351405 elapsed_ms=10.351405 mean_ms=10.351405
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_response_construct_work scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_prepare scans=1 samples=1 elapsed_ns=5467 elapsed_ms=0.005467 mean_ms=0.005467
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_roundtrip_work scans=1 samples=2 elapsed_ns=12165170 elapsed_ms=12.165170 mean_ms=12.165170
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_wait scans=1 samples=1 elapsed_ns=7236490 elapsed_ms=7.236490 mean_ms=7.236490
+[distann-stage-counters] command=latency label=top_k=32 stage=output_merge scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=query_prep scans=1 samples=1 elapsed_ns=46664 elapsed_ms=0.046664 mean_ms=0.046664
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_expand scans=1 samples=9 elapsed_ns=5453740 elapsed_ms=5.453740 mean_ms=5.453740
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_materialize scans=1 samples=1 elapsed_ns=7791809 elapsed_ms=7.791809 mean_ms=7.791809
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_graph_vector_read scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_open_validate scans=1 samples=1 elapsed_ns=472 elapsed_ms=0.000472 mean_ms=0.000472
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_score scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=seed_select scans=1 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_connection_ready scans=1 samples=9 elapsed_ns=560315 elapsed_ms=0.560315 mean_ms=0.560315
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_decode scans=1 samples=9 elapsed_ns=5468 elapsed_ms=0.005468 mean_ms=0.005468
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_partition scans=1 samples=9 elapsed_ns=3960 elapsed_ms=0.003960 mean_ms=0.003960
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_receive_decode scans=1 samples=9 elapsed_ns=14424 elapsed_ms=0.014424 mean_ms=0.014424
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_frontier_insert scans=1 samples=87 elapsed_ns=2920 elapsed_ms=0.002920 mean_ms=0.002920
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_graph_read scans=1 samples=9 elapsed_ns=914378 elapsed_ms=0.914378 mean_ms=0.914378
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_open_validate scans=1 samples=9 elapsed_ns=48830 elapsed_ms=0.048830 mean_ms=0.048830
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_response_encode scans=1 samples=9 elapsed_ns=283 elapsed_ms=0.000283 mean_ms=0.000283
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_score scans=1 samples=9 elapsed_ns=720095 elapsed_ms=0.720095 mean_ms=0.720095
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_service scans=1 samples=9 elapsed_ns=1724589 elapsed_ms=1.724589 mean_ms=1.724589
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_request_encode scans=1 samples=9 elapsed_ns=3768 elapsed_ms=0.003768 mean_ms=0.003768
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_straggler_spread scans=1 samples=9 elapsed_ns=506960 elapsed_ms=0.506960 mean_ms=0.506960
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_total scans=1 samples=1 elapsed_ns=6549388 elapsed_ms=6.549388 mean_ms=6.549388
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_transport_wait scans=1 samples=9 elapsed_ns=3076831 elapsed_ms=3.076831 mean_ms=3.076831
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=0 rss_kb=19952 hwm_kb=19952
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=26 rss_kb=37544 hwm_kb=37544
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=53 rss_kb=73540 hwm_kb=73540
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=79 rss_kb=103368 hwm_kb=103368
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=105 rss_kb=144520 hwm_kb=144520
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=132 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=158 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=184 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=211 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=237 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=263 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=290 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=316 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=343 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=369 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=395 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=422 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=448 rss_kb=146204 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=475 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=501 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=527 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=554 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=580 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=607 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=633 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=659 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=686 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=712 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=738 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=765 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=791 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=817 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=844 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=870 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=897 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=923 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=950 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=976 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1001 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1028 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1054 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1081 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1107 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1133 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1160 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1186 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1213 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1239 rss_kb=146524 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1265 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1292 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1318 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1345 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1371 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1398 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1424 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1450 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1477 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1503 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1530 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1556 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1583 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1609 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1636 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1662 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1688 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1715 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1741 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1768 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1794 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1820 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1847 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1873 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1900 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1926 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1953 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=1979 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2006 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2032 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2059 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2085 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2112 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2138 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2165 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2192 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2218 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2245 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2271 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2298 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2324 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2351 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2377 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2404 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2429 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2456 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2482 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2509 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2535 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2562 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2588 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2615 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2641 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2668 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2694 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2721 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2748 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2774 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2800 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2827 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2853 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2879 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2906 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2932 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2959 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=2985 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3011 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3038 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3064 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3091 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3117 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3144 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3170 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3197 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3223 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3249 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3276 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3302 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3329 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3355 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3381 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3408 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3434 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3461 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3487 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3514 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3540 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3566 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3593 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3619 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3644 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3671 rss_kb=147668 hwm_kb=154652
+[backend-memory] sweep=top_k=32 pid=951927 elapsed_ms=3697 rss_kb=147864 hwm_kb=154652
+[distann-materialization-work] command=latency label=top_k=32 metric=client_result_rows scans=1 value=10 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=duplicate_remote_candidates_requested scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_local_rows_consumed scans=1 value=4 mean_per_scan=4.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_remote_rows_consumed scans=1 value=6 mean_per_scan=6.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_rows_consumed scans=1 value=10 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=gateway_copies_served scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=head_replica_fallbacks scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=head_replica_shards_served scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=neighbors_pruned scans=1 value=102 mean_per_scan=102.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=output_rows_associated scans=1 value=36 mean_per_scan=36.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_binary_send_bytes scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displaced_rows scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displacement_max_sum scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displacement_total scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_distinct_heap_blocks scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_external_toast_values scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_fallback_values scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_ineligible_requests scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_fast_real_array_values scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_logical_bytes scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_max_rows_per_heap_block_sum scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_projected_values scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_requested_tids scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blk_read_ns scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blks_hit scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blks_read scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_stored_bytes scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blk_read_ns scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blks_hit scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blks_read scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_bytes_returned scans=1 value=73920 mean_per_scan=73920.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_columns_requested scans=1 value=12 mean_per_scan=12.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=pushdown_rounds_with_threshold scans=1 value=7 mean_per_scan=7.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=ranked_candidates scans=1 value=36 mean_per_scan=36.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_candidates_requested scans=1 value=6 mean_per_scan=6.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_owners_requested scans=1 value=2 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_payloads_installed scans=1 value=6 mean_per_scan=6.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_rows_returned scans=1 value=6 mean_per_scan=6.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_tombstones scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=replica_fallbacks scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=replica_scans scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_batch_width scans=1 value=36 mean_per_scan=36.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_connections_opened scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_frontier_insertions scans=1 value=87 mean_per_scan=87.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_frontier_retries scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_hop_rounds scans=1 value=9 mean_per_scan=9.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_requested scans=1 value=36 mean_per_scan=36.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_returned scans=1 value=36 mean_per_scan=36.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_hits scans=1 value=15 mean_per_scan=15.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_misses scans=1 value=2 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_repeated_nodes scans=1 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_request_bytes scans=1 value=13932 mean_per_scan=13932.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_response_bytes scans=1 value=4074 mean_per_scan=4074.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_statements_prepared scans=1 value=2 mean_per_scan=2.000000
+[distann-crown-stats] lane=latency label=top_k=32 capacity=0 entries=0 resident_bytes=0 resident_bytes_bound=0 crown_seeds_served=0 crown_fallbacks=0 crown_width_pruned_shards=0 crown_width_pruning_activations=0 fused_head_hops=0 fused_first_round_requested_ids=0
