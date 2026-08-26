@@ -348,6 +348,10 @@ pub struct LocalMultinodePg18Args {
     /// bounded concurrency gate is run separately.
     #[arg(long, default_value_t = false)]
     pub skip_concurrency_drill: bool,
+    /// Skip the routed DELETE + VACUUM drill so a read-only benchmark fixture
+    /// can be reused by subsequent suite steps without changing row count.
+    #[arg(long, default_value_t = false)]
+    pub skip_routed_delete_vacuum_drill: bool,
     /// Permit a unanimous non-release extension profile for intentional short
     /// diagnostic fixtures. The default benchmark contract requires release.
     #[arg(long, default_value_t = false)]
@@ -674,6 +678,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         && (!args.physical_benchmark || !args.distann_stage_counters)
     {
         bail!("--owner-payload-shape requires --physical-benchmark and --distann-stage-counters");
+    }
+    if args.skip_routed_delete_vacuum_drill && !args.physical_benchmark {
+        bail!("--skip-routed-delete-vacuum-drill requires --physical-benchmark");
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
@@ -10565,17 +10572,24 @@ async fn drive_physical_fixture(
     if !physical_concurrency_ok {
         bail!("physical TC-043 concurrent insert/query drill failed");
     }
-    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        nodes,
-        args,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
+    let physical_delete_vacuum_ok = if args.skip_routed_delete_vacuum_drill {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_routed_delete_vacuum pass=skipped reason=skip_routed_delete_vacuum_drill"
+        );
+        true
+    } else {
+        physical_routed_delete_vacuum_drill(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            nodes,
+            args,
+            &fixture_roster,
+            &concurrency_table,
+            &fingerprint,
+        )
+        .await?
+    };
     if !physical_delete_vacuum_ok {
         bail!("physical routed DELETE + VACUUM drill failed");
     }

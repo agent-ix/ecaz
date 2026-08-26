@@ -749,6 +749,9 @@ struct DistannLocalMultinodeStep {
     /// matrix when a dedicated concurrency gate is run separately.
     #[serde(default)]
     skip_concurrency_drill: bool,
+    /// Preserve physical row count for a subsequent reuse-fixture step.
+    #[serde(default)]
+    skip_routed_delete_vacuum_drill: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -4936,6 +4939,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.skip_routed_delete_vacuum_drill && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} skip_routed_delete_vacuum_drill requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.materialization_correctness {
                     if !step.physical_benchmark {
                         bail!(
@@ -6103,6 +6112,9 @@ fn expand_distann_local_multinode(
     }
     if step.skip_concurrency_drill {
         args.push("--skip-concurrency-drill".into());
+    }
+    if step.skip_routed_delete_vacuum_drill {
+        args.push("--skip-routed-delete-vacuum-drill".into());
     }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
@@ -8547,6 +8559,7 @@ psql header noise\n\
             "physical_benchmark": true,
             "distann_stage_counters": true,
             "stage_counter_only": true,
+            "skip_routed_delete_vacuum_drill": true,
             "owner_payload_shape": "toasted",
             "corpus_prefix": "ec_real_100k"
           }]
@@ -8574,6 +8587,7 @@ psql header noise\n\
             .expect("step expands");
         assert!(command.contains(&"--distann-stage-counters".into()));
         assert!(command.contains(&"--stage-counter-only".into()));
+        assert!(command.contains(&"--skip-routed-delete-vacuum-drill".into()));
         assert!(command
             .windows(2)
             .any(|window| { window == ["--owner-payload-shape", "toasted"] }));
