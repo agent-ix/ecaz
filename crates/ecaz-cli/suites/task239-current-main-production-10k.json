@@ -23,7 +23,7 @@
       "queries": 200,
       "top_k": 10,
       "physical_benchmark": true,
-      "metrics_mode": "full_metrics",
+      "metrics_mode": "benchmark",
       "distann_stage_counters": false,
       "owner_fast_real_array_send": false,
       "materialization_correctness": true,
