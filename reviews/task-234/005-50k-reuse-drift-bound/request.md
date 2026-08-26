@@ -26,9 +26,13 @@ The control warm mean moved 8.83 to 8.47 ms on same-fixture reuse (-4.08%);
 the candidate moved 9.43 to 8.74 ms (-7.32%). The candidate/control reuse-only
 delta is +3.19% (p50 +2.03%, p95 +0.96%, p99 +1.89%). Today's two control
 observations are +8.21% and +3.80% relative to the old 8.16 ms control. This
-directly bounds fixture/run drift across the historical +7.1% screened signal;
-the current candidate delta is inside that observed band and does not resolve
-as a regression.
+directly bounds fixture/run drift across the historical +7.1% screened signal.
+It also retires packet 004's -6.37% "faster" headline: on the matched fixture
+the candidate is slower at both the fresh-seed position (+6.80% mean) and the
+immediate-reuse position (+3.19% mean), and all four reuse statistics have the
+same positive sign. The fixture cannot resolve the exact magnitude of this
+small cost, but the measured direction is consistently slower and matches the
+added deadline/cancellation mechanism.
 
 The benchmark runner needed two narrow corrections to execute the registered
 repeat honestly: secure reuse now reloads the existing fixture TLS artifacts,
@@ -43,6 +47,8 @@ updated `manifest.md`, the two `suite-manifest-*-drift-v2.json` files, the two
 `suite-results-*-drift-v2.jsonl` files, and the four seed/repeat summaries and
 latency logs under `artifacts/run/`.
 
-Please rule only on the packet 004 latency gap and record the final Task 234
-ACCEPT/REJECT disposition. The coder recommendation remains ACCEPT: the
-historical +7.1% signal is not distinguishable from measured run drift.
+Please record an explicit product ACCEPT/REJECT ruling on the measured cost and
+then record the final Task 234 disposition. The coder recommendation is ACCEPT:
+the P0 deadline/cancellation property is worth the small cost, whose exact
+magnitude is not separable from fixture drift and is well below the historical
++7.1% screened result. This is a cost acceptance, not a parity or speedup claim.

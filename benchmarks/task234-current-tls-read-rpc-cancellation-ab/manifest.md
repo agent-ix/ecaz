@@ -82,12 +82,12 @@ boundary replacement is treated as run-order/tie nondeterminism rather than a
 material recall regression. Storage differs by at most one 8 KiB page on the
 graph side at 50k/100k and is operationally neutral.
 
-Disposition: the current-TLS candidate reverses the historical pre-TLS
-negative latency signal recorded in the Task 234 ledger. On this current-base
-run it is recall/storage neutral within measurement resolution and faster in
-all recorded warm latency percentiles. Accept the implementation for outside
-review; do not treat these single sequential latency runs as a general-purpose
-performance claim.
+Superseded packet-004 disposition: this sequential run originally appeared to
+reverse the historical pre-TLS negative latency signal, with a -6.37% 50k warm
+mean delta. The reviewer-required matched-fixture observations below refute
+that speedup reading: the candidate is slower at both fixture positions. Recall
+and storage remain neutral within measurement resolution, but latency must be
+recorded as a small measured cost rather than parity or a win.
 
 ## Reviewer-required 50k reuse drift bound (2026-08-26)
 
@@ -115,10 +115,13 @@ profile, the query slice, and `persisted_head` before measuring.
 The old 50k observations were 8.16 ms control and 7.64 ms candidate. Relative
 to that old control, today's control seed/repeat are +8.21%/+3.80%; within the
 new fixture, control itself shifts -4.08% on immediate reuse. The resulting
-run-to-run band covers the historical screened +7.1% signal. The candidate's
-repeat-only +3.19% mean delta is also inside the directly observed drift band,
-so the evidence supports no resolved latency regression rather than a speedup
-claim. Final ACCEPT/REJECT disposition remains with the outside reviewer.
+run-to-run band covers the historical screened +7.1% signal, so this fixture
+cannot resolve the exact magnitude. Direction is nevertheless consistent: the
+candidate costs +6.80% mean at the fresh-seed position and +3.19% mean on
+immediate reuse, while reuse p50/p95/p99 cost +2.03%/+0.96%/+1.89%. All eight
+position/statistic indicators are signed slower, matching the mechanism. The
+old -6.37% apparent win is retired as drift. An explicit product ruling must
+accept or reject this small measured cost before Task 234 closes.
 
 The targeted commands were:
 
