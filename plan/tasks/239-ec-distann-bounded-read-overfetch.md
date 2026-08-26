@@ -3,9 +3,10 @@
 Status: **packet 001 review-closed ACCEPT — exact-main semantic harness
 eager-path 12/10 reproduced; same-fixture separate-process production lazy-10
 requested 6 remote and consumed 4 local for 10 returned rows (diagnostic, not a
-semantic bound); packet 002 rereview DONE, exactly one corrected nine-scenario
-live run authorized and not yet started; immediate P1 campaign blocker before
-Task 229 semantic closeout**
+semantic bound); packet 002 one shot consumed and failed before semantics on
+the corrected CLI's 40-row versus exact-main extension's 37-row stage schema;
+no rerun authorized, outside failure review pending; immediate P1 campaign
+blocker before Task 229 semantic closeout**
 (updated 2026-08-26). Priority: P1 correctness/performance. Decision record:
 `reviews/task-239/001-current-main-reproduction/artifacts/reproduction-decision.md`;
 accepted disposition:
@@ -16,6 +17,8 @@ Packet 002 seq01 verdict:
 `reviews/task-239/002-diagnosis-and-correction/feedback/2026-08-26-01-reviewer.md`.
 Packet 002 authorization:
 `reviews/task-239/002-diagnosis-and-correction/feedback/2026-08-26-02-reviewer.md`.
+Failed-run disposition:
+`reviews/task-239/002-diagnosis-and-correction/artifacts/live-run-decision.md`.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.

@@ -142,3 +142,19 @@ Because this is an operator-harness-only correction, the repository's
   both semantic variants, and the recognized routed-drill skip.
 
 See `artifacts/manifest.md` for commands and artifact hashes.
+
+## Live outcome — one shot consumed
+
+Reviewer seq02 authorized exactly one run. That run was invoked once and failed
+before the semantic matrix because the `d03997c7a` CLI requires 40 stage rows
+while the exact-main `41392c011` extension exposes 37. Exact runner/config and
+extension preflight passed, and the eager-control recall child reproduced
+0.9990 with packet-001-identical predictions, but no lazy child or semantic row
+ran. There is no summary or `results.jsonl`.
+
+No continuation, resume, selected-step execution, replacement, or second
+attempt occurred. Packet 002 does not satisfy its fixed gate and authorizes no
+rerun. The failure is classified **PRE-SEMANTIC CLI/EXTENSION COUNTER-SCHEMA
+INCOMPATIBILITY**, not a bounded-read result. See
+`artifacts/live-run-decision.md` and the updated manifest; further live work
+requires outside review and a separately authorized compatibility correction.

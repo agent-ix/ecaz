@@ -18,8 +18,9 @@
   `a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8`
 - Search/runtime labels: persisted head 32/32, RaBitQ, BW4/H100/L32,
   eager-0 control and explicitly set/attested lazy-10 semantic candidate
-- Measurement status: code/config preregistration only; no packet-002 extension
-  install, live fixture, recall, or semantic run yet
+- Measurement status: the sole authorized live run was consumed and failed
+  before semantics on a 40-versus-37 CLI/extension stage-row mismatch; no
+  packet-002 rerun is authorized
 
 ## Config
 
@@ -99,10 +100,10 @@ Exact-checkpoint dry run:
 The dry run validates command construction only and has no recall, latency,
 storage, or semantic decision weight.
 
-## Live command prohibited pending review
+## Authorized live command — consumed
 
-After explicit outside authorization, run the following from the clean detached
-extension checkout at exact `41392c011...`:
+Reviewer seq02 authorized the following command from the clean detached
+extension checkout at exact `41392c011...`; it completed successfully:
 
 ```text
 PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config \
@@ -111,10 +112,40 @@ PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config \
   --no-default-features --features pg18,distann-head-attribution-benchmark
 ```
 
-Then invoke the checked-in suite once, from the corrected detached checkout,
-without `--dry-run`, using the exact `d03997c7a...` release CLI and absolute
-packet-local artifact/log paths. No continuation, resume, selected step, or
-replacement run. Inspect unanimous extension SHA `41392c011...` and exact
-features, verify the live suite manifest records runner SHA `d03997c7a...`,
-apply request.md's fixed gate, capture compact evidence, and remove the stopped
-run directory afterward.
+The exact `d03997c7a...` release CLI then invoked the checked-in suite once,
+without `--dry-run`, continuation, resume, selected-step execution, or a
+replacement. That authorization is now exhausted.
+
+## Live artifacts and outcome
+
+- `extension-install-main-41392c.log` — exact-main attribution install passed;
+  SHA-256
+  `ff812ab6d77c3ed7d84f66aeac2e5b4859d02a86a34c1899fdab84e37aab4be5`
+- `live-runner-build-d03997c7a.log` — exact corrected release CLI rebuild
+  passed with the one existing warning; SHA-256
+  `161211405571848a3021c8a7823b4bb97dda3b6b916b7f41536a81b295e754ae`
+- Exact runner binary immediately before invocation: SHA-256
+  `0f48f41f37d17a12ea2ddbd018ce306d1d6fc837b903c6a6d70e56402ed350e0`
+- `live-suite.log` — suite driver output, step exit 1; SHA-256
+  `efb82d10a62b638c7cde3bb8f7555fc2e3c0c85d768d10f4660ccbe61645bd97`
+- `live-run/suite-manifest.json` — `dry_run=false`, runner `d03997c7a...`,
+  exact config hash, one step `status=failed`, exit 1, duration 139,319 ms;
+  SHA-256
+  `efbe452ca6c7cb75fe507c5524fcb4fa3a7ec0d7c6907a241b005a3dbb326646`
+- `live-run/corrected/distann-local-multinode.log` — exact-main unanimous
+  release/feature preflight followed by `expected 40 ... got 37`; zero semantic
+  rows; SHA-256
+  `817be94a4e829a9756306b1e74785b6bf2fcdc480c725ac393575993fbc0a4bd`
+- `live-run/corrected/physical-eager-control-recall.log` — recall 0.9990,
+  200 queries / 2,000 trials; SHA-256
+  `25777989f40f8393d60383461dde6ea92f8d304d08de73243e35f18c7b547efd`
+- `live-run/corrected/physical-eager-control-predictions.json` — SHA-256
+  `801f6a0b83237047fea6ebd92cb1b85f07aa8dd80ee6dbd5c7877153e724fb6e`
+- `live-run-decision.md` — authoritative failed-run disposition and causal
+  derivation.
+
+The eager latency and memory-series logs plus three node PostgreSQL logs are
+retained as compact failure context. No summary or `results.jsonl` exists
+because the child failed before the semantic matrix. The harness stopped the
+nodes; the stopped 1.2 GB external run directory was removed after capture and
+is recoverable only by regeneration. No packet-002 rerun is permitted.
