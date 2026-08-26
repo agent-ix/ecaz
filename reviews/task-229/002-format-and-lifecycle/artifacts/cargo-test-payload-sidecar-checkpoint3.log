@@ -1,0 +1,17 @@
+Script started on 2026-08-26 06:30:59-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task229-covering-payload-sidecar)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.26s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-42994ba2f56a9ded)
+
+running 6 tests
+test am::ec_distann::payload_sidecar::tests::fixed_pg18_scalar_allowlist_has_expected_widths ... ok
+test am::ec_distann::payload_sidecar::tests::resolution_rejects_vector_generated_dropped_and_variable_width_attributes ... ok
+test am::ec_distann::payload_sidecar::tests::compact_payload_codec_enforces_null_shape_width_and_identity_echoes ... ok
+test am::ec_distann::payload_sidecar::tests::cover_descriptor_round_trips_and_binds_the_exact_row_schema ... ok
+test am::ec_distann::payload_sidecar::tests::resolution_binds_schema_and_attains_the_258_byte_bound ... ok
+test am::ec_distann::payload_sidecar::tests::cover_descriptor_decode_rejects_every_persisted_identity_corruption_arm ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2596 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-26 06:31:41-07:00 [COMMAND_EXIT_CODE="0"]

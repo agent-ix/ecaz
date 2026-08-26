@@ -197,3 +197,72 @@ run. This checkpoint makes no runtime or performance claim.
   and runs once per encoded and per decoded row)
 - No PostgreSQL, pgrx, cargo, test, fixture, corpus, or benchmark command was
   executed by the reviewer.
+
+## Checkpoint 3 coder evidence (2026-08-26)
+
+- Head/source SHA: `56a1b37fc632cee8a12dd3e0c32b138afdea3466`
+- Base SHA: `3419c9c758bea7d9940b27d9afbcf9e627e84879`
+- Timestamp: 2026-08-26T06:35:43-07:00
+- Scope: generation descriptor V2/V3, Ready receipt V1/V2, epoch manifest
+  V2/V3, fingerprint V2/V3, variable-length Ready-receipt-set/catalog/SQL
+  consumers, frozen legacy identity fixtures, and seq-02 corruption/allocation
+  carry-ins
+- Lane / fixture / storage format / rerank mode: static canonical-format work;
+  frozen on-disk format fixtures only; no live index, corpus, rerank mode, or
+  benchmark lane
+- Isolated vs shared surfaces: not applicable — no table, index, cluster, or
+  benchmark surface was created
+- Disposition: `seq02-disposition.md`
+
+### `cargo-fmt-checkpoint3.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0; formatting clean. Stable rustfmt emitted only the repository's
+  existing nightly-only import-grouping warnings.
+
+### `cargo-check-pg18-checkpoint3.log`
+
+- Command: `cargo check --lib --no-default-features --features pg18`
+- Result: exit 0; PG18 library compile completed successfully in 15.42s.
+
+### Focused unit and frozen-fixture logs
+
+- `cargo-test-payload-sidecar-checkpoint3.log`: focused payload-sidecar suite,
+  6 passed / 0 failed; includes all reviewer seq-02 corruption carry-ins.
+- `cargo-test-legacy-identity-checkpoint3.log`: legacy descriptor/manifest and
+  covered V3 round-trip filter, 3 passed / 0 failed (one unrelated name-match).
+- `cargo-test-ready-receipt-checkpoint3.log`: V1/V2 Ready receipt identity and
+  exact 303/359-byte lengths, 1 passed / 0 failed.
+- `cargo-test-receipt-set-checkpoint3.log`: bounded variable V1/V2 receipt-set
+  framing, 1 passed / 0 failed.
+- `cargo-test-covered-identity-chain-checkpoint3.log`: covered V3 descriptor →
+  V2 receipts → V3 manifest → V3 fingerprint build candidate and mismatched
+  fingerprint-version rejection, 1 passed / 0 failed.
+- `cargo-test-on-disk-distann-checkpoint3.log`: frozen DistANN on-disk fixture
+  suite, 21 passed / 0 failed; legacy descriptor, receipt, manifest,
+  fingerprint, build-candidate and receipt-set bytes re-encode identically.
+
+Commands are the exact `cargo test` invocations recorded in each script log.
+All used `--no-default-features --features pg18`; no PostgreSQL server or pgrx
+fixture was started.
+
+### Clippy and static provenance logs
+
+- `cargo-clippy-pg18-checkpoint3.log`: strict all-target clippy reports exactly
+  the four inherited Rust-1.94/main findings: `collapsible_if`
+  (`ambuild.rs:139`), `unnecessary_unwrap`
+  (`generation_descriptor.rs:798`, shifted from base line 748 only by inserted
+  Task 229 code), `needless_range_loop` (`head_sample.rs:1818`), and
+  `items_after_test_module` (`remote_endpoint.rs:1052`).
+- `clippy-inherited-files-diff-checkpoint3.log`: exit 0; `ambuild.rs`,
+  `head_sample.rs`, and `remote_endpoint.rs` are byte-identical to the base.
+- `clippy-generation-descriptor-blame-checkpoint3.log`: the complete lint arm,
+  including line 798, blames to `4fe5d5c53a` from 2026-08-01 rather than this
+  checkpoint.
+- `cargo-clippy-pg18-checkpoint3-task-clean.log`: exit 0; with only those four
+  exact inherited lint names allowed, all targets pass under `-D warnings`.
+- `git-diff-checkpoint3.log`: `git diff --check` over exact base..source exits
+  0.
+
+No live PostgreSQL, `cargo pgrx test`, corpus, benchmark, or performance command
+was run. This checkpoint makes no runtime, storage, latency, or recall claim.
