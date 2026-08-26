@@ -423,6 +423,40 @@ struct Node {
     log_file: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhysicalDrillOutcome {
+    Passed,
+    Failed,
+    Skipped(&'static str),
+}
+
+impl PhysicalDrillOutcome {
+    fn from_passed(passed: bool) -> Self {
+        if passed {
+            Self::Passed
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn failed(self) -> bool {
+        self == Self::Failed
+    }
+}
+
+fn physical_drill_line(name: &str, outcome: PhysicalDrillOutcome, details: &str) -> String {
+    let pass = match outcome {
+        PhysicalDrillOutcome::Passed => "true".to_owned(),
+        PhysicalDrillOutcome::Failed => "false".to_owned(),
+        PhysicalDrillOutcome::Skipped(reason) => format!("skipped reason={reason}"),
+    };
+    if details.is_empty() {
+        format!("[distann-multicluster] {name} pass={pass}")
+    } else {
+        format!("[distann-multicluster] {name} pass={pass} {details}")
+    }
+}
+
 #[derive(Debug)]
 struct SecureRemoteTransportFixture {
     ca_cert: PathBuf,
@@ -3705,13 +3739,14 @@ const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Task167InsertMeasurement {
     rows_per_second: f64,
     inserted_rows: usize,
+    trial_elapsed_ns: Vec<u128>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Task167DefaultInsertBaseline {
     measurement: Task167InsertMeasurement,
     backlink_amendments: i64,
@@ -3735,6 +3770,7 @@ async fn measure_task167_insert_arm(
     rows_per_trial: usize,
 ) -> Result<Task167InsertMeasurement> {
     let mut trial_rows_per_second = Vec::with_capacity(trials);
+    let mut trial_elapsed_ns = Vec::with_capacity(trials);
     let mut inserted_rows = 0;
     for trial in 0..trials {
         let started = Instant::now();
@@ -3764,14 +3800,36 @@ async fn measure_task167_insert_arm(
             }
             inserted_rows += usize::try_from(inserted).unwrap_or(usize::MAX);
         }
-        let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
-        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns);
+        let elapsed_ns = started.elapsed().as_nanos().max(1);
+        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns as f64);
+        trial_elapsed_ns.push(elapsed_ns);
     }
     trial_rows_per_second.sort_by(f64::total_cmp);
     Ok(Task167InsertMeasurement {
         rows_per_second: trial_rows_per_second[trials / 2],
         inserted_rows,
+        trial_elapsed_ns,
     })
+}
+
+fn task167_insert_trial_lines(
+    scale: &str,
+    arm: &str,
+    measurement: &Task167InsertMeasurement,
+    rows_per_trial: usize,
+) -> Vec<String> {
+    measurement
+        .trial_elapsed_ns
+        .iter()
+        .enumerate()
+        .map(|(trial, elapsed_ns)| {
+            let rows_per_second =
+                rows_per_trial as f64 * 1_000_000_000.0 / *elapsed_ns as f64;
+            format!(
+                "physical_benchmark_insert_throughput_trial scale={scale} arm={arm} trial={trial} rows={rows_per_trial} elapsed_ns={elapsed_ns} rows_per_second={rows_per_second:.6} pass=true"
+            )
+        })
+        .collect()
 }
 
 async fn task167_default_insert_throughput(
@@ -3833,6 +3891,18 @@ async fn task167_default_insert_throughput(
         );
     }
     let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
+    lines.extend(task167_insert_trial_lines(
+        scale,
+        "control",
+        &single,
+        TASK167_AB_ROWS_PER_TRIAL,
+    ));
+    lines.extend(task167_insert_trial_lines(
+        scale,
+        "physical",
+        &shipped,
+        TASK167_AB_ROWS_PER_TRIAL,
+    ));
     lines.push(format!(
         "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
         shipped.inserted_rows,
@@ -12562,15 +12632,17 @@ async fn drive_physical_fixture(
         )
         .await?
         .get::<_, i64>(0);
-    let serving_ok = served == query_limit.min(source_count);
-    crate::ecaz_println!(
-        "[distann-multicluster] physical_serving pass={} rows={} owners={} source_rows={}",
-        serving_ok,
-        served,
-        owners.len(),
-        source_count
+    let serving_outcome =
+        PhysicalDrillOutcome::from_passed(served == query_limit.min(source_count));
+    let serving_details = format!(
+        "rows={served} owners={} source_rows={source_count}",
+        owners.len()
     );
-    if !serving_ok {
+    crate::ecaz_println!(
+        "{}",
+        physical_drill_line("physical_serving", serving_outcome, &serving_details)
+    );
+    if serving_outcome.failed() {
         bail!("physical serving returned {served} rows, expected {query_limit}");
     }
     if args.tls_security_matrix {
@@ -12898,18 +12970,22 @@ async fn drive_physical_fixture(
         }
         remote_verified += 1;
     }
-    let physical_mid_insert_ok = if args.skip_fault_drills {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_mid_insert_failure pass=skipped reason=skip_fault_drills"
-        );
-        true
+    let physical_mid_insert_outcome = if args.skip_fault_drills {
+        PhysicalDrillOutcome::Skipped("skip_fault_drills")
     } else {
-        mid_insert_drill(psql, socket_dir, nodes[0].port, args).await
+        PhysicalDrillOutcome::from_passed(
+            mid_insert_drill(psql, socket_dir, nodes[0].port, args).await,
+        )
     };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}"
+        "{}",
+        physical_drill_line(
+            "physical_mid_insert_failure",
+            physical_mid_insert_outcome,
+            ""
+        )
     );
-    if !physical_mid_insert_ok {
+    if physical_mid_insert_outcome.failed() {
         bail!("physical TC-043 mid-insert drill failed");
     }
     let benchmark_lines = if args.physical_benchmark {
@@ -13007,46 +13083,69 @@ async fn drive_physical_fixture(
         })
         .collect::<Vec<_>>()
         .join(";");
-    let physical_concurrency_ok = if args.skip_concurrency_drill {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query pass=skipped reason=skip_concurrency_drill"
-        );
-        true
+    let physical_concurrency_outcome = if args.skip_concurrency_drill {
+        PhysicalDrillOutcome::Skipped("skip_concurrency_drill")
     } else {
-        physical_concurrency_drill(
-            psql,
-            socket_dir,
-            nodes[0].port,
-            args,
-            nodes,
-            &fixture_roster,
-            &concurrency_table,
-            &fingerprint,
+        PhysicalDrillOutcome::from_passed(
+            physical_concurrency_drill(
+                psql,
+                socket_dir,
+                nodes[0].port,
+                args,
+                nodes,
+                &fixture_roster,
+                &concurrency_table,
+                &fingerprint,
+            )
+            .await?,
         )
-        .await?
     };
     // This diagnostic is reverse-edge coverage: `found` contains inserted
     // vec_ids discovered in other nodes' neighbour lists. It is not the
     // number of forward edges selected by inserted nodes; the controlled
     // two-writer target assertion below is the separate backlink invariant.
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
+        "{}",
+        physical_drill_line(
+            "physical_concurrent_insert_query",
+            physical_concurrency_outcome,
+            ""
+        )
     );
-    if !physical_concurrency_ok {
+    if physical_concurrency_outcome.failed() {
         bail!("physical TC-043 concurrent insert/query drill failed");
     }
-    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        nodes,
-        args,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
-    if !physical_delete_vacuum_ok {
+    let physical_delete_vacuum_outcome = if args.skip_fault_drills {
+        PhysicalDrillOutcome::Skipped("skip_fault_drills")
+    } else {
+        PhysicalDrillOutcome::from_passed(
+            physical_routed_delete_vacuum_drill(
+                psql,
+                socket_dir,
+                nodes[0].port,
+                nodes,
+                args,
+                &fixture_roster,
+                &concurrency_table,
+                &fingerprint,
+            )
+            .await?,
+        )
+    };
+    if matches!(
+        physical_delete_vacuum_outcome,
+        PhysicalDrillOutcome::Skipped(_)
+    ) {
+        crate::ecaz_println!(
+            "{}",
+            physical_drill_line(
+                "physical_routed_delete_vacuum",
+                physical_delete_vacuum_outcome,
+                ""
+            )
+        );
+    }
+    if physical_delete_vacuum_outcome.failed() {
         bail!("physical routed DELETE + VACUUM drill failed");
     }
     if args.drop_extension_cleanup_drill {
@@ -13101,25 +13200,32 @@ async fn drive_physical_fixture(
             ));
         }
     }
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_serving pass=true rows={served} owners={} source_rows={source_count}\n",
-        owners.len()
+    summary.push_str(&physical_drill_line(
+        "physical_serving",
+        serving_outcome,
+        &serving_details,
     ));
+    summary.push('\n');
     for line in &publish_fault_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
     for line in &benchmark_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
-    ));
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
-    ));
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_routed_delete_vacuum pass={physical_delete_vacuum_ok}\n"
-    ));
+    for (name, outcome) in [
+        ("physical_mid_insert_failure", physical_mid_insert_outcome),
+        (
+            "physical_concurrent_insert_query",
+            physical_concurrency_outcome,
+        ),
+        (
+            "physical_routed_delete_vacuum",
+            physical_delete_vacuum_outcome,
+        ),
+    ] {
+        summary.push_str(&physical_drill_line(name, outcome, ""));
+        summary.push('\n');
+    }
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
@@ -16546,6 +16652,33 @@ mod tests {
                 .len(),
             TASK167_AB_SAMPLE_ROWS,
         );
+    }
+
+    #[test]
+    fn physical_drill_summary_preserves_skipped_outcome() {
+        assert_eq!(
+            physical_drill_line(
+                "physical_mid_insert_failure",
+                PhysicalDrillOutcome::Skipped("skip_fault_drills"),
+                "",
+            ),
+            "[distann-multicluster] physical_mid_insert_failure pass=skipped reason=skip_fault_drills"
+        );
+    }
+
+    #[test]
+    fn task167_insert_trials_emit_recoverable_elapsed_times() {
+        let measurement = Task167InsertMeasurement {
+            rows_per_second: 8.0,
+            inserted_rows: 64,
+            trial_elapsed_ns: vec![4_000_000_000, 8_000_000_000],
+        };
+        let lines = task167_insert_trial_lines("10k", "physical", &measurement, 32);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("trial=0 rows=32 elapsed_ns=4000000000"));
+        assert!(lines[0].contains("rows_per_second=8.000000 pass=true"));
+        assert!(lines[1].contains("trial=1 rows=32 elapsed_ns=8000000000"));
+        assert!(lines[1].contains("rows_per_second=4.000000 pass=true"));
     }
 
     #[test]
