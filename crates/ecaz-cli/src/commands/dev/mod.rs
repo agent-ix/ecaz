@@ -23,7 +23,7 @@ mod support;
 mod test;
 mod worktree;
 
-pub(crate) use support::default_cluster_root;
+pub(crate) use support::{cargo_target_dir, default_cluster_root, repo_root};
 
 #[derive(Subcommand, Debug)]
 pub enum DevCommand {
