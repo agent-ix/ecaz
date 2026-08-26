@@ -1,11 +1,13 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **plan packet 001 review-open; 100k locality attribution pending; no
-candidate authorized** (updated 2026-08-25). Priority: P2 latency. Task 223 is
-review-closed STOP and releases this task. Its accepted 0.514999 ms
-whole-bucket ceiling settles the production id-only arm, but narrow,
-vector-bearing, and externally toasted projections still require Task 224's
-own measured gate. Plan: `reviews/task-224/001-plan/`.
+Status: **attribution implementation and 100k gate complete; packets 001/002
+review-open; coder proposes MAT-26 GO and MAT-25 no-advance** (updated
+2026-08-25). Priority: P2 latency. On one exact reusable generation, the
+vector-bearing binary-send bucket is 6.967996 ms/scan, 24.709206% of its
+28.20 ms warm mean. The toasted SPI-minus-send MAT-25 ceiling also passes the
+absolute gate at 1.617951 ms/scan but reaches only 3.509655%; the registered
+single-candidate tie-break therefore selects MAT-26. No candidate is authorized
+until outside review of `reviews/task-224/002-locality-attribution/`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.

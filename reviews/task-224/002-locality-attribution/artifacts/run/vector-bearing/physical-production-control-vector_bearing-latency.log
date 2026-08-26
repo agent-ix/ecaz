@@ -1,0 +1,312 @@
+┌───────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬───────────────────┬─────────────┬───────────┬────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ worker_batch_size ┆ concurrency ┆ wall_ms   ┆ qps    ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═══════════════════╪═════════════╪═══════════╪════════╪═════════════╪═════════════╪════════════════╡
+│ 32    ┆ 200   ┆ 28.2 ms ┆ 2.06 ms ┆ 23.7 ms ┆ 28.1 ms ┆ 31.4 ms ┆ 33.9 ms ┆ 36.1 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 5642.3 ms ┆ 35.447 ┆ 165988      ┆ 168944      ┆ 215            │
+└───────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴───────────────────┴─────────────┴───────────┴────────┴─────────────┴─────────────┴────────────────┘
+[distann-stage-counters] command=latency label=top_k=32 stage=custom_scan_total scans=200 samples=400 elapsed_ns=3217710518 elapsed_ms=3217.710518 mean_ms=16.088553
+[distann-stage-counters] command=latency label=top_k=32 stage=head_score scans=200 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=local_expand scans=200 samples=1851 elapsed_ns=289390910 elapsed_ms=289.390910 mean_ms=1.446955
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_connection_ready scans=200 samples=200 elapsed_ns=585026 elapsed_ms=0.585026 mean_ms=0.002925
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_coordinator_decode scans=200 samples=200 elapsed_ns=2494529 elapsed_ms=2.494529 mean_ms=0.012473
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_map_insert scans=200 samples=200 elapsed_ns=244988 elapsed_ms=0.244988 mean_ms=0.001225
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_output_associate scans=200 samples=400 elapsed_ns=1818419 elapsed_ms=1.818419 mean_ms=0.009092
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_binary_send_work scans=200 samples=399 elapsed_ns=1393599176 elapsed_ms=1393.599176 mean_ms=6.967996
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_critical scans=200 samples=200 elapsed_ns=1029797928 elapsed_ms=1029.797928 mean_ms=5.148990
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_work scans=200 samples=399 elapsed_ns=1627506991 elapsed_ms=1627.506991 mean_ms=8.137535
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_node_lookup_work scans=200 samples=399 elapsed_ns=55740238 elapsed_ms=55.740238 mean_ms=0.278701
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_open_validate_work scans=200 samples=399 elapsed_ns=4966026 elapsed_ms=4.966026 mean_ms=0.024830
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_payload_spi_work scans=200 samples=399 elapsed_ns=1559914277 elapsed_ms=1559.914277 mean_ms=7.799571
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_payload_sql_work scans=200 samples=399 elapsed_ns=1565840045 elapsed_ms=1565.840045 mean_ms=7.829200
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_response_construct_work scans=200 samples=399 elapsed_ns=661637 elapsed_ms=0.661637 mean_ms=0.003308
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_prepare scans=200 samples=200 elapsed_ns=1025167 elapsed_ms=1.025167 mean_ms=0.005126
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_roundtrip_work scans=200 samples=399 elapsed_ns=1872367693 elapsed_ms=1872.367693 mean_ms=9.361838
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_wait scans=200 samples=200 elapsed_ns=1171799185 elapsed_ms=1171.799185 mean_ms=5.858996
+[distann-stage-counters] command=latency label=top_k=32 stage=output_merge scans=200 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=query_prep scans=200 samples=200 elapsed_ns=5069815 elapsed_ms=5.069815 mean_ms=0.025349
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_expand scans=200 samples=2308 elapsed_ns=1193891873 elapsed_ms=1193.891873 mean_ms=5.969459
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_materialize scans=200 samples=200 elapsed_ns=1177406640 elapsed_ms=1177.406640 mean_ms=5.887033
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_graph_vector_read scans=200 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_open_validate scans=200 samples=200 elapsed_ns=42399 elapsed_ms=0.042399 mean_ms=0.000212
+[distann-stage-counters] command=latency label=top_k=32 stage=replica_score scans=200 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=seed_select scans=200 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_connection_ready scans=200 samples=2308 elapsed_ns=6167340 elapsed_ms=6.167340 mean_ms=0.030837
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_decode scans=200 samples=2333 elapsed_ns=1153028 elapsed_ms=1.153028 mean_ms=0.005765
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_partition scans=200 samples=2333 elapsed_ns=791273 elapsed_ms=0.791273 mean_ms=0.003956
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_receive_decode scans=200 samples=2308 elapsed_ns=3551650 elapsed_ms=3.551650 mean_ms=0.017758
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_frontier_insert scans=200 samples=41232 elapsed_ns=1097360 elapsed_ms=1.097360 mean_ms=0.005487
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_graph_read scans=200 samples=2308 elapsed_ns=232817861 elapsed_ms=232.817861 mean_ms=1.164089
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_open_validate scans=200 samples=2308 elapsed_ns=12781318 elapsed_ms=12.781318 mean_ms=0.063907
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_response_encode scans=200 samples=2308 elapsed_ns=94107 elapsed_ms=0.094107 mean_ms=0.000471
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_score scans=200 samples=2308 elapsed_ns=187370090 elapsed_ms=187.370090 mean_ms=0.936850
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_service scans=200 samples=2308 elapsed_ns=445783797 elapsed_ms=445.783797 mean_ms=2.228919
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_request_encode scans=200 samples=2308 elapsed_ns=725195 elapsed_ms=0.725195 mean_ms=0.003626
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_straggler_spread scans=200 samples=2308 elapsed_ns=95634014 elapsed_ms=95.634014 mean_ms=0.478170
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_total scans=200 samples=200 elapsed_ns=1511070360 elapsed_ms=1511.070360 mean_ms=7.555352
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_transport_wait scans=200 samples=2308 elapsed_ns=722859128 elapsed_ms=722.859128 mean_ms=3.614296
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=0 rss_kb=163700 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=25 rss_kb=163700 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=52 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=77 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=104 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=131 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=158 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=183 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=210 rss_kb=163828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=237 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=263 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=289 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=315 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=341 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=368 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=393 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=420 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=446 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=473 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=499 rss_kb=163892 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=526 rss_kb=163956 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=552 rss_kb=163956 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=579 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=606 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=633 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=659 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=684 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=711 rss_kb=164020 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=738 rss_kb=164024 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=764 rss_kb=164024 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=791 rss_kb=164024 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=818 rss_kb=164024 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=845 rss_kb=164044 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=871 rss_kb=164068 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=898 rss_kb=164080 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=924 rss_kb=164080 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=951 rss_kb=164080 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=978 rss_kb=164080 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1004 rss_kb=164084 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1030 rss_kb=164084 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1056 rss_kb=164088 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1082 rss_kb=164088 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1108 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1135 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1160 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1187 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1214 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1241 rss_kb=164092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1268 rss_kb=164096 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1294 rss_kb=164096 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1321 rss_kb=164192 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1348 rss_kb=164196 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1374 rss_kb=164240 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1401 rss_kb=164360 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1427 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1453 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1479 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1506 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1533 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1559 rss_kb=164428 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1584 rss_kb=164440 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1611 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1638 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1664 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1691 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1717 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1743 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1770 rss_kb=164476 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1797 rss_kb=164540 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1824 rss_kb=164540 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1851 rss_kb=164540 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1877 rss_kb=164580 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1904 rss_kb=164580 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1929 rss_kb=164580 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1956 rss_kb=164644 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=1983 rss_kb=164644 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2009 rss_kb=164660 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2035 rss_kb=164732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2062 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2088 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2114 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2140 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2167 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2193 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2220 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2246 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2273 rss_kb=164760 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2300 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2327 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2352 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2379 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2405 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2431 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2457 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2484 rss_kb=164824 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2511 rss_kb=164860 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2537 rss_kb=164872 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2563 rss_kb=164952 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2588 rss_kb=164952 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2615 rss_kb=164952 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2641 rss_kb=165008 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2666 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2693 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2720 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2746 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2773 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2798 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2824 rss_kb=165052 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2851 rss_kb=165092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2877 rss_kb=165092 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2904 rss_kb=165096 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2930 rss_kb=165096 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2957 rss_kb=165100 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=2982 rss_kb=165100 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3009 rss_kb=165100 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3035 rss_kb=165100 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3062 rss_kb=165100 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3088 rss_kb=165104 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3115 rss_kb=165104 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3141 rss_kb=165104 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3168 rss_kb=165104 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3193 rss_kb=165148 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3220 rss_kb=165172 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3246 rss_kb=165172 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3272 rss_kb=165176 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3299 rss_kb=165176 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3325 rss_kb=165176 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3352 rss_kb=165176 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3378 rss_kb=165180 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3403 rss_kb=165296 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3430 rss_kb=165296 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3456 rss_kb=165296 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3483 rss_kb=165300 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3509 rss_kb=165300 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3535 rss_kb=165328 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3561 rss_kb=165328 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3588 rss_kb=165328 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3615 rss_kb=165328 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3642 rss_kb=165392 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3668 rss_kb=165392 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3694 rss_kb=165404 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3719 rss_kb=165456 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3746 rss_kb=165456 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3772 rss_kb=165460 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3797 rss_kb=165460 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3823 rss_kb=165460 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3850 rss_kb=165460 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3876 rss_kb=165460 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3903 rss_kb=165464 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3929 rss_kb=165464 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3956 rss_kb=165512 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=3982 rss_kb=165724 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4007 rss_kb=165724 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4034 rss_kb=165724 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4060 rss_kb=165728 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4085 rss_kb=165728 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4112 rss_kb=165728 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4139 rss_kb=165728 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4165 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4191 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4217 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4243 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4269 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4295 rss_kb=165732 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4322 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4349 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4374 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4401 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4426 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4452 rss_kb=165736 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4479 rss_kb=165764 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4505 rss_kb=165764 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4531 rss_kb=165764 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4557 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4584 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4609 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4636 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4663 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4689 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4715 rss_kb=165768 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4742 rss_kb=165828 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4769 rss_kb=165832 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4795 rss_kb=165836 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4821 rss_kb=165836 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4846 rss_kb=165836 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4873 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4898 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4924 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4951 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=4977 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5003 rss_kb=165840 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5028 rss_kb=165844 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5055 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5081 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5107 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5133 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5158 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5185 rss_kb=165864 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5212 rss_kb=165932 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5239 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5266 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5292 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5318 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5345 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5371 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5398 rss_kb=165980 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5423 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5450 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5476 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5503 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5529 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5556 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5582 rss_kb=165984 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5609 rss_kb=165988 hwm_kb=168944
+[backend-memory] sweep=top_k=32 pid=550194 elapsed_ms=5635 rss_kb=165988 hwm_kb=168944
+[distann-materialization-work] command=latency label=top_k=32 metric=client_result_rows scans=200 value=2000 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=duplicate_remote_candidates_requested scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_local_rows_consumed scans=200 value=643 mean_per_scan=3.215000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_remote_rows_consumed scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_rows_consumed scans=200 value=2000 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=gateway_copies_served scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=head_replica_fallbacks scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=head_replica_shards_served scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=neighbors_pruned scans=200 value=65105 mean_per_scan=325.525000
+[distann-materialization-work] command=latency label=top_k=32 metric=output_rows_associated scans=200 value=9332 mean_per_scan=46.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_binary_send_bytes scans=200 value=16712812 mean_per_scan=83564.060000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displaced_rows scans=200 value=978 mean_per_scan=4.890000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displacement_max_sum scans=200 value=683 mean_per_scan=3.415000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_block_sort_displacement_total scans=200 value=1666 mean_per_scan=8.330000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_distinct_heap_blocks scans=200 value=1354 mean_per_scan=6.770000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_external_toast_values scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_logical_bytes scans=200 value=8380832 mean_per_scan=41904.160000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_max_rows_per_heap_block_sum scans=200 value=402 mean_per_scan=2.010000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_projected_values scans=200 value=2714 mean_per_scan=13.570000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_requested_tids scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blk_read_ns scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blks_hit scans=200 value=5644 mean_per_scan=28.220000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_send_shared_blks_read scans=200 value=641 mean_per_scan=3.205000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_stored_bytes scans=200 value=8375404 mean_per_scan=41877.020000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blk_read_ns scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blks_hit scans=200 value=7001 mean_per_scan=35.005000
+[distann-materialization-work] command=latency label=top_k=32 metric=owner_total_shared_blks_read scans=200 value=641 mean_per_scan=3.205000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_bytes_returned scans=200 value=16718240 mean_per_scan=83591.200000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_columns_requested scans=200 value=2714 mean_per_scan=13.570000
+[distann-materialization-work] command=latency label=top_k=32 metric=pushdown_rounds_with_threshold scans=200 value=1927 mean_per_scan=9.635000
+[distann-materialization-work] command=latency label=top_k=32 metric=ranked_candidates scans=200 value=9332 mean_per_scan=46.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_candidates_requested scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_owners_requested scans=200 value=399 mean_per_scan=1.995000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_payloads_installed scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_rows_returned scans=200 value=1357 mean_per_scan=6.785000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_tombstones scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=replica_fallbacks scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=replica_scans scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_batch_width scans=200 value=9332 mean_per_scan=46.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_connections_opened scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_frontier_insertions scans=200 value=41232 mean_per_scan=206.160000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_frontier_retries scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_hop_rounds scans=200 value=2333 mean_per_scan=11.665000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_requested scans=200 value=9332 mean_per_scan=46.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_returned scans=200 value=9332 mean_per_scan=46.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_hits scans=200 value=3398 mean_per_scan=16.990000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_misses scans=200 value=400 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_repeated_nodes scans=200 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_request_bytes scans=200 value=2827240 mean_per_scan=14136.200000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_response_bytes scans=200 value=880988 mean_per_scan=4404.940000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_statements_prepared scans=200 value=0 mean_per_scan=0.000000
+[distann-crown-stats] lane=latency label=top_k=32 capacity=0 entries=0 resident_bytes=0 resident_bytes_bound=0 crown_seeds_served=0 crown_fallbacks=0 crown_width_pruned_shards=0 crown_width_pruning_activations=0 fused_head_hops=0 fused_first_round_requested_ids=0
