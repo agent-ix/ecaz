@@ -89,12 +89,12 @@ query normalization, and arithmetic.
 - Suite log: `4ebc9544783665e6fd0354d7e73623028fcd0ffc9e500d622a7abae3a674dce4`
 - Dry-run manifest: `b55f257d76918f8f3e565ded4d78f6ede493851b0ee19c342fb14e02e0082d3f`
 - Dry-run log: `b616b2558e370ea0d6295b2b88cd805109b22c77664bf8c64bec500c5bf0cd77`
-- PG18 install log: `1199f52f33556f9ae355acc2295665ebf364964125cb34ae7aeca28dfc3279d5`
-- CLI release-build log: `beab99020a218b81f888d9749b4a90cea19a72017d4e6eac14e65a0cd59278b0`
-- TID-profile test log: `a7f21de358eacf3df756dc2ebb1369b356e9d73dd2fc8ef5f9c63621fe603d65`
-- Profiled-SQL test log: `9ec33dcf749ebb4ee8d8473da67a53cca604a59abe50651799a9b6ef526bd75b`
-- Production-SQL test log: `d87c28ad6aaa02067c770bbb68b3141e204bf0f10596c34dd44582ef82d7c37b`
-- CLI Task 224 test log: `b559fb82fc7e1cf8f2da7754bbe3401a836cb913262ab5af880395824327eb56`
+- PG18 install log: `61ef429bfd85b5d451a44e68a343823195d78a9b7fb7f9140dc02a48ee06ab92`
+- CLI release-build log: `aff5e136142b3c8ba3273dce9f8ffebc312ec97b65946a457e41e62a0019b9e3`
+- TID-profile test log: `3881db9ff9629ab5b3e530428ca5c36c41e444a2dd32ad94a97ca58e11be5cb8`
+- Profiled-SQL test log: `7072c785ffcd3659b19c2c136373eb4a17365f2aca619071790d9e93a78c7df9`
+- Production-SQL test log: `8f6f95781ae6a4219e8ba3d1902f77c9dc493a9823f0e6c4ee664a3566e738b6`
+- CLI Task 224 test log: `03e57455653d775141f350fc8c4ba73f89cefe3fa4f42debb171a857fce0d14a`
 
 No corpus/query/truth data, PGDATA, tunnel state, polling exhaust, or failed-run
 artifact tree is committed. The successful reusable fixture was intentionally
