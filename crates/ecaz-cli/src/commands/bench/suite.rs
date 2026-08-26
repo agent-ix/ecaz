@@ -738,6 +738,10 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     owner_payload_shape: Option<String>,
     #[serde(default)]
+    skip_owner_locality_profile: bool,
+    #[serde(default)]
+    owner_fast_real_array_send: bool,
+    #[serde(default)]
     stage_counter_only: bool,
     #[serde(default)]
     skip_recall: bool,
@@ -4761,6 +4765,21 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.skip_owner_locality_profile && step.owner_payload_shape.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} skip_owner_locality_profile requires owner_payload_shape",
+                        step.name
+                    )
+                }
+                if step.owner_fast_real_array_send
+                    && (step.owner_payload_shape.as_deref() != Some("vector-bearing")
+                        || !step.skip_owner_locality_profile)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} owner_fast_real_array_send requires vector-bearing owner_payload_shape and skip_owner_locality_profile",
+                        step.name
+                    )
+                }
                 if step.gateway_trace && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} gateway_trace requires physical_benchmark",
@@ -6101,6 +6120,12 @@ fn expand_distann_local_multinode(
     }
     if let Some(shape) = step.owner_payload_shape.as_deref() {
         args.extend(["--owner-payload-shape".into(), shape.to_owned()]);
+    }
+    if step.skip_owner_locality_profile {
+        args.push("--skip-owner-locality-profile".into());
+    }
+    if step.owner_fast_real_array_send {
+        args.push("--owner-fast-real-array-send".into());
     }
     if step.stage_counter_only {
         args.push("--stage-counter-only".into());
@@ -8627,6 +8652,76 @@ psql header noise\n\
             rows[1].1.get("metric").map(String::as_str),
             Some("owner_external_toast_values")
         );
+    }
+
+    #[test]
+    fn task224_mat26_candidate_requires_unprofiled_vector_projection() {
+        let raw = r#"{
+          "name": "task224-mat26",
+          "schema_version": 1,
+          "artifact_dir": "reviews/task-224/003-isolated-candidate/artifacts/run",
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-100k",
+            "artifact_dir": "${artifact_dir}/candidate",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "stage_counter_only": true,
+            "owner_payload_shape": "vector-bearing",
+            "skip_owner_locality_profile": true,
+            "owner_fast_real_array_send": true,
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        apply_artifact_dir_templates(&mut config);
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--skip-owner-locality-profile".into()));
+        assert!(command.contains(&"--owner-fast-real-array-send".into()));
+
+        let invalid = raw.replace(
+            "\"skip_owner_locality_profile\": true",
+            "\"skip_owner_locality_profile\": false",
+        );
+        let invalid: SuiteConfig = serde_json::from_str(&invalid).expect("invalid suite parses");
+        assert!(validate_config(&invalid).is_err());
+    }
+
+    #[test]
+    fn task224_mat26_preregistered_suite_validates_as_same_generation_ab() {
+        let raw = include_str!("../../../suites/task224-mat26-fast-real-array-100k.json");
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        assert_eq!(config.steps.len(), 2);
+        let SuiteStep::DistannLocalMultinode(control) = &config.steps[0] else {
+            panic!("expected control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(candidate) = &config.steps[1] else {
+            panic!("expected candidate DistANN step");
+        };
+        assert!(!control.reuse_fixture);
+        assert!(candidate.reuse_fixture);
+        assert_eq!(control.run_dir, candidate.run_dir);
+        assert!(control.skip_owner_locality_profile);
+        assert!(candidate.skip_owner_locality_profile);
+        assert!(!control.owner_fast_real_array_send);
+        assert!(candidate.owner_fast_real_array_send);
+        assert_eq!(control.benchmark_seed_variants.len(), 2);
+        assert_eq!(candidate.benchmark_seed_variants.len(), 2);
+        for (left, right) in control
+            .benchmark_seed_variants
+            .iter()
+            .zip(&candidate.benchmark_seed_variants)
+        {
+            assert_eq!(left.name, right.name);
+            assert_eq!(
+                left.materialization_batch_size,
+                right.materialization_batch_size
+            );
+        }
     }
 
     #[test]

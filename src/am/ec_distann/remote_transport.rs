@@ -1636,7 +1636,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
-       $9::bigint[], $10::integer[], $11::boolean, $12::boolean)";
+       $9::bigint[], $10::integer[], $11::boolean, $12::boolean, $13::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -2587,6 +2587,8 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) use_expanded_locator: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) profile_owner_locality: bool,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) fast_real_array_send: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -2884,6 +2886,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_owner_offsets,
                     &request.use_expanded_locator,
                     &request.profile_owner_locality,
+                    &request.fast_real_array_send,
                 ],
             )
             .await;

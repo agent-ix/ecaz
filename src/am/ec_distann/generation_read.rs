@@ -619,6 +619,40 @@ mod cache_tests {
         assert_eq!(profile.block_sort_displacement_total, 6);
         assert_eq!(profile.block_sort_displacement_max, 3);
     }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn fast_real_array_encoder_matches_postgres_wire_shape() {
+        let values = [1.0_f32, -0.0, f32::from_bits(0x7fc0_0001)];
+        let encoded = encode_fast_real_array_parts(&[3], &[1], &values).unwrap();
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&1_i32.to_be_bytes());
+        expected.extend_from_slice(&0_i32.to_be_bytes());
+        expected.extend_from_slice(&u32::from(pg_sys::FLOAT4OID).to_be_bytes());
+        expected.extend_from_slice(&3_i32.to_be_bytes());
+        expected.extend_from_slice(&1_i32.to_be_bytes());
+        for value in values {
+            expected.extend_from_slice(&4_i32.to_be_bytes());
+            expected.extend_from_slice(&value.to_bits().to_be_bytes());
+        }
+        assert_eq!(encoded, expected);
+        assert_eq!(encoded.len(), 20 + values.len() * 8);
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn fast_real_array_encoder_preserves_dimensions_and_lower_bounds() {
+        let values = [1.25_f32, 2.5, 5.0, 10.0, 20.0, 40.0];
+        let encoded = encode_fast_real_array_parts(&[2, 3], &[-2, 7], &values).unwrap();
+        assert_eq!(&encoded[0..4], &2_i32.to_be_bytes());
+        assert_eq!(&encoded[12..16], &2_i32.to_be_bytes());
+        assert_eq!(&encoded[16..20], &(-2_i32).to_be_bytes());
+        assert_eq!(&encoded[20..24], &3_i32.to_be_bytes());
+        assert_eq!(&encoded[24..28], &7_i32.to_be_bytes());
+        assert_eq!(encoded.len(), 12 + 16 + values.len() * 8);
+        assert!(encode_fast_real_array_parts(&[2, 2], &[1, 1], &values).is_err());
+        assert!(encode_fast_real_array_parts(&[2], &[], &values[..2]).is_err());
+    }
 }
 
 const PHYSICAL_EPOCH_CACHE_CAPACITY: usize = 2;
@@ -2325,11 +2359,14 @@ impl RetainedGenerationScan {
         use_packed_payload: bool,
         owner_heap_tids: Option<&[ItemPointer]>,
         profile_owner_locality: bool,
+        fast_real_array_send: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         let _ = owner_heap_tids;
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         let _ = profile_owner_locality;
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let _ = fast_real_array_send;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
         let expected: [u8; 32] = expected_schema_fingerprint.try_into().map_err(|_| {
@@ -2359,6 +2396,8 @@ impl RetainedGenerationScan {
         let mut columns = Vec::with_capacity(projection_attnums.len());
         let mut sends = Vec::with_capacity(projection_attnums.len());
         let mut seen = std::collections::HashSet::with_capacity(projection_attnums.len());
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let mut fast_real_array_columns = 0_usize;
         for requested in projection_attnums {
             let attnum = u16::try_from(*requested).map_err(|_| {
                 DistannExpandError::BadInput(
@@ -2381,6 +2420,17 @@ impl RetainedGenerationScan {
                     ))
                 })?;
             columns.push(attribute.name.clone());
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            if fast_real_array_send
+                && attribute.type_namespace == "pg_catalog"
+                && attribute.type_name == "_float4"
+            {
+                sends.push("ec_distann_fast_real_array_send".to_owned());
+                fast_real_array_columns = fast_real_array_columns.saturating_add(1);
+            } else {
+                sends.push(attribute.send_function.clone());
+            }
+            #[cfg(not(feature = "distann-head-attribution-benchmark"))]
             sends.push(attribute.send_function.clone());
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -2428,6 +2478,26 @@ impl RetainedGenerationScan {
         if locality_profile_enabled && use_packed_payload {
             return Err(DistannExpandError::BadInput(
                 "Task 224 owner locality profiling requires the production bytea[] payload shape"
+                    .to_owned(),
+            ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if fast_real_array_send && locality_profile_enabled {
+            return Err(DistannExpandError::BadInput(
+                "Task 224 fast real[] sender requires unprofiled production payload SQL".to_owned(),
+            ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if fast_real_array_send && use_packed_payload {
+            return Err(DistannExpandError::BadInput(
+                "Task 224 fast real[] sender requires the production bytea[] payload shape"
+                    .to_owned(),
+            ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if fast_real_array_send && fast_real_array_columns == 0 {
+            return Err(DistannExpandError::BadInput(
+                "Task 224 fast real[] sender requires at least one projected pg_catalog.real[] column"
                     .to_owned(),
             ));
         }
@@ -2501,7 +2571,7 @@ impl RetainedGenerationScan {
             hasher.finalize().into()
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        if locality_profile_enabled {
+        if locality_profile_enabled || fast_real_array_send {
             payload_send_profile_start();
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -2666,7 +2736,7 @@ impl RetainedGenerationScan {
             OwnerBufferUsage::default()
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        let send_profile = if locality_profile_enabled {
+        let send_profile = if locality_profile_enabled || fast_real_array_send {
             payload_send_profile_finish()
         } else {
             PayloadBinarySendProfile::default()
@@ -2743,7 +2813,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false, false, None, false)
+        .materialize_payloads(&[], &[], &expected, false, false, false, None, false, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -2959,6 +3029,57 @@ fn ensure_profile_send_info(type_oid: pg_sys::Oid) -> i16 {
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
+fn cached_binary_send(type_oid: pg_sys::Oid, datum: pg_sys::Datum) -> *mut pg_sys::bytea {
+    ensure_profile_send_info(type_oid);
+    PAYLOAD_PROFILE_SENDERS.with(|senders| {
+        let mut senders = senders.borrow_mut();
+        let info = senders
+            .get_mut(&type_oid)
+            .expect("Task 224 sender cache entry disappeared");
+        unsafe { pg_sys::SendFunctionCall(&mut info.send_flinfo, datum) }
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn record_payload_send_profile(
+    send_ns: u64,
+    send_buffer: OwnerBufferUsage,
+    stored_bytes: u64,
+    logical_bytes: u64,
+    external_toast: bool,
+    binary_send_bytes: usize,
+) {
+    ACTIVE_PAYLOAD_SEND_PROFILE.with(|profile| {
+        let mut profile = profile.borrow_mut();
+        let Some(profile) = profile.as_mut() else {
+            return;
+        };
+        profile.send_ns = profile.send_ns.saturating_add(send_ns);
+        profile.buffer.shared_blks_hit = profile
+            .buffer
+            .shared_blks_hit
+            .saturating_add(send_buffer.shared_blks_hit);
+        profile.buffer.shared_blks_read = profile
+            .buffer
+            .shared_blks_read
+            .saturating_add(send_buffer.shared_blks_read);
+        profile.buffer.shared_blk_read_ns = profile
+            .buffer
+            .shared_blk_read_ns
+            .saturating_add(send_buffer.shared_blk_read_ns);
+        profile.projected_values = profile.projected_values.saturating_add(1);
+        profile.external_toast_values = profile
+            .external_toast_values
+            .saturating_add(u64::from(external_toast));
+        profile.stored_bytes = profile.stored_bytes.saturating_add(stored_bytes);
+        profile.logical_bytes = profile.logical_bytes.saturating_add(logical_bytes);
+        profile.binary_send_bytes = profile
+            .binary_send_bytes
+            .saturating_add(u64::try_from(binary_send_bytes).unwrap_or(u64::MAX));
+    });
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
 unsafe fn varlena_is_external_ondisk(datum: pg_sys::Datum) -> bool {
     let pointer = datum.cast_mut_ptr::<u8>();
     if pointer.is_null() {
@@ -3002,13 +3123,7 @@ fn ec_distann_profile_binary_send(value: AnyElement) -> Vec<u8> {
     };
     let buffer_before = owner_buffer_usage_snapshot();
     let started = Instant::now();
-    let sent = PAYLOAD_PROFILE_SENDERS.with(|senders| {
-        let mut senders = senders.borrow_mut();
-        let info = senders
-            .get_mut(&type_oid)
-            .expect("Task 224 sender cache entry disappeared");
-        unsafe { pg_sys::SendFunctionCall(&mut info.send_flinfo, datum) }
-    });
+    let sent = cached_binary_send(type_oid, datum);
     let send_ns = duration_ns(started.elapsed());
     let send_buffer = owner_buffer_usage_delta(owner_buffer_usage_snapshot(), buffer_before);
     if sent.is_null() {
@@ -3016,34 +3131,167 @@ fn ec_distann_profile_binary_send(value: AnyElement) -> Vec<u8> {
     }
     let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(sent.cast()) }.to_vec();
     unsafe { pg_sys::pfree(sent.cast()) };
-    ACTIVE_PAYLOAD_SEND_PROFILE.with(|profile| {
-        let mut profile = profile.borrow_mut();
-        let Some(profile) = profile.as_mut() else {
-            return;
-        };
-        profile.send_ns = profile.send_ns.saturating_add(send_ns);
-        profile.buffer.shared_blks_hit = profile
-            .buffer
-            .shared_blks_hit
-            .saturating_add(send_buffer.shared_blks_hit);
-        profile.buffer.shared_blks_read = profile
-            .buffer
-            .shared_blks_read
-            .saturating_add(send_buffer.shared_blks_read);
-        profile.buffer.shared_blk_read_ns = profile
-            .buffer
-            .shared_blk_read_ns
-            .saturating_add(send_buffer.shared_blk_read_ns);
-        profile.projected_values = profile.projected_values.saturating_add(1);
-        profile.external_toast_values = profile
-            .external_toast_values
-            .saturating_add(u64::from(external_toast));
-        profile.stored_bytes = profile.stored_bytes.saturating_add(stored_bytes);
-        profile.logical_bytes = profile.logical_bytes.saturating_add(logical_bytes);
-        profile.binary_send_bytes = profile
-            .binary_send_bytes
-            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+    record_payload_send_profile(
+        send_ns,
+        send_buffer,
+        stored_bytes,
+        logical_bytes,
+        external_toast,
+        bytes.len(),
+    );
+    bytes
+}
+
+/// Encode the PostgreSQL binary-array payload for a null-free `real[]`.
+/// PostgreSQL's array wire format is dimension metadata followed by a
+/// length-prefixed binary representation for every element. `float4send`
+/// emits the in-memory IEEE-754 bits in network order, so this loop is
+/// byte-identical to `array_send` without making one fmgr call per element.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn encode_fast_real_array_parts(
+    dimensions: &[i32],
+    lower_bounds: &[i32],
+    values: &[f32],
+) -> Result<Vec<u8>, String> {
+    if dimensions.len() != lower_bounds.len() {
+        return Err("real[] dimension/lower-bound count mismatch".to_owned());
+    }
+    let expected_items = if dimensions.is_empty() {
+        0
+    } else {
+        dimensions.iter().try_fold(1_usize, |items, dimension| {
+            let dimension = usize::try_from(*dimension)
+                .map_err(|_| "real[] dimension is negative".to_owned())?;
+            items
+                .checked_mul(dimension)
+                .ok_or_else(|| "real[] item count overflows usize".to_owned())
+        })?
+    };
+    if expected_items != values.len() {
+        return Err(format!(
+            "real[] dimension product {expected_items} differs from value count {}",
+            values.len()
+        ));
+    }
+    let capacity = 12_usize
+        .checked_add(
+            dimensions
+                .len()
+                .checked_mul(8)
+                .ok_or_else(|| "real[] dimension metadata length overflows usize".to_owned())?,
+        )
+        .and_then(|bytes| {
+            values
+                .len()
+                .checked_mul(8)
+                .and_then(|tail| bytes.checked_add(tail))
+        })
+        .ok_or_else(|| "real[] binary payload length overflows usize".to_owned())?;
+    let mut output = Vec::with_capacity(capacity);
+    output.extend_from_slice(
+        &i32::try_from(dimensions.len())
+            .map_err(|_| "real[] dimension count exceeds int32".to_owned())?
+            .to_be_bytes(),
+    );
+    output.extend_from_slice(&0_i32.to_be_bytes());
+    output.extend_from_slice(&u32::from(pg_sys::FLOAT4OID).to_be_bytes());
+    for (dimension, lower_bound) in dimensions.iter().zip(lower_bounds) {
+        output.extend_from_slice(&dimension.to_be_bytes());
+        output.extend_from_slice(&lower_bound.to_be_bytes());
+    }
+    for value in values {
+        output.extend_from_slice(&4_i32.to_be_bytes());
+        output.extend_from_slice(&value.to_bits().to_be_bytes());
+    }
+    debug_assert_eq!(output.len(), capacity);
+    Ok(output)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+unsafe fn fast_real_array_binary(datum: pg_sys::Datum) -> Option<Vec<u8>> {
+    let detoasted =
+        unsafe { crate::am::common::detoast::DetoastedVarlena::plain_from_datum(datum) }
+            .unwrap_or_else(|| pgrx::error!("ec_distann Task 224 sender could not detoast real[]"));
+    let array_ptr = detoasted.as_ptr().cast::<pg_sys::ArrayType>();
+    let header = unsafe { &*array_ptr };
+    if header.elemtype != pg_sys::FLOAT4OID {
+        pgrx::error!("ec_distann Task 224 sender received a non-real[] array");
+    }
+    if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
+        return None;
+    }
+    let ndim = usize::try_from(header.ndim)
+        .unwrap_or_else(|_| pgrx::error!("ec_distann Task 224 sender saw negative array ndim"));
+    let dims_ptr = unsafe {
+        array_ptr
+            .cast::<u8>()
+            .add(std::mem::size_of::<pg_sys::ArrayType>())
+            .cast::<i32>()
+    };
+    let lower_bounds_ptr = unsafe { dims_ptr.add(ndim) };
+    let dimensions = unsafe { std::slice::from_raw_parts(dims_ptr, ndim) };
+    let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds_ptr, ndim) };
+    let item_count = usize::try_from(unsafe {
+        pg_sys::ArrayGetNItems(header.ndim, dims_ptr.cast::<core::ffi::c_int>())
+    })
+    .unwrap_or_else(|_| pgrx::error!("ec_distann Task 224 sender saw negative item count"));
+    let data_offset = if header.dataoffset != 0 {
+        usize::try_from(header.dataoffset).unwrap_or_else(|_| {
+            pgrx::error!("ec_distann Task 224 sender saw negative array data offset")
+        })
+    } else {
+        let header_bytes = std::mem::size_of::<pg_sys::ArrayType>().saturating_add(
+            2_usize
+                .saturating_mul(ndim)
+                .saturating_mul(std::mem::size_of::<i32>()),
+        );
+        let alignment =
+            usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit usize");
+        (header_bytes + alignment - 1) & !(alignment - 1)
+    };
+    let values_ptr = unsafe { array_ptr.cast::<u8>().add(data_offset).cast::<f32>() };
+    let values = unsafe { std::slice::from_raw_parts(values_ptr, item_count) };
+    Some(
+        encode_fast_real_array_parts(dimensions, lower_bounds, values)
+            .unwrap_or_else(|error| pgrx::error!("ec_distann Task 224 sender: {error}")),
+    )
+}
+
+/// Task 224 MAT-26 candidate. It is reachable only from feature-only owner
+/// SQL after the coordinator explicitly opts in. Arrays with NULL elements
+/// retain exact semantics through PostgreSQL's generic `array_send` fallback.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_fast_real_array_send(value: AnyElement) -> Vec<u8> {
+    let datum = value.datum();
+    let type_oid = value.oid();
+    if type_oid != pg_sys::FLOAT4ARRAYOID {
+        pgrx::error!("ec_distann Task 224 fast sender requires pg_catalog.real[]");
+    }
+    let stored_bytes = unsafe { pg_sys::toast_datum_size(datum) as u64 };
+    let logical_bytes = unsafe { pg_sys::toast_raw_datum_size(datum) as u64 };
+    let external_toast = unsafe { varlena_is_external_ondisk(datum) };
+    let buffer_before = owner_buffer_usage_snapshot();
+    let started = Instant::now();
+    let bytes = unsafe { fast_real_array_binary(datum) }.unwrap_or_else(|| {
+        let sent = cached_binary_send(type_oid, datum);
+        if sent.is_null() {
+            pgrx::error!("ec_distann Task 224 fallback binary send returned NULL");
+        }
+        let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(sent.cast()) }.to_vec();
+        unsafe { pg_sys::pfree(sent.cast()) };
+        bytes
     });
+    let send_ns = duration_ns(started.elapsed());
+    let send_buffer = owner_buffer_usage_delta(owner_buffer_usage_snapshot(), buffer_before);
+    record_payload_send_profile(
+        send_ns,
+        send_buffer,
+        stored_bytes,
+        logical_bytes,
+        external_toast,
+        bytes.len(),
+    );
     bytes
 }
 
@@ -4916,6 +5164,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 false,
                 None,
                 false,
+                false,
             )
         })
         .map(|batch| batch.rows)
@@ -4960,6 +5209,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     owner_heap_offsets: Vec<i32>,
     use_expanded_locator: bool,
     profile_owner_locality: bool,
+    fast_real_array_send: bool,
 ) -> TableIterator<
     'static,
     (
@@ -5044,6 +5294,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             use_packed_payload,
             owner_heap_tids.as_deref(),
             profile_owner_locality,
+            fast_real_array_send,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -6502,6 +6753,9 @@ impl PhysicalGenerationScan {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     profile_owner_locality:
                         super::options::benchmark_owner_locality_profile(),
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    fast_real_array_send:
+                        super::options::benchmark_fast_real_array_send(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;

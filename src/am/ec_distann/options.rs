@@ -112,6 +112,9 @@ static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting
 static ECDISTANN_BENCHMARK_OWNER_LOCALITY_PROFILE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -556,6 +559,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_fast_real_array_send",
+        c"Task 224 benchmark-only exact real[] binary sender candidate.",
+        c"When enabled, projected real[] payloads use the MAT-26 exact-byte direct serializer. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.gateway_copy_capacity",
         c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
@@ -944,6 +956,15 @@ pub(super) fn benchmark_owner_locality_profile() -> bool {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         return ECDISTANN_BENCHMARK_OWNER_LOCALITY_PROFILE_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
+}
+
+pub(super) fn benchmark_fast_real_array_send() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_FAST_REAL_ARRAY_SEND_GUC.get();
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false
