@@ -1,9 +1,11 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **packet 003 reviewer seq04 DONE; isolated 10k semantic and
-same-generation 100k timing suites authorized; screen pending; MAT-25 retired**
+Status: **packet 003 live screen failed closed; MAT-26 STOP disposition
+review-open; native semantic control over-read carried; MAT-25 retired**
 (updated 2026-08-25). Request
-`reviews/task-224/003-isolated-candidate/request.md`; authorization verdict
+`reviews/task-224/003-isolated-candidate/request.md`; decision record
+`reviews/task-224/003-isolated-candidate/artifacts/screen-decision.md`;
+authorization verdict
 `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-04-reviewer.md`.
 Priority: P2 latency. The
 vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner

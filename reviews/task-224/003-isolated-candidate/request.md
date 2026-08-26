@@ -34,6 +34,11 @@ semantic correctness rows while this request required seven
 (`feedback/2026-08-25-03-reviewer.md`). The semantic gate below now names the
 exact nine-scenario set. Neither suite may run until seq04 accepts it.
 
+Reviewer seq04 returned **DONE** and authorized both suites
+(`feedback/2026-08-25-04-reviewer.md`). The exact detached-SHA live screen has
+now run and failed closed in both suites. The requested disposition is **STOP
+MAT-26 as implemented**, with no packet 004/full-scale matrix.
+
 ## Candidate
 
 The measured 6.967996 ms/scan bucket was PostgreSQL `array_send` serializing a
@@ -237,12 +242,48 @@ volatility/parallel-safety disclosure plus the scalar-send asymmetry bound.
    retention, not end-to-end coordinator accounting, matching the reviewer's
    verified scope.
 
+## Live screen result and requested disposition
+
+Full gate accounting and provenance are in
+`artifacts/screen-decision.md`.
+
+- Both executed fixtures unanimously attested exact release SHA
+  `b834b7fb3715b8fea27d78bbf577c2b47b55d220` with
+  `distann-head-attribution-benchmark,pg18` and no debug override.
+- The isolated semantic suite failed in its native control at
+  `exactly_one_window`: eager/lazy results were identical and correct 10/10,
+  but bounded-read attribution was 8 remote + 4 local = 12 against a bound of
+  10. The candidate semantic step did not run.
+- Timing control A completed on a fresh 100k generation. Its production
+  lazy-10 context was mean 27.7 ms, p95 30.9 ms, p99 32.8 ms, recall 0.9285.
+- The candidate reused the same generation and produced byte-identical eager
+  predictions, but its first latency arm reported zero `owner_projected_values`,
+  zero `owner_binary_send_bytes`, and zero `owner_fast_real_array_values`.
+  The preregistered activation assertion stopped the step before candidate
+  lazy-10, control B, or profiled control ran.
+- The usefulness/noise/tail/attribution equations are therefore not
+  computable. This is itself a fail-closed outcome, not permission for a
+  replacement run. The raw candidate eager 26.3 ms context has no decision
+  weight because activation was zero and the required control envelope never
+  completed.
+
+The preregistration requires every semantic, activation, usefulness, tail, and
+attribution gate to pass and otherwise STOPs Task 224 after this screen.
+Multiple gates failed independently. Production remains unchanged; the exact
+sender stays feature-only/default-off pending the reviewer's ruling on whether
+diagnostic code should be retained or removed before merge. The native-control
+12/10 over-read is carried separately for reviewer classification and cannot
+rescue MAT-26.
+
 ## Review questions
 
-1. Is the exact-byte sender implementation safe and semantically complete for
-   the registered `real[]` projection boundary?
-2. Does the explicit coordinator-to-owner flag keep the production path and
-   the A/B isolation honest?
-3. Is the preregistered 5% usefulness gate appropriate, or should it be amended
-   before the 100k run?
-4. May the live same-generation 100k screen proceed at this HEAD?
+1. Does the evidence support the preregistered STOP, with no packet 004 or
+   replacement run?
+2. Is the raw eager candidate context correctly barred from any latency-win
+   claim because activation and the control envelope are missing?
+3. Should the feature-only candidate/instrumentation remain as diagnostic code
+   or be removed before merge?
+4. Does the native semantic control's 12/10 bounded-read failure require a
+   separate follow-up task?
+5. With no Task 224 finalist, is Task 225's conditional entry unsatisfied so
+   the campaign should proceed to the mandatory Task 229 storage prototype?

@@ -7,9 +7,9 @@
 - Task/packet: `task-224/003-isolated-candidate`
 - Host/lane: Intel local, PG18, `distann-head-attribution-benchmark`
 - Candidate: MAT-26 exact `real[]` binary sender, feature-only and default-off
-- Measurement status: not yet run; reviewers seq01 through seq03 returned NOT
-  DONE; the seq03 semantic-gate correction requires rereview before either
-  suite may run
+- Measurement status: live screen run after reviewer seq04 authorization;
+  semantic control and timing candidate both failed closed; STOP disposition
+  is review-open
 
 ## Preregistered suite
 
@@ -188,6 +188,57 @@ the required attribution build emits nine correctness rows, not the previously
 preregistered seven. The semantic gate above is the pre-measurement correction:
 step exit plus the complete nine-scenario set, exactly once per step.
 
-Live `suite-manifest.json`, `results.jsonl`, recall/latency/storage/build/DML
-logs, exact generation identity, and the A/B decision will be added after
-outside review authorizes the run.
+Reviewer seq04 (`feedback/2026-08-25-04-reviewer.md`) accepted the correction
+and authorized both suites with no gate amendment. Both were then invoked from
+the clean detached `b834b7fb...` checkout, so the CWD-derived runner SHA and the
+compiled extension/CLI SHA agree.
+
+## Live screen artifacts and result
+
+- Decision record: `screen-decision.md`; full provenance, all gate terms, raw
+  context values, unavailable terms, and STOP disposition
+- CLI build log: `release-build-cli-b834b7fb.log`; release build pass; SHA-256
+  `03e668c263f03128de4febf15a5ecba4ea967291f147dda1d50ac3941a1e475d`
+- Extension install log: `release-install-extension-b834b7fb.log`; PG18
+  release attribution install pass; SHA-256
+  `94212eb7c36b0626cfd72fd428bd050c2081ed2475e01cad0becbeb7590e733e`
+- Semantic suite log: `semantic-run.log`; exit 1 at native-control bounded-read
+  failure; SHA-256
+  `d406fbcaccc06f42801a96b7448926caea2021f2b4a98197286d7dbd59b7c2af`
+- Semantic suite tree: `semantic-run/`; fresh one-index-per-table 10k control
+  fixture, runner SHA `b834b7fb...`; control failed, candidate pending; no
+  `results.jsonl` was emitted
+- Timing suite log: `run.log`; exit 1 at candidate activation failure; SHA-256
+  `5931d0fe289eefed7fe8d0725a975668d8d60e1555592a96780736e94a7d6070`
+- Timing suite tree: `run/`; fresh one-index-per-table 100k control followed by
+  exact fixture reuse; control A succeeded, candidate failed, control B and
+  profiled control pending; no `results.jsonl` was emitted
+
+The 10k native semantic control failed `exactly_one_window` with correct and
+identical 10/10 results but `remote_requested=8`, `local_consumed=4`, and
+`payload_reads=12/10`. The 100k candidate passed exact-SHA reuse and emitted a
+byte-identical eager prediction file, but its executed latency arm reported
+zero projected values, zero binary-send bytes, and zero fast-array values. The
+registered activation gate stopped it before candidate lazy-10. Consequently
+`C`, `N`, the usefulness and tail comparisons, `R`, and `D_attr` are not
+computable and fail closed; no post-hoc rerun was attempted.
+
+Corpus provenance:
+
+- staged 10k manifest SHA-256
+  `cb3c68a3090ab4ff767f4e36448e5d90a95ae6416b50265a991d96184d00a561`;
+  corpus/query SHA-256 `c67c5810...35e75` / `a2c191bb...04ae8`
+- staged 100k manifest SHA-256
+  `a0bc0522299fc8b331bc63e22b141b406f87f9894109d985a60f68fb4148c574`;
+  corpus/query SHA-256 `07275cfd...3a95` / `a7cbec6f...1782`
+
+All live-run files are enumerated with byte hashes in
+`live-artifact-sha256.txt`; ledger SHA-256
+`0506b59400c0b8f153ad3bfab5102a627a2695458ba8999479d2d95f287d85b1`.
+Temporary cluster directories were stopped by the harness and are removed
+after this record was captured.
+
+Disposition: **STOP MAT-26 as implemented.** Do not advance to packet 004 or a
+full-scale matrix. Production remains unchanged. Outside review must rule on
+retaining versus removing the feature-only diagnostic candidate and on the
+independent native-control bounded-read failure.
