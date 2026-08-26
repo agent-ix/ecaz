@@ -1,13 +1,13 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **reviewer accepts the MAT-26-only gate; seq-01 evidence blockers
-addressed; packet 002 re-review-open; packet 003 not yet authorized** (updated
-2026-08-25). Priority: P2 latency. The vector-bearing binary-send bucket is
-6.967996 ms/scan / 24.709206% summed owner work, while the endpoint critical
-path bounds any serial saving to at most 5.148990 ms / 18.258830%. MAT-25 is
-retired: 6.785 requested TIDs occupy 6.770 blocks and sorting moves 72% of rows
-for essentially no coalescing. Response and evidence:
-`reviews/task-224/002-locality-attribution/`.
+Status: **packet 002 review-closed ACCEPT; MAT-26 packet 003 authorized;
+MAT-25 retired** (updated 2026-08-25). Priority: P2 latency. The
+vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner
+work, while the endpoint critical path bounds any serial saving to at most
+5.148990 ms / 18.258830%. MAT-25 is retired: 6.785 requested TIDs occupy 6.770
+blocks and sorting moves 72% of rows for essentially no coalescing. Final
+verdict:
+`reviews/task-224/002-locality-attribution/feedback/2026-08-25-02-reviewer.md`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-25 and MAT-26.
@@ -43,7 +43,9 @@ block-batched detoast/binary-send work.
   100k without changing production behavior.
 - Pre-register and implement at most one candidate from MAT-25/MAT-26.
 - Preserve request/result rank ordering after any physical reorder.
-- Run a same-generation 100k A/B, then 10k/50k/100k only for a useful result.
+- Run a same-generation 100k A/B with both arms in the same instrumentation
+  state, preferably unprofiled production SQL; never reuse packet 002's
+  profiled warm means as a baseline. Run 10k/50k/100k only for a useful result.
 
 ## Non-goals
 

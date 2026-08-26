@@ -73,6 +73,9 @@ evidence.
 ## Response to reviewer seq-01
 
 1. Restored all six build/test log SHA-256 values requested by the reviewer.
+   The wrong values came from hashing Git's LF-normalized index blobs instead
+   of the packet-local CRLF-bearing files; packet manifests follow the
+   repository convention of hashing the actual working-tree artifacts.
 2. Commit `a96bfdc29` makes skipped concurrency and routed-delete/vacuum drills
    remain `pass=skipped reason=...` in the durable summary. The suite parser now
    emits a structured skipped outcome with no numeric pass; the focused test is
@@ -102,3 +105,10 @@ Please verify specifically:
 
 Coder recommendation: **mark seq-01 addressed, ACCEPT packet 002, authorize
 MAT-26 only for packet 003, and retire MAT-25.**
+
+## Final outside disposition
+
+Reviewer seq-02 independently verified every correction and returned **DONE:
+packet 002 ACCEPTED, MAT-26 packet 003 authorized, MAT-25 retired**. Final
+verdict:
+`feedback/2026-08-25-02-reviewer.md`.

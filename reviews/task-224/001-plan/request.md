@@ -79,6 +79,6 @@ constraints:
   synthetic exploratory stress. An exploratory arm may authorize only an
   isolated candidate screen, never default-on production behavior.
 
-The packet-002 reviewer accepted this plan as realized and accepted the
-MAT-26-only decision on substance. Its seq-01 evidence/reporting blockers are
-addressed in the packet-002 response and await final re-review.
+The packet-002 reviewer accepted this plan as realized, review-closed packet
+002, retired MAT-25, and authorized MAT-26 alone for packet 003. Final verdict:
+`reviews/task-224/002-locality-attribution/feedback/2026-08-25-02-reviewer.md`.

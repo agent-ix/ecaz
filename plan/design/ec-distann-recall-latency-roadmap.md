@@ -126,7 +126,7 @@ validity requirements.
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
 | 223 | Direct owner tuple materialization | **complete — review-closed ACCEPT; STOP** (2026-08-25) | the reviewer accepted the 0.514999 ms / 4.439647% whole-bucket dominance proof, retired substage instrumentation as decision-obviated, and authorized no direct candidate |
-| 224 | Owner payload heap locality | **reviewer accepts MAT-26-only gate; seq-01 blockers addressed; re-review-open** | vector send is 6.967996 ms/scan / 24.709206% summed work, serial saving <=5.148990 ms / 18.258830%; MAT-25 has ~1 TID/block and no coalescing premise; packet 003 awaits final verdict |
+| 224 | Owner payload heap locality | **packet 002 review-closed ACCEPT; MAT-26 packet 003 authorized; MAT-25 retired** | vector send is 6.967996 ms/scan / 24.709206% summed work, serial saving <=5.148990 ms / 18.258830%; MAT-25 has ~1 TID/block and no coalescing premise |
 | 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 | 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
@@ -154,10 +154,11 @@ attribution now finds a real wide-value ceiling: vector-bearing binary send is
 6.967996 ms/scan, or 24.709206% summed owner work, while the endpoint critical
 path limits any serial saving to at most 5.148990 ms / 18.258830% of its
 28.20 ms profiled warm mean. MAT-25 has essentially one TID per heap block and
-no coalescing premise. The reviewer accepts MAT-26 as the only candidate; its
-seq-01 evidence blockers are addressed and final re-review is pending before an
-isolated 100k screen. Task 225 remains conditional on a separately measured
-finalist-stability and hideable-RTT premise.
+no coalescing premise. Packet 002 is review-closed ACCEPT, MAT-26 alone is
+authorized for an isolated same-generation 100k screen, and packet 002's
+profiled warm means are barred as candidate baselines. Task 225 remains
+conditional on a separately measured finalist-stability and hideable-RTT
+premise.
 
 The operator-selected storage sequence remains mandatory and unstacked:
 
@@ -357,8 +358,8 @@ remain controls rather than new candidates.
 | MAT-22 | Return row-tier locator with expanded candidates | **rejected — Task 221 review-closed STOP (2026-08-10)**: the lookup saving (0.311 ms/scan) was smaller than the added expand/wire work; end-to-end +1.2–1.6% at 100k with byte-identical predictions; a revisit must carry tombstone state in the locator payload (reviewer P3) |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
-| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **reviewer concurs no-advance in Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
-| MAT-26 | Batch detoast/binary-send work by physical block | **reviewer concurs GO; seq-01 blockers addressed, final re-review pending**: vector send is 6.967996 ms/scan / 24.709206% summed work, with serial saving <=5.148990 ms / 18.258830%; only packet-003 screen may follow |
+| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **review-closed retired by Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
+| MAT-26 | Batch detoast/binary-send work by physical block | **review-closed GO; Task 224 packet 003 authorized**: vector send is 6.967996 ms/scan / 24.709206% summed work, with serial saving <=5.148990 ms / 18.258830%; only an isolated same-generation screen may follow |
 | MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
