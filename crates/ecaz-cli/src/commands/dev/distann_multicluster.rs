@@ -188,6 +188,20 @@ pub struct LocalMultinodePg18Args {
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
     pub distann_stage_counters: bool,
+    /// Task 224 owner heap/TOAST locality attribution projection. Suite steps
+    /// reuse one fixture to run all four registered shapes.
+    #[arg(
+        long,
+        value_parser = ["id-only", "narrow-scalar", "vector-bearing", "toasted"]
+    )]
+    pub owner_payload_shape: Option<String>,
+    /// Task 224 packet-003 parity switch. Keep the vector-bearing projection
+    /// while running the production payload SQL in both A/B arms.
+    #[arg(long, default_value_t = false)]
+    pub skip_owner_locality_profile: bool,
+    /// Task 224 MAT-26 feature-only exact real[] binary sender candidate.
+    #[arg(long, default_value_t = false)]
+    pub owner_fast_real_array_send: bool,
     /// Task 184 suite-driven semantic matrix for eager versus ranked-window
     /// materialization. Requires two otherwise-identical benchmark variants
     /// with batch sizes zero and ten.
@@ -341,6 +355,10 @@ pub struct LocalMultinodePg18Args {
     /// bounded concurrency gate is run separately.
     #[arg(long, default_value_t = false)]
     pub skip_concurrency_drill: bool,
+    /// Skip the routed DELETE + VACUUM drill so a read-only benchmark fixture
+    /// can be reused by subsequent suite steps without changing row count.
+    #[arg(long, default_value_t = false)]
+    pub skip_routed_delete_vacuum_drill: bool,
     /// Permit a unanimous non-release extension profile for intentional short
     /// diagnostic fixtures. The default benchmark contract requires release.
     #[arg(long, default_value_t = false)]
@@ -662,6 +680,25 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
+    }
+    if args.owner_payload_shape.is_some()
+        && (!args.physical_benchmark || !args.distann_stage_counters)
+    {
+        bail!("--owner-payload-shape requires --physical-benchmark and --distann-stage-counters");
+    }
+    if args.skip_owner_locality_profile && args.owner_payload_shape.is_none() {
+        bail!("--skip-owner-locality-profile requires --owner-payload-shape");
+    }
+    if args.owner_fast_real_array_send
+        && (args.owner_payload_shape.as_deref() != Some("vector-bearing")
+            || !args.skip_owner_locality_profile)
+    {
+        bail!(
+            "--owner-fast-real-array-send requires --owner-payload-shape vector-bearing and --skip-owner-locality-profile"
+        );
+    }
+    if args.skip_routed_delete_vacuum_drill && !args.physical_benchmark {
+        bail!("--skip-routed-delete-vacuum-drill requires --physical-benchmark");
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
@@ -1947,7 +1984,8 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         args.dim
     };
-    let correctness_column = if args.materialization_correctness {
+    let owner_locality_fixture = args.owner_payload_shape.is_some();
+    let correctness_column = if args.materialization_correctness || owner_locality_fixture {
         ", payload_note text"
     } else {
         ""
@@ -2015,12 +2053,16 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             rows = args.rows,
         )
     };
-    let correctness_fixture = if coordinator && args.materialization_correctness {
+    let correctness_fixture = if coordinator
+        && (args.materialization_correctness || owner_locality_fixture)
+    {
         // Keep the benchmark/query vector non-null. A correctness-only payload
         // column provides both genuine NULL datums and forced, uncompressed
-        // out-of-line varlena datums in the immutable row tier without changing
-        // ordinary fixtures. EXTERNAL + >12 KiB cannot remain inline on an 8 KiB
-        // heap page; the DO block asserts every premise before index capture.
+        // out-of-line varlena datums in the immutable row tier. Task 224 uses
+        // the same fixture for all four projection shapes so the toasted arm
+        // can reuse the generation built by the id-only arm. EXTERNAL + >12
+        // KiB cannot remain inline on an 8 KiB heap page; the DO block asserts
+        // every premise before index capture.
         "ALTER TABLE dm ALTER COLUMN payload_note SET STORAGE EXTERNAL;
          UPDATE dm
             SET payload_note = CASE WHEN id % 2 = 0 THEN NULL
@@ -2306,6 +2348,24 @@ fn append_payload_projection_guc(args: &mut Vec<String>, arm: &str, enabled: boo
         args.extend([
             "--session-guc".into(),
             "ec_distann.benchmark_payload_projection=off".into(),
+        ]);
+    }
+}
+
+fn append_owner_payload_locality_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.benchmark_owner_locality_profile=on".into(),
+        ]);
+    }
+}
+
+fn append_owner_fast_real_array_send_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.benchmark_fast_real_array_send=on".into(),
         ]);
     }
 }
@@ -7610,6 +7670,11 @@ async fn run_physical_benchmarks(
                 append_packed_payload_guc(&mut recall_args, arm, packed_payload);
                 append_expanded_locator_guc(&mut recall_args, arm, expanded_locator);
                 append_payload_projection_guc(&mut recall_args, arm, payload_projection);
+                append_owner_fast_real_array_send_guc(
+                    &mut recall_args,
+                    arm,
+                    args.owner_fast_real_array_send,
+                );
                 append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
                 append_sharded_head_guc(
                     &mut recall_args,
@@ -8059,7 +8124,11 @@ async fn run_physical_benchmarks(
             ));
         }
 
-        let latency_log = log_dir.join(format!("{arm}-{variant}-latency.log"));
+        let payload_shape_arg = (arm == "physical")
+            .then_some(args.owner_payload_shape.as_deref())
+            .flatten();
+        let payload_shape = payload_shape_arg.unwrap_or("default").replace('-', "_");
+        let latency_log = log_dir.join(format!("{arm}-{variant}-{payload_shape}-latency.log"));
         let mut latency_args = common.clone();
         latency_args.extend([
             "bench".into(),
@@ -8104,6 +8173,12 @@ async fn run_physical_benchmarks(
             for guc in &args.bench_session_gucs {
                 latency_args.extend(["--session-guc".into(), guc.clone()]);
             }
+        }
+        if let Some(payload_shape_arg) = payload_shape_arg {
+            latency_args.extend([
+                "--distann-payload-shape".into(),
+                payload_shape_arg.to_owned(),
+            ]);
         }
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
@@ -8154,6 +8229,16 @@ async fn run_physical_benchmarks(
         append_packed_payload_guc(&mut latency_args, arm, packed_payload);
         append_expanded_locator_guc(&mut latency_args, arm, expanded_locator);
         append_payload_projection_guc(&mut latency_args, arm, payload_projection);
+        append_owner_payload_locality_guc(
+            &mut latency_args,
+            arm,
+            args.owner_payload_shape.is_some() && !args.skip_owner_locality_profile,
+        );
+        append_owner_fast_real_array_send_guc(
+            &mut latency_args,
+            arm,
+            args.owner_fast_real_array_send,
+        );
         append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
         append_sharded_head_guc(
             &mut latency_args,
@@ -8214,7 +8299,7 @@ async fn run_physical_benchmarks(
                         eyre!("crown stats omitted fused_first_round_requested_ids")
                     })?;
                 lines.push(format!(
-                    "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
+                    "physical_benchmark_crown_stats scale={scale} variant={variant} payload_shape={payload_shape} arm={arm} {stats}"
                 ));
             }
             validate_crown_activation(
@@ -8268,7 +8353,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} payload_shape={payload_shape} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -8294,17 +8379,17 @@ async fn run_physical_benchmarks(
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
             let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
-            if stage_rows.len() != 37 * expected_counter_groups {
+            if stage_rows.len() != 40 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann stage rows ({} concurrency groups), got {}",
-                    37 * expected_counter_groups,
+                    40 * expected_counter_groups,
                     expected_counter_groups,
                     stage_rows.len()
                 );
             }
             // Reconcile the first concurrency group; all groups are retained
             // in the packet output below for the latency sweep evidence.
-            let attribution_stage_rows = &stage_rows[..37];
+            let attribution_stage_rows = &stage_rows[..40];
             let remote_expand = attribution_stage_mean(attribution_stage_rows, "remote_expand")?;
             let remote_components = [
                 "traversal_connection_ready",
@@ -8343,7 +8428,7 @@ async fn run_physical_benchmarks(
                 (traversal_components - traversal_total).abs() / traversal_total.max(f64::EPSILON);
             let reconciliation_pass = remote_error <= 0.05 && traversal_error <= 0.10;
             lines.push(format!(
-                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} traversal_replica={traversal_replica} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
+                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} payload_shape={payload_shape} traversal_replica={traversal_replica} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}",
             ));
             if !reconciliation_pass {
                 bail!(
@@ -8352,30 +8437,73 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} payload_shape={payload_shape} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}",
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 33 server-side work metrics
+            // The extension exposes 53 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 34 * expected_counter_groups {
+            if work_rows.len() != 54 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    34 * expected_counter_groups,
+                    54 * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
             }
+            // Task 224 packet 003 retained this diagnostic gate even though it
+            // is structurally unobservable today: the accepted fast-sender
+            // argv disables locality profiling, which leaves
+            // `owner_requested_tids` at zero and makes the coordinator suppress
+            // all five outcome metrics below. Zero is therefore not evidence of
+            // sender inactivity. See reviewer feedback seq05 in that packet.
+            if args.owner_fast_real_array_send {
+                for metric in [
+                    "owner_projected_values",
+                    "owner_binary_send_bytes",
+                    "owner_fast_real_array_values",
+                ] {
+                    let value = work_rows
+                        .iter()
+                        .find(|work| benchmark_log_value(work, "metric").as_deref() == Some(metric))
+                        .and_then(|work| benchmark_log_value(work, "value"))
+                        .ok_or_else(|| {
+                            eyre!("Task 224 MAT-26 activation omitted {metric} telemetry")
+                        })?
+                        .parse::<u64>()
+                        .wrap_err_with(|| format!("decoding Task 224 MAT-26 {metric} telemetry"))?;
+                    if value == 0 {
+                        bail!("Task 224 MAT-26 candidate produced zero {metric}");
+                    }
+                }
+                for metric in [
+                    "owner_fast_real_array_fallback_values",
+                    "owner_fast_real_array_ineligible_requests",
+                ] {
+                    let value = work_rows
+                        .iter()
+                        .find(|work| benchmark_log_value(work, "metric").as_deref() == Some(metric))
+                        .and_then(|work| benchmark_log_value(work, "value"))
+                        .ok_or_else(|| {
+                            eyre!("Task 224 MAT-26 activation omitted {metric} telemetry")
+                        })?
+                        .parse::<u64>()
+                        .wrap_err_with(|| format!("decoding Task 224 MAT-26 {metric} telemetry"))?;
+                    if value != 0 {
+                        bail!("Task 224 MAT-26 candidate produced nonzero {metric}={value}");
+                    }
+                }
+            }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} payload_shape={payload_shape} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}",
                 ));
             }
         }
@@ -9040,6 +9168,13 @@ async fn run_physical_benchmarks(
             "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=candidate_default_quality_gate_failed"
         ));
     } else if args.materialization_correctness {
+        coordinator
+            .batch_execute(if args.owner_fast_real_array_send {
+                "SET ec_distann.benchmark_fast_real_array_send = on"
+            } else {
+                "SET ec_distann.benchmark_fast_real_array_send = off"
+            })
+            .await?;
         lines.extend(
             run_materialization_correctness(
                 coordinator,
@@ -9055,6 +9190,10 @@ async fn run_physical_benchmarks(
         );
     }
     for line in &mut lines {
+        line.push_str(&task224_arm_provenance(
+            args.owner_payload_shape.is_some() && !args.skip_owner_locality_profile,
+            args.owner_fast_real_array_send,
+        ));
         line.push_str(&format!(
             " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
             args.query_offset
@@ -9071,6 +9210,15 @@ fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
         || args.top_k != 10
         || args.head_index_cap != 4096
         || args.candidate_heap_limit.unwrap_or(32) != 32
+}
+
+fn task224_arm_provenance(
+    owner_locality_profile: bool,
+    owner_fast_real_array_send: bool,
+) -> String {
+    format!(
+        " owner_locality_profile={owner_locality_profile} owner_fast_real_array_send={owner_fast_real_array_send}"
+    )
 }
 
 fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
@@ -10497,9 +10645,6 @@ async fn drive_physical_fixture(
         .collect::<Vec<_>>()
         .join(";");
     let physical_concurrency_ok = if args.skip_concurrency_drill {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query pass=skipped reason=skip_concurrency_drill"
-        );
         true
     } else {
         physical_concurrency_drill(
@@ -10518,26 +10663,43 @@ async fn drive_physical_fixture(
     // vec_ids discovered in other nodes' neighbour lists. It is not the
     // number of forward edges selected by inserted nodes; the controlled
     // two-writer target assertion below is the separate backlink invariant.
+    let physical_concurrency_outcome = if args.skip_concurrency_drill {
+        "pass=skipped reason=skip_concurrency_drill".to_owned()
+    } else {
+        format!("pass={physical_concurrency_ok}")
+    };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
+        "[distann-multicluster] physical_concurrent_insert_query {physical_concurrency_outcome}"
     );
     if !physical_concurrency_ok {
         bail!("physical TC-043 concurrent insert/query drill failed");
     }
-    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        nodes,
-        args,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
+    let physical_delete_vacuum_ok = if args.skip_routed_delete_vacuum_drill {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_routed_delete_vacuum pass=skipped reason=skip_routed_delete_vacuum_drill"
+        );
+        true
+    } else {
+        physical_routed_delete_vacuum_drill(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            nodes,
+            args,
+            &fixture_roster,
+            &concurrency_table,
+            &fingerprint,
+        )
+        .await?
+    };
     if !physical_delete_vacuum_ok {
         bail!("physical routed DELETE + VACUUM drill failed");
     }
+    let physical_delete_vacuum_outcome = if args.skip_routed_delete_vacuum_drill {
+        "pass=skipped reason=skip_routed_delete_vacuum_drill".to_owned()
+    } else {
+        format!("pass={physical_delete_vacuum_ok}")
+    };
     if args.drop_extension_cleanup_drill {
         let unpublished_build_id = "72727272-7272-4272-8272-727272727272";
         coordinator
@@ -10604,10 +10766,10 @@ async fn drive_physical_fixture(
         "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
     ));
     summary.push_str(&format!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
+        "[distann-multicluster] physical_concurrent_insert_query {physical_concurrency_outcome}\n"
     ));
     summary.push_str(&format!(
-        "[distann-multicluster] physical_routed_delete_vacuum pass={physical_delete_vacuum_ok}\n"
+        "[distann-multicluster] physical_routed_delete_vacuum {physical_delete_vacuum_outcome}\n"
     ));
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
@@ -14362,6 +14524,18 @@ mod tests {
         let mut single_args = Vec::new();
         append_materialization_benchmark_guc(&mut single_args, "single", 0);
         assert!(single_args.is_empty());
+    }
+
+    #[test]
+    fn task224_arm_provenance_pins_profile_and_fast_sender_state() {
+        assert_eq!(
+            task224_arm_provenance(false, true),
+            " owner_locality_profile=false owner_fast_real_array_send=true"
+        );
+        assert_eq!(
+            task224_arm_provenance(true, false),
+            " owner_locality_profile=true owner_fast_real_array_send=false"
+        );
     }
 
     #[test]

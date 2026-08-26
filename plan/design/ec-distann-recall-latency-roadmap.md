@@ -126,12 +126,12 @@ validity requirements.
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
 | 223 | Direct owner tuple materialization | **complete — review-closed ACCEPT; STOP** (2026-08-25) | the reviewer accepted the 0.514999 ms / 4.439647% whole-bucket dominance proof, retired substage instrumentation as decision-obviated, and authorized no direct candidate |
-| 224 | Owner payload heap locality | **ready — Task 223 block released** | apply Task 224's own 1 ms / 5% entry gate to the heap/TOAST subset of the accepted whole-bucket ceiling before adding counters or a candidate |
-| 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
+| 224 | Owner payload heap locality | **complete — packet 003 review-closed ACCEPT, STOP; MAT-26 unmeasured/no finalist; MAT-25 retired** | activation gate structurally unobservable; raw 41% eager gap is unattributable across both position/warmth and the sender flag; feature-only diagnostics retained; native 12/10 bounded-read divergence moved to Task 239; final verdict `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`; no packet 004 |
+| 225 | Finalist materialization overlap | proposed — independently conditional | Task 224's no-finalist STOP neither satisfies nor rejects its finalist-stability/hideable-RTT premise |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 | 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
 | 228 | RTT/BatANN trigger | proposed — measurement-only after 222–237 | post-layout/post-hardening production-TLS RTT, concurrency, framing, pool, and backpressure curve; reauthor BatANN planning only if ADR-085 D4's >=50% transport-share trigger is met |
-| 229 | Covering scalar payload sidecar | proposed — mandatory prototype | owner-local generation sidecar for declared common scalar projections; exact fallback, Task 167 lifecycle, and full 10k/50k/100k evidence required |
+| 229 | Covering scalar payload sidecar | proposed — mandatory prototype; Task 239 blocks semantic closeout | owner-local generation sidecar for declared common scalar projections; exact fallback, Task 167 lifecycle, and full 10k/50k/100k evidence required |
 | 230 | Hot/cold vertical row tier | proposed — mandatory after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; exact reconstruction and full retrieval/storage/DML matrix |
 | 231 | Fixed-stride graph/vector blocks | proposed — mandatory after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
 | 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
@@ -141,6 +141,7 @@ validity requirements.
 | 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
 | 237 | Protocol errors and EXPLAIN | proposed — blocked on 234; 236 complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 | 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
+| 239 | Bounded-read overfetch | operator-confirmed proposed — immediate P1 campaign blocker | reproduce native 12/10 versus accepted 10/10, diagnose regression vs fixture/bound sensitivity, fix or justify exact invariant, include recall, and gate Task 229 semantic closeout |
 
 ## Post-222 execution program (2026-08-25)
 
@@ -149,9 +150,26 @@ SQL fell from 7.683 ms/scan to 0.515 ms/scan and owner endpoint work fell from
 7.978 to 0.818 ms/scan, with byte-identical predictions and storage. Task 223's
 reviewer accepted that the whole addressable payload-SQL bucket is only
 4.439647% of the matched 11.60 ms warm mean and closed MAT-41 STOP before
-instrumentation or a candidate. Task 224 is now released and begins as its own
-ceiling/attribution closeout, not an assumed implementation. Task 225 remains
-conditional on a separately measured finalist-stability and hideable-RTT
+instrumentation or a candidate. Task 224's exact-generation four-shape
+attribution now finds a real wide-value ceiling: vector-bearing binary send is
+6.967996 ms/scan, or 24.709206% summed owner work, while the endpoint critical
+path limits any serial saving to at most 5.148990 ms / 18.258830% of its
+28.20 ms profiled warm mean. MAT-25 has essentially one TID per heap block and
+no coalescing premise. Packet 002 is review-closed ACCEPT; MAT-26's feature-only
+exact `real[]` sender screen ran at exact detached build `b834b7fb3` and failed
+closed. The native semantic control returned correct identity but exceeded its
+bounded-read gate at 12/10. The same-generation timing candidate then stopped
+at a structurally unsatisfiable activation assertion: the accepted unprofiled
+configuration suppresses all five outcome counters, so their zero values do
+not establish whether the sender ran. MAT-26's latency effect is unmeasured,
+the candidate axis is void, and Task 224 STOPs with no finalist. Its raw eager
+44.6→26.3 ms movement is a 41% unattributable gap: the arms differ in both
+fixture position/warmth and the sender flag whose effect is unobservable. It is
+neither a candidate win nor evidence of sender inactivity. No packet 004 or
+replacement run is proposed; the feature-only/default-off diagnostics remain.
+Task 239 carries the independent
+12/10 divergence and blocks Task 229 semantic closeout. Task 225 remains
+conditional on its own separately measured finalist-stability and hideable-RTT
 premise.
 
 The operator-selected storage sequence remains mandatory and unstacked:
@@ -161,6 +179,11 @@ The operator-selected storage sequence remains mandatory and unstacked:
 3. Task 231 — fixed-stride dense-ordinal graph/vector node extents;
 4. Task 232 — packed per-attnum columnar immutable row tier; and
 5. Task 233 — fixed-stride graph/vector plus non-vector packed payload hybrid.
+
+Every Task 229--233 A/B must compare arms at matched fixture position or use a
+preregistered counterbalanced envelope that separates position/warmth from the
+candidate. A fresh-build control may never be the sole comparator for a reused
+candidate.
 
 Every layout gets its own 10k/50k/100k recall, latency, storage, construction,
 and DML evidence even if an earlier prototype STOPs or wins. The hybrid reruns
@@ -352,8 +375,8 @@ remain controls rather than new candidates.
 | MAT-22 | Return row-tier locator with expanded candidates | **rejected — Task 221 review-closed STOP (2026-08-10)**: the lookup saving (0.311 ms/scan) was smaller than the added expand/wire work; end-to-end +1.2–1.6% at 100k with byte-identical predictions; a revisit must carry tombstone state in the locator payload (reviewer P3) |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
-| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional Task 224 after refreshed heap-locality counters |
-| MAT-26 | Batch detoast/binary-send work by physical block | conditional Task 224 after refreshed varlena/detoast attribution |
+| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **review-closed retired by Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
+| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 review-closed ACCEPT, STOP; latency unmeasured, candidate axis void, no finalist**: exact release provenance passed, but native semantics exceeded 12/10 bounded reads and the timing activation gate was structurally unobservable; raw 41% eager gap is unattributable across both fixture position/warmth and the sender flag; feature-only diagnostics retained; final verdict `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-07-reviewer.md`; no packet 004 |
 | MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |

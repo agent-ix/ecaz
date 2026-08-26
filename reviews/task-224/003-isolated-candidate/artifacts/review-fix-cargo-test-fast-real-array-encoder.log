@@ -1,0 +1,90 @@
+Script started on 2026-08-25 20:54:03-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality)
+   Compiling rustls-webpki v0.103.15
+   Compiling rustls v0.23.43
+   Compiling tokio-rustls v0.26.4
+   Compiling tokio-postgres-rustls v0.14.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 42s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-23f5d273892c5c2d)
+
+running 2 tests
+test am::ec_distann::generation_read::cache_tests::fast_real_array_encoder_matches_postgres_wire_shape ... ok
+test am::ec_distann::generation_read::cache_tests::fast_real_array_encoder_preserves_dimensions_and_lower_bounds ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2598 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (/home/peter/.cargo-target/debug/deps/approx_score_study-496af0e59ae7852a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (/home/peter/.cargo-target/debug/deps/pgrx_embed_ecaz-31c56538b6edfdbc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (/home/peter/.cargo-target/debug/deps/simd_bench-1fd972104c657179)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (/home/peter/.cargo-target/debug/deps/kani_item_pointer-b78f7d3551e3b402)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-368137646cf0c0b0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (/home/peter/.cargo-target/debug/deps/proptest_page-b498d83ebabffc65)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (/home/peter/.cargo-target/debug/deps/proptest_quant-6a6cdfcc33ad7e1f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (/home/peter/.cargo-target/debug/deps/recall_integration-0b181df55daa9d20)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (/home/peter/.cargo-target/debug/deps/simd_diff-5e15f2db71749e69)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (/home/peter/.cargo-target/debug/deps/size_of_assertions-0616780a3053cde6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-e24637c4d624b2b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (/home/peter/.cargo-target/debug/deps/wal_policy-5f7f40805c3325d0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-25 20:59:04-07:00 [COMMAND_EXIT_CODE="0"]

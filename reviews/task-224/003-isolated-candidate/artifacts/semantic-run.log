@@ -1,0 +1,12 @@
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+[suite:task224-mat26-semantics-10k] mat26-semantic-control-10k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/control --run-dir /home/peter/.ecaz/clusters/task224-mat26-semantic-control-10k --log-file /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/control/distann-local-multinode.log --nodes 3 --physical-benchmark --distann-stage-counters --owner-payload-shape vector-bearing --skip-owner-locality-profile --skip-recall --skip-single-control --skip-concurrency-drill --skip-routed-delete-vacuum-drill --materialization-correctness --benchmark-iterations 1 --benchmark-warmup-iterations 0 --sample-backend-memory --memory-sample-interval-ms 25 --base-port 43950 --graph-degree 32 --build-shards 1 --head-index-cap 4096 --beam-width 4 --candidate-heap-limit 32 --hop-rounds 100 --benchmark-seed-variant eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on --benchmark-seed-variant lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_10k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+[suite:task224-mat26-semantics-10k] wrote /home/peter/dev/ecaz/.worktrees/task224-owner-payload-locality/reviews/task-224/003-isolated-candidate/artifacts/semantic-run/suite-manifest.json
+
+   0: [91msuite step "mat26-semantic-control-10k" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1405[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,0 +1,25 @@
+OK   task224-mat26-fast-real-array-100k.json 47234e2880271108685c49114c92ab12b2d792cea9542153a622e668a25abff2
+OK   task224-mat26-semantics-10k.json d3a57b8b6d93bdf8d41bf5c9b31f9be6d5e6204b9cfb8d7a8ffd8cd714e09cb2
+SKIP no such artifact file: crates/ecaz-cli/suites/task224-mat26-fast-real-array-100k.json 47234e2880271108685c49114c92ab12b2d792cea9542153a622e668a25abff2
+SKIP no such artifact file: crates/ecaz-cli/suites/task224-mat26-semantics-10k.json d3a57b8b6d93bdf8d41bf5c9b31f9be6d5e6204b9cfb8d7a8ffd8cd714e09cb2
+OK   reviews/task-224/003-isolated-candidate/artifacts/cargo-check-pg18.log f57f4cf0ea1682b4706580010cacd14867318ef8f47d69874a04776d07bf12a3
+OK   reviews/task-224/003-isolated-candidate/artifacts/cargo-check-pg18-feature.log 79a9a3cb9119fe91b2751fcf4cc67303fdb064428c54efcbd09fabbf193bc34d
+OK   reviews/task-224/003-isolated-candidate/artifacts/cargo-test-ecaz-cli-task224.log 33bfc6452575ad5c1267884bf8b29283a552dcdc9f7be47833d8fa387c34ad4a
+OK   reviews/task-224/003-isolated-candidate/artifacts/cargo-pgrx-test-pg18-fast-real-array.log 10a8249861e185a464d73a2db1faa496a2a88d93ac44df5150bb7977f71f27d8
+OK   reviews/task-224/003-isolated-candidate/artifacts/cargo-fmt-check.log a66e66e8bae5d635b7fbd2e4de0042d40fa8deff1ff30bd3ab5478120d08bec2
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-check-pg18.log f7bdf356cc883cc8aaf791489863cffde263e15ce8b326e5cbde03b9d626ca5a
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-check-pg18-feature.log 7fbdbe9dcd82828892bdaf045395777deba132d0da254861d3c38b8ca0588f9d
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-test-ecaz-cli-task224.log 8ae333ce18038ed19f53b5c332ac1f8b7fab73d536d957d9381b093acce01bd4
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-test-fast-real-array-encoder.log ca41b7277d5993d2518aeeb73324c07a61866bfeb391101e7737355318e19679
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-pgrx-test-pg18-fast-real-array.log e0e1b05d84e3f99f7957386a937beba1a2887830bab715cdf3e8bb0c4d5a2fee
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix-cargo-fmt-check.log 722edb903790e637ee7ce8645acb7411b38d46fbeeb8b7d870e7f446b7c4c192
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix2-cargo-check-pg18.log 8f340b3fb841716084ea50d25a83f33012a2624e409d5afcd4c4d7d3ac732ef4
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix2-cargo-check-pg18-feature.log b5aaa44738330514d22eebeca04b3af16d27ab67002d3fb0e27f07847cba47b6
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix2-cargo-test-ecaz-cli-task224.log e55d9ac54cc90f1630bc5f6b111e09bc145853009672debeb23915308d6cebed
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix2-cargo-test-reuse-exclusions.log 946889ea5f04d57b92e095b48243b67e1fc92028cdc5a696f6e723b62c4aa86a
+OK   reviews/task-224/003-isolated-candidate/artifacts/review-fix2-cargo-fmt-check.log 56faf67e0b699d69d624bcc1db0d37c4ee02b06f91ad8e7186ff7fbeb7206930
+OK   reviews/task-224/003-isolated-candidate/artifacts/dry-run/timing.log 2f8ba0db248230193917fdd1c074b5efd21f1c709b6eff92390544eaf2c82127
+OK   reviews/task-224/003-isolated-candidate/artifacts/dry-run/timing/suite-manifest.json 4217a631dfb013d0d50580481896176bbc7ff2f54205a02c32a730c18073338a
+OK   reviews/task-224/003-isolated-candidate/artifacts/dry-run/semantics.log 0d3e76d0c1cbdaf6f85f727697904c52225d6f703dd6b21851c75ed287cf504f
+OK   reviews/task-224/003-isolated-candidate/artifacts/dry-run/semantics/suite-manifest.json 7753af463e7ebf20d54aa89e08226df398864febd4460e977cb332b59bbbb551
+artifact hashes checked: 20

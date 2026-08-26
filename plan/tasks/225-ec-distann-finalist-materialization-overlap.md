@@ -1,6 +1,8 @@
 # Task 225: ec_distann Finalist Materialization Overlap
 
-Status: **proposed, conditional** (2026-08-21). Priority: P2 latency.
+Status: **proposed, conditional on its own measured finalist-stability and
+hideable-RTT premise; Task 224's no-finalist STOP neither satisfies nor rejects
+this entry gate** (updated 2026-08-25). Priority: P2 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-07, MAT-08, MAT-35, and MAT-36.
@@ -67,5 +69,4 @@ piggyback.
 - Task 191 lazy-10 productionization
 - Tasks 222--224
 - Roadmap MAT-07 / MAT-08 / MAT-35 / MAT-36
-
 
