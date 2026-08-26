@@ -2495,12 +2495,8 @@ impl RetainedGenerationScan {
             ));
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        if fast_real_array_send && fast_real_array_columns == 0 {
-            return Err(DistannExpandError::BadInput(
-                "Task 224 fast real[] sender requires at least one projected pg_catalog.real[] column"
-                    .to_owned(),
-            ));
-        }
+        let fast_real_array_ineligible_requests =
+            u64::from(fast_real_array_send && fast_real_array_columns == 0);
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let tid_profile = locality_profile_enabled
             .then(|| owner_tid_profile(&nodes))
@@ -2791,6 +2787,9 @@ impl RetainedGenerationScan {
                 stored_bytes: send_profile.stored_bytes,
                 logical_bytes: send_profile.logical_bytes,
                 binary_send_bytes: send_profile.binary_send_bytes,
+                fast_real_array_values: send_profile.fast_real_array_values,
+                fast_real_array_fallback_values: send_profile.fast_real_array_fallback_values,
+                fast_real_array_ineligible_requests,
             },
         })
     }
@@ -2865,6 +2864,9 @@ struct OwnerMaterializationTelemetry {
     stored_bytes: u64,
     logical_bytes: u64,
     binary_send_bytes: u64,
+    fast_real_array_values: u64,
+    fast_real_array_fallback_values: u64,
+    fast_real_array_ineligible_requests: u64,
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -2976,6 +2978,8 @@ struct PayloadBinarySendProfile {
     stored_bytes: u64,
     logical_bytes: u64,
     binary_send_bytes: u64,
+    fast_real_array_values: u64,
+    fast_real_array_fallback_values: u64,
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -3048,6 +3052,8 @@ fn record_payload_send_profile(
     logical_bytes: u64,
     external_toast: bool,
     binary_send_bytes: usize,
+    fast_real_array: bool,
+    fast_real_array_fallback: bool,
 ) {
     ACTIVE_PAYLOAD_SEND_PROFILE.with(|profile| {
         let mut profile = profile.borrow_mut();
@@ -3076,6 +3082,12 @@ fn record_payload_send_profile(
         profile.binary_send_bytes = profile
             .binary_send_bytes
             .saturating_add(u64::try_from(binary_send_bytes).unwrap_or(u64::MAX));
+        profile.fast_real_array_values = profile
+            .fast_real_array_values
+            .saturating_add(u64::from(fast_real_array));
+        profile.fast_real_array_fallback_values = profile
+            .fast_real_array_fallback_values
+            .saturating_add(u64::from(fast_real_array_fallback));
     });
 }
 
@@ -3138,6 +3150,8 @@ fn ec_distann_profile_binary_send(value: AnyElement) -> Vec<u8> {
         logical_bytes,
         external_toast,
         bytes.len(),
+        false,
+        false,
     );
     bytes
 }
@@ -3217,7 +3231,11 @@ unsafe fn fast_real_array_binary(datum: pg_sys::Datum) -> Option<Vec<u8>> {
     if header.elemtype != pg_sys::FLOAT4OID {
         pgrx::error!("ec_distann Task 224 sender received a non-real[] array");
     }
-    if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
+    // PostgreSQL's array_send sets its flags word from bitmap presence, not
+    // from an accurate scan for NULL elements. Fall back for every bitmap-
+    // bearing array so the bytes remain identical even after a NULL slot was
+    // overwritten with a non-NULL value.
+    if header.dataoffset != 0 {
         return None;
     }
     let ndim = usize::try_from(header.ndim)
@@ -3235,6 +3253,12 @@ unsafe fn fast_real_array_binary(datum: pg_sys::Datum) -> Option<Vec<u8>> {
         pg_sys::ArrayGetNItems(header.ndim, dims_ptr.cast::<core::ffi::c_int>())
     })
     .unwrap_or_else(|_| pgrx::error!("ec_distann Task 224 sender saw negative item count"));
+    if item_count == 0 {
+        return Some(
+            encode_fast_real_array_parts(dimensions, lower_bounds, &[])
+                .unwrap_or_else(|error| pgrx::error!("ec_distann Task 224 sender: {error}")),
+        );
+    }
     let data_offset = if header.dataoffset != 0 {
         usize::try_from(header.dataoffset).unwrap_or_else(|_| {
             pgrx::error!("ec_distann Task 224 sender saw negative array data offset")
@@ -3273,7 +3297,9 @@ fn ec_distann_fast_real_array_send(value: AnyElement) -> Vec<u8> {
     let external_toast = unsafe { varlena_is_external_ondisk(datum) };
     let buffer_before = owner_buffer_usage_snapshot();
     let started = Instant::now();
-    let bytes = unsafe { fast_real_array_binary(datum) }.unwrap_or_else(|| {
+    let fast_bytes = unsafe { fast_real_array_binary(datum) };
+    let fallback = fast_bytes.is_none();
+    let bytes = fast_bytes.unwrap_or_else(|| {
         let sent = cached_binary_send(type_oid, datum);
         if sent.is_null() {
             pgrx::error!("ec_distann Task 224 fallback binary send returned NULL");
@@ -3291,6 +3317,8 @@ fn ec_distann_fast_real_array_send(value: AnyElement) -> Vec<u8> {
         logical_bytes,
         external_toast,
         bytes.len(),
+        !fallback,
+        fallback,
     );
     bytes
 }
@@ -5244,6 +5272,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         name!(owner_stored_bytes, i64),
         name!(owner_logical_bytes, i64),
         name!(owner_binary_send_bytes, i64),
+        name!(owner_fast_real_array_outcomes, Vec<i64>),
     ),
 > {
     let total_started = Instant::now();
@@ -5351,6 +5380,12 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let owner_logical_bytes = i64::try_from(batch.telemetry.logical_bytes).unwrap_or(i64::MAX);
     let owner_binary_send_bytes =
         i64::try_from(batch.telemetry.binary_send_bytes).unwrap_or(i64::MAX);
+    let owner_fast_real_array_values =
+        i64::try_from(batch.telemetry.fast_real_array_values).unwrap_or(i64::MAX);
+    let owner_fast_real_array_fallback_values =
+        i64::try_from(batch.telemetry.fast_real_array_fallback_values).unwrap_or(i64::MAX);
+    let owner_fast_real_array_ineligible_requests =
+        i64::try_from(batch.telemetry.fast_real_array_ineligible_requests).unwrap_or(i64::MAX);
     TableIterator::new(batch.rows.into_iter().map(move |row| {
         (
             row.0,
@@ -5384,6 +5419,11 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             owner_stored_bytes,
             owner_logical_bytes,
             owner_binary_send_bytes,
+            vec![
+                owner_fast_real_array_values,
+                owner_fast_real_array_fallback_values,
+                owner_fast_real_array_ineligible_requests,
+            ],
         )
     }))
 }

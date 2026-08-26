@@ -7,6 +7,12 @@
     ))]
     #[pg_test]
     fn task224_fast_real_array_send_is_byte_identical_to_array_send() {
+        Spi::run(
+            "CREATE TEMP TABLE task224_bitmap_no_null (value real[]);
+             INSERT INTO task224_bitmap_no_null VALUES (ARRAY[1, NULL, 3]::real[]);
+             UPDATE task224_bitmap_no_null SET value[2] = 5::real",
+        )
+        .expect("Task 224 bitmap-without-NULL fixture is created");
         let byte_identical = Spi::get_one::<bool>(
             "SELECT ec_distann_fast_real_array_send('{}'::real[]) = array_send('{}'::real[])
                     AND ec_distann_fast_real_array_send(
@@ -17,7 +23,9 @@
                         ) = array_send('[0:1][7:8]={{1,2},{3,4}}'::real[])
                     AND ec_distann_fast_real_array_send(
                             ARRAY[1::real, NULL::real, 3::real]
-                        ) = array_send(ARRAY[1::real, NULL::real, 3::real])",
+                        ) = array_send(ARRAY[1::real, NULL::real, 3::real])
+                    AND (SELECT ec_distann_fast_real_array_send(value) = array_send(value)
+                           FROM task224_bitmap_no_null)",
         )
         .expect("Task 224 exact-byte SQL probe executes")
         .expect("Task 224 exact-byte SQL probe returns a value");

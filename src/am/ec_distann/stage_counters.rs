@@ -245,10 +245,13 @@ pub(crate) enum DistannMaterializationWork {
     OwnerStoredBytes,
     OwnerLogicalBytes,
     OwnerBinarySendBytes,
+    OwnerFastRealArrayValues,
+    OwnerFastRealArrayFallbackValues,
+    OwnerFastRealArrayIneligibleRequests,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 50] = [
+    pub(crate) const ALL: [Self; 53] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -299,6 +302,9 @@ impl DistannMaterializationWork {
         Self::OwnerStoredBytes,
         Self::OwnerLogicalBytes,
         Self::OwnerBinarySendBytes,
+        Self::OwnerFastRealArrayValues,
+        Self::OwnerFastRealArrayFallbackValues,
+        Self::OwnerFastRealArrayIneligibleRequests,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -353,6 +359,11 @@ impl DistannMaterializationWork {
             Self::OwnerStoredBytes => "owner_stored_bytes",
             Self::OwnerLogicalBytes => "owner_logical_bytes",
             Self::OwnerBinarySendBytes => "owner_binary_send_bytes",
+            Self::OwnerFastRealArrayValues => "owner_fast_real_array_values",
+            Self::OwnerFastRealArrayFallbackValues => "owner_fast_real_array_fallback_values",
+            Self::OwnerFastRealArrayIneligibleRequests => {
+                "owner_fast_real_array_ineligible_requests"
+            }
         }
     }
 
@@ -408,6 +419,9 @@ impl DistannMaterializationWork {
             Self::OwnerStoredBytes => 47,
             Self::OwnerLogicalBytes => 48,
             Self::OwnerBinarySendBytes => 49,
+            Self::OwnerFastRealArrayValues => 50,
+            Self::OwnerFastRealArrayFallbackValues => 51,
+            Self::OwnerFastRealArrayIneligibleRequests => 52,
         }
     }
 }

@@ -1632,7 +1632,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         owner_send_shared_blks_hit, owner_send_shared_blks_read,
         owner_send_shared_blk_read_ns, owner_projected_values,
         owner_external_toast_values, owner_stored_bytes, owner_logical_bytes,
-        owner_binary_send_bytes
+        owner_binary_send_bytes, owner_fast_real_array_outcomes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
@@ -2809,6 +2809,18 @@ pub(crate) fn remote_physical_materialize_batch(
                         super::stage_counters::DistannMaterializationWork::OwnerBinarySendBytes,
                         batch.telemetry.owner_binary_send_bytes,
                     ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayValues,
+                        batch.telemetry.owner_fast_real_array_values,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayFallbackValues,
+                        batch.telemetry.owner_fast_real_array_fallback_values,
+                    ),
+                    (
+                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayIneligibleRequests,
+                        batch.telemetry.owner_fast_real_array_ineligible_requests,
+                    ),
                 ] {
                     super::stage_counters::record_work(
                         metric,
@@ -2917,6 +2929,12 @@ fn decode_physical_materialize_rows(
             let vec_id: i64 = row.try_get(0).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             {
+                let fast_real_array_outcomes: Vec<i64> = row.try_get(31).map_err(row_err)?;
+                if fast_real_array_outcomes.len() != 3 {
+                    return Err(DistannExpandError::Internal(
+                        "physical owner returned malformed Task 224 fast-array outcomes".to_owned(),
+                    ));
+                }
                 let row_telemetry = DistannOwnerMaterializeTelemetry {
                     owner_total_ns: nonnegative_i64_to_u64(row.try_get(6).map_err(row_err)?)?,
                     owner_open_validate_ns: nonnegative_i64_to_u64(
@@ -2980,6 +2998,15 @@ fn decode_physical_materialize_rows(
                     owner_logical_bytes: nonnegative_i64_to_u64(row.try_get(29).map_err(row_err)?)?,
                     owner_binary_send_bytes: nonnegative_i64_to_u64(
                         row.try_get(30).map_err(row_err)?,
+                    )?,
+                    owner_fast_real_array_values: nonnegative_i64_to_u64(
+                        fast_real_array_outcomes[0],
+                    )?,
+                    owner_fast_real_array_fallback_values: nonnegative_i64_to_u64(
+                        fast_real_array_outcomes[1],
+                    )?,
+                    owner_fast_real_array_ineligible_requests: nonnegative_i64_to_u64(
+                        fast_real_array_outcomes[2],
                     )?,
                 };
                 if telemetry.is_some_and(|existing| existing != row_telemetry) {
@@ -3732,6 +3759,9 @@ pub(crate) struct DistannOwnerMaterializeTelemetry {
     pub(crate) owner_stored_bytes: u64,
     pub(crate) owner_logical_bytes: u64,
     pub(crate) owner_binary_send_bytes: u64,
+    pub(crate) owner_fast_real_array_values: u64,
+    pub(crate) owner_fast_real_array_fallback_values: u64,
+    pub(crate) owner_fast_real_array_ineligible_requests: u64,
 }
 
 /// Issue a batch of remote `ec_distann_materialize_row_payloads` calls — one per

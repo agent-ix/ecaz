@@ -8695,7 +8695,7 @@ psql header noise\n\
         let raw = include_str!("../../../suites/task224-mat26-fast-real-array-100k.json");
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
         validate_config(&config).expect("suite validates");
-        assert_eq!(config.steps.len(), 2);
+        assert_eq!(config.steps.len(), 4);
         let SuiteStep::DistannLocalMultinode(control) = &config.steps[0] else {
             panic!("expected control DistANN step");
         };
@@ -8705,6 +8705,8 @@ psql header noise\n\
         assert!(!control.reuse_fixture);
         assert!(candidate.reuse_fixture);
         assert_eq!(control.run_dir, candidate.run_dir);
+        assert!(!control.allow_debug_extension);
+        assert!(!candidate.allow_debug_extension);
         assert!(control.skip_owner_locality_profile);
         assert!(candidate.skip_owner_locality_profile);
         assert!(!control.owner_fast_real_array_send);
@@ -8722,6 +8724,23 @@ psql header noise\n\
                 right.materialization_batch_size
             );
         }
+        let SuiteStep::DistannLocalMultinode(control_repeat) = &config.steps[2] else {
+            panic!("expected repeated control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(profiled_control) = &config.steps[3] else {
+            panic!("expected profiled control DistANN step");
+        };
+        assert!(control_repeat.reuse_fixture);
+        assert!(control_repeat.stage_counter_only);
+        assert!(control_repeat.skip_owner_locality_profile);
+        assert!(!control_repeat.owner_fast_real_array_send);
+        assert!(profiled_control.reuse_fixture);
+        assert!(profiled_control.stage_counter_only);
+        assert!(!profiled_control.skip_owner_locality_profile);
+        assert!(!profiled_control.owner_fast_real_array_send);
+        assert!(!profiled_control.allow_debug_extension);
+        assert_eq!(control_repeat.run_dir, control.run_dir);
+        assert_eq!(profiled_control.run_dir, control.run_dir);
     }
 
     #[test]

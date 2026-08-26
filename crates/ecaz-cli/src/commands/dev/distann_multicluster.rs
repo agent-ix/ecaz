@@ -8444,22 +8444,26 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 50 server-side work metrics
+            // The extension exposes 53 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 51 * expected_counter_groups {
+            if work_rows.len() != 54 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    51 * expected_counter_groups,
+                    54 * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
             }
             if args.owner_fast_real_array_send {
-                for metric in ["owner_projected_values", "owner_binary_send_bytes"] {
+                for metric in [
+                    "owner_projected_values",
+                    "owner_binary_send_bytes",
+                    "owner_fast_real_array_values",
+                ] {
                     let value = work_rows
                         .iter()
                         .find(|work| benchmark_log_value(work, "metric").as_deref() == Some(metric))
@@ -8471,6 +8475,23 @@ async fn run_physical_benchmarks(
                         .wrap_err_with(|| format!("decoding Task 224 MAT-26 {metric} telemetry"))?;
                     if value == 0 {
                         bail!("Task 224 MAT-26 candidate produced zero {metric}");
+                    }
+                }
+                for metric in [
+                    "owner_fast_real_array_fallback_values",
+                    "owner_fast_real_array_ineligible_requests",
+                ] {
+                    let value = work_rows
+                        .iter()
+                        .find(|work| benchmark_log_value(work, "metric").as_deref() == Some(metric))
+                        .and_then(|work| benchmark_log_value(work, "value"))
+                        .ok_or_else(|| {
+                            eyre!("Task 224 MAT-26 activation omitted {metric} telemetry")
+                        })?
+                        .parse::<u64>()
+                        .wrap_err_with(|| format!("decoding Task 224 MAT-26 {metric} telemetry"))?;
+                    if value != 0 {
+                        bail!("Task 224 MAT-26 candidate produced nonzero {metric}={value}");
                     }
                 }
             }
@@ -9163,10 +9184,12 @@ async fn run_physical_benchmarks(
         );
     }
     for line in &mut lines {
-        line.push_str(&format!(
-            " owner_locality_profile={} owner_fast_real_array_send={} corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+        line.push_str(&task224_arm_provenance(
             args.owner_payload_shape.is_some() && !args.skip_owner_locality_profile,
             args.owner_fast_real_array_send,
+        ));
+        line.push_str(&format!(
+            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
             args.query_offset
         ));
     }
@@ -9181,6 +9204,15 @@ fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
         || args.top_k != 10
         || args.head_index_cap != 4096
         || args.candidate_heap_limit.unwrap_or(32) != 32
+}
+
+fn task224_arm_provenance(
+    owner_locality_profile: bool,
+    owner_fast_real_array_send: bool,
+) -> String {
+    format!(
+        " owner_locality_profile={owner_locality_profile} owner_fast_real_array_send={owner_fast_real_array_send}"
+    )
 }
 
 fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
@@ -14486,6 +14518,18 @@ mod tests {
         let mut single_args = Vec::new();
         append_materialization_benchmark_guc(&mut single_args, "single", 0);
         assert!(single_args.is_empty());
+    }
+
+    #[test]
+    fn task224_arm_provenance_pins_profile_and_fast_sender_state() {
+        assert_eq!(
+            task224_arm_provenance(false, true),
+            " owner_locality_profile=false owner_fast_real_array_send=true"
+        );
+        assert_eq!(
+            task224_arm_provenance(true, false),
+            " owner_locality_profile=true owner_fast_real_array_send=false"
+        );
     }
 
     #[test]
