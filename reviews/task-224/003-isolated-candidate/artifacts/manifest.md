@@ -7,8 +7,9 @@
 - Task/packet: `task-224/003-isolated-candidate`
 - Host/lane: Intel local, PG18, `distann-head-attribution-benchmark`
 - Candidate: MAT-26 exact `real[]` binary sender, feature-only and default-off
-- Measurement status: not yet run; reviewers seq01 and seq02 returned NOT DONE;
-  the seq02 correction requires rereview before either suite may run
+- Measurement status: not yet run; reviewers seq01 through seq03 returned NOT
+  DONE; the seq03 semantic-gate correction requires rereview before either
+  suite may run
 
 ## Preregistered suite
 
@@ -29,7 +30,7 @@
   nonconforming profiled-control context arm, all on the same reused generation
   and with no correctness matrix or crash/restart drill
 - Semantic steps: native control and fast-sender candidate, each a fresh 10k
-  non-reuse fixture with its own run directory/ports; each runs the seven-case
+  non-reuse fixture with its own run directory/ports; each runs the nine-case
   eager/lazy-10 correctness/failure matrix and has no timing decision weight
 - Headline instrumentation state: control A/B disable the Task 224 locality SQL
   wrapper; the candidate keeps that SQL wrapper disabled but its feature-only
@@ -41,7 +42,9 @@
 - Control-envelope floor:
   `N = abs(control_a-control_b) / mean(control_a,control_b)`; because control B
   is a later lazy-10-only `stage_counter_only` step, `N` includes protocol and
-  position drift and can only inflate the required `2*N` improvement bar
+  position drift, while control A is measured after building and warming the
+  fixture. These differences can only inflate the required `2*N` improvement
+  bar.
 - Attribution gate: select the unique lazy-10/physical/vector-bearing
   `physical_benchmark_stage` rows for `materialize_owner_binary_send_work`,
   `materialize_owner_endpoint_critical`, and
@@ -57,7 +60,14 @@
   must be a release, non-`pg_test` attribution build and the CLI must be a
   release build from exact SHA
   `b834b7fb3715b8fea27d78bbf577c2b47b55d220`. Preflight must be unanimous and
-  every normalized row must repeat that exact SHA/profile.
+  every normalized row must repeat that exact SHA/profile. Build both artifacts
+  from a clean detached checkout at that SHA, not from branch HEAD.
+- Semantic gate: each semantic step exits zero and emits exactly one
+  `physical_materialization_correctness` row for each of
+  `fewer_than_window`, `exactly_one_window`, `more_than_window`,
+  `reject_first_window`, `reject_multiple_windows`, `null_payload`,
+  `toasted_projection_qual`, `mixed_local_remote`, and
+  `post_first_batch_remote_failure`; any duplicate or missing scenario fails.
 - Run directory: `/home/peter/.ecaz/clusters/task224-mat26-100k` (outside the
   repository, required for exact fixture reuse across suite steps; remove after
   cited results are captured)
@@ -170,6 +180,13 @@ The exact-checkpoint dry runs are retained under `artifacts/dry-run/`:
 
 These dry runs validate argument construction only. They are not measurement
 evidence and carry no latency, recall, storage, or semantic decision weight.
+
+Reviewer seq03 (`feedback/2026-08-25-03-reviewer.md`) independently verified
+B1--B4 closed, all 22 hashes exact, all named timing-gate fields executable,
+and the reused timing fixture unmutated. It withheld both suites only because
+the required attribution build emits nine correctness rows, not the previously
+preregistered seven. The semantic gate above is the pre-measurement correction:
+step exit plus the complete nine-scenario set, exactly once per step.
 
 Live `suite-manifest.json`, `results.jsonl`, recall/latency/storage/build/DML
 logs, exact generation identity, and the A/B decision will be added after

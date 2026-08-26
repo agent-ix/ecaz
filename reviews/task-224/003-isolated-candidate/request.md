@@ -28,6 +28,12 @@ had an extra hex character
 `b834b7fb3715b8fea27d78bbf577c2b47b55d220` addresses those findings. The
 screen remains prohibited until seq03 rereview accepts this revision.
 
+Reviewer seq03 verified every seq02 blocker closed and found no timing-suite
+defect, but returned **NOT DONE** because the attribution build emits nine
+semantic correctness rows while this request required seven
+(`feedback/2026-08-25-03-reviewer.md`). The semantic gate below now names the
+exact nine-scenario set. Neither suite may run until seq04 accepts it.
+
 ## Candidate
 
 The measured 6.967996 ms/scan bucket was PostgreSQL `array_send` serializing a
@@ -75,8 +81,10 @@ No timing step runs `materialization_correctness`; therefore no owner
 crash/restart occurs between control A, candidate, control B, and profiled
 context. A second suite runs control and candidate semantic matrices on two
 independent, non-reused 10k fixtures with distinct run directories and ports.
-Those matrix steps are correctness-only context: recall is skipped and their
-one-iteration latency output has no decision weight.
+Each matrix covers the seven core scenarios plus `mixed_local_remote` and
+`post_first_batch_remote_failure`. Those steps are correctness-only context:
+recall is skipped and their one-iteration latency output has no decision
+weight.
 
 Control A and candidate use:
 
@@ -94,7 +102,7 @@ fast-path values are nonzero and both generic-array fallbacks and ineligible
 requests are zero. Timing-step recall keeps the session switch enabled, so its
 id-only query exercises visible native-send degradation instead of aborting.
 The isolated candidate semantic step keeps the same switch enabled across all
-seven correctness/failure scenarios. The timing reuse invariant attests the
+nine correctness/failure scenarios. The timing reuse invariant attests the
 exact epoch fingerprint at runtime.
 
 `allow_debug_extension` is absent from all six steps. Before either run, all
@@ -103,7 +111,8 @@ CLI must also be a release build from exact checkpoint
 `b834b7fb3715b8fea27d78bbf577c2b47b55d220`. The fixture preflight must attest
 one unanimous release SHA/profile/features tuple; every normalized row must
 then report that exact SHA and `extension_build_profile=release`, otherwise the
-screen fails closed.
+screen fails closed. Both artifacts will be built from a detached clean checkout
+at that checkpoint rather than from the documentation-bearing branch HEAD.
 
 Amended decision gate, fixed before measurement:
 
@@ -111,7 +120,8 @@ Amended decision gate, fixed before measurement:
   `physical_benchmark_latency.values.mean_ms`, and let
   `N = abs(A-B) / C`. `N` is a conservative control-envelope floor, not a pure
   repeat-noise estimate: B is a lazy-10-only `stage_counter_only` step and runs
-  later. Those protocol/position differences can only inflate the bar.
+  later, while A is measured after building and warming the fixture. Those
+  protocol, position, and build-warmth differences can only inflate the bar.
 - The candidate must improve on `C` by at least 5% **and** at least `2*N`.
 - Candidate p95 and p99 must each be no more than 5% above the arithmetic mean
   of the corresponding control `physical_benchmark_latency.values.p95_ms` and
@@ -137,9 +147,13 @@ Amended decision gate, fixed before measurement:
 - Candidate fast-path values must be nonzero; fallback and ineligible counters
   must be zero in the vector-bearing latency arm. Control-A and candidate
   prediction files for both eager and lazy-10 variants must be byte-identical.
-  Each isolated semantic step must emit exactly seven
-  `physical_materialization_correctness` rows and every row must say
-  `pass=true`.
+  Each isolated semantic step must exit zero and emit exactly one
+  `physical_materialization_correctness` row for each of these nine scenarios:
+  `fewer_than_window`, `exactly_one_window`, `more_than_window`,
+  `reject_first_window`, `reject_multiple_windows`, `null_payload`,
+  `toasted_projection_qual`, `mixed_local_remote`, and
+  `post_first_batch_remote_failure`. A duplicate or missing scenario fails the
+  gate.
 
 The profiled-control minus `C` warm-mean delta is also reported as a
 conservative upper bound on the candidate's asymmetric timing-shim cost: the
@@ -209,6 +223,19 @@ Seq02 non-blocking items are also closed: debug override is asserted false for
 control B, the unreachable bitmap-offset branch is removed, zero-node batches
 retain the ineligible count internally, and the manifest now carries the
 volatility/parallel-safety disclosure plus the scalar-send asymmetry bound.
+
+## Response to reviewer seq03
+
+1. **B5 semantic count:** the gate now requires the exact nine-row attribution
+   set, enumerates all scenarios, and makes step exit plus set completeness the
+   load-bearing checks rather than the hardcoded `pass=true` formatter field.
+2. **Exact-SHA reachability:** the run plan explicitly builds the extension and
+   CLI from a clean detached checkout at `b834b7fb3`; branch HEAD is not used.
+3. **Control envelope:** the disclosure now names control A's build-warmed
+   buffers in addition to protocol and position drift.
+4. **Zero-node telemetry:** the request continues to claim only internal
+   retention, not end-to-end coordinator accounting, matching the reviewer's
+   verified scope.
 
 ## Review questions
 
