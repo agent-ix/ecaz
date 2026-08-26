@@ -6,8 +6,9 @@ requested 6 remote and consumed 4 local for 10 returned rows (diagnostic, not a
 semantic bound); packet 002 review-closed NOT DONE after its sole run failed
 pre-semantics on a 40-row/37-row cross-SHA stage schema; no rerun; packet 003
 exact-main harness port `21c013079` and main-compatible config `0adea669b`
-landed, validation/review request in progress, no live run authorized; immediate
-P1 campaign blocker before Task 229 semantic closeout**
+landed; exact `4ab2aa9a9` validation passed and packet 003 code/config/dry
+review-open, no live run authorized; immediate P1 campaign blocker before Task
+229 semantic closeout**
 (updated 2026-08-26). Priority: P1 correctness/performance. Decision record:
 `reviews/task-239/001-current-main-reproduction/artifacts/reproduction-decision.md`;
 accepted disposition:
@@ -22,6 +23,8 @@ Failed-run disposition:
 `reviews/task-239/002-diagnosis-and-correction/artifacts/live-run-decision.md`.
 Packet 002 result verdict and packet 003 authorization:
 `reviews/task-239/002-diagnosis-and-correction/feedback/2026-08-26-03-reviewer.md`.
+Packet 003 review request:
+`reviews/task-239/003-main-baseline-semantic-proof/request.md`.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
