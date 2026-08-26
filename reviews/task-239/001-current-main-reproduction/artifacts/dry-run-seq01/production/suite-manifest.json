@@ -1,0 +1,103 @@
+{
+  "suite": "task239-current-main-production-10k",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/crates/ecaz-cli/suites/task239-current-main-production-10k.json",
+  "config_sha256": "3ddd441a401feee50b03fd89d5bc1b10cf7c77f6d6f14c260bd85af2f16fcf3f",
+  "dry_run": true,
+  "generated_at_unix_ms": 1787730166481,
+  "runner_git_commit": "41392c011106cb040095fd6004c4d5c0f136f1a0",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "current-main-production-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/dry-run-seq01/production/production",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task239-current-main-production-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/dry-run-seq01/production/production/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--materialization-correctness",
+        "--benchmark-iterations",
+        "1",
+        "--benchmark-warmup-iterations",
+        "0",
+        "--base-port",
+        "44050",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on",
+        "--benchmark-seed-variant",
+        "lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task239",
+        "current_main",
+        "production",
+        "10k",
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "eager-control",
+          "id": "task239-current-main-production-eager",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Exact-current-main normal-release eager control for Task 239 semantic/result and recall identity; one-iteration timing is non-decision context."
+        },
+        {
+          "variant": "lazy10-production",
+          "id": "task239-current-main-production-lazy10",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Exact-current-main normal-release lazy-10 production semantic/result and recall surface; one-iteration timing is non-decision context."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/dry-run-seq01/production/production/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/dry-run-seq01/production/production/physical-head-membership.json"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
