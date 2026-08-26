@@ -1,0 +1,8 @@
+
+   0: [91mdistann-local-multinode step "current-main-production-10k" owner_payload_shape requires physical_benchmark, distann_stage_counters, and full_metrics[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m4771[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
