@@ -1,8 +1,10 @@
 # Task 238: ec_distann Retry Snapshot Use-After-Free
 
 Status: **fix already present on current `main` via `15f7fcf5f` / Task 167 PR
-#77; forced-retry regression coverage restored by `3b8b872d6`; both current-main
-PG18 callers pass; packet 001 outside closeout review pending** (2026-08-25).
+#77; forced-retry regression coverage is authored against exact current main on
+campaign-stack commit `3b8b872d6` but is not on `main`; both PG18 callers pass
+in packet evidence; DoD item 2 and outside closeout remain open** (updated
+2026-08-26).
 Priority: **P0 correctness closeout.**
 
 Origin: found by the Task 222 coder while root-causing eight SIGSEGV runs in
@@ -108,5 +110,4 @@ test that fails without it.
 ## References
 
 - `reviews/task-222/002-contract-and-correctness/artifacts/gdb-backtrace.log`
-- `reviews/task-222/002-contract-and-correctness/feedback/2026-08-24-01-reviewer.md`
 - Introducing commit `79afb0d82`; fix `010a0accc`
