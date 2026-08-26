@@ -6686,6 +6686,16 @@ async fn run_physical_benchmarks(
     extension_preflight: &ExtensionPreflight,
     enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
+    let coordinator_node = nodes
+        .first()
+        .ok_or_else(|| eyre!("physical benchmark has no coordinator node"))?;
+    coordinator
+        .query_one(
+            "SELECT set_config('ec_distann.local_node_id', $1, false)",
+            &[&coordinator_node.node_id.to_string()],
+        )
+        .await
+        .wrap_err("configuring the physical benchmark coordinator identity")?;
     let beam_width = args.beam_width.unwrap_or(4);
     let candidate_heap_limit = args
         .candidate_heap_limit
