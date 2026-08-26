@@ -1,14 +1,14 @@
 # Task 239: ec_distann Bounded-Read Overfetch
 
-Status: **packet 001 exact-current-main live evidence review-open — semantic
-harness eager-path 12/10 reproduced exactly; same-fixture separate-process
-production lazy-10 is 6 remote + 4 local = 10/10; packet 002 harness correction
-and nine-scenario proof pending; immediate P1 campaign blocker before Task 229
-semantic closeout** (updated 2026-08-26). Priority: P1
-correctness/performance. Decision record:
+Status: **packet 001 review-closed ACCEPT — exact-main semantic harness
+eager-path 12/10 reproduced; same-fixture separate-process production lazy-10
+requested 6 remote and consumed 4 local for 10 returned rows (diagnostic, not a
+semantic bound); packet 002 harness correction and nine-scenario proof in
+progress; immediate P1 campaign blocker before Task 229 semantic closeout**
+(updated 2026-08-26). Priority: P1 correctness/performance. Decision record:
 `reviews/task-239/001-current-main-reproduction/artifacts/reproduction-decision.md`;
-run authorization:
-`reviews/task-239/001-current-main-reproduction/feedback/2026-08-26-02-reviewer.md`.
+accepted disposition:
+`reviews/task-239/001-current-main-reproduction/feedback/2026-08-26-03-reviewer.md`.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
