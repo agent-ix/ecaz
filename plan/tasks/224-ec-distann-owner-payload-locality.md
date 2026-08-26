@@ -1,7 +1,9 @@
 # Task 224: ec_distann Owner Payload Heap Locality
 
-Status: **packet 002 review-closed ACCEPT; MAT-26 packet 003 authorized;
-MAT-25 retired** (updated 2026-08-25). Priority: P2 latency. The
+Status: **packet 003 MAT-26 implementation/preregistration review-open; 100k
+screen not yet run; MAT-25 retired** (updated 2026-08-25). Code
+`0ad5d6393`; request `reviews/task-224/003-isolated-candidate/request.md`.
+Priority: P2 latency. The
 vector-bearing binary-send bucket is 6.967996 ms/scan / 24.709206% summed owner
 work, while the endpoint critical path bounds any serial saving to at most
 5.148990 ms / 18.258830%. MAT-25 is retired: 6.785 requested TIDs occupy 6.770
