@@ -1,0 +1,46 @@
+# Task 239 packet 002 reviewer verification (2026-08-26 seq01)
+
+## Branch / remote identity
+$ git rev-parse HEAD; git rev-parse origin/task239-bounded-read-overfetch
+e5cd32c0aeb4f15df838b0236f63ee772c29b8bd
+e5cd32c0aeb4f15df838b0236f63ee772c29b8bd
+$ gh api repos/agent-ix/ecaz/git/ref/heads/main --jq .object.sha
+41392c011106cb040095fd6004c4d5c0f136f1a0
+
+## Finding 1: extension source delta between packet-001 baseline main and the proposed build point
+$ git merge-base --is-ancestor 41392c011106cb040095fd6004c4d5c0f136f1a0 d03997c7a && echo main-is-ancestor
+main-is-ancestor
+$ git log --oneline 41392c011..d03997c7a -- src/
+a87b4eb3a Close Task 224 screen findings and register Task 239
+b834b7fb3 Separate Task 224 semantics from timing
+7cafbd202 Fix Task 224 MAT-26 review blockers
+0ad5d6393 Prototype Task 224 exact real array sender
+ab39e8b81 Instrument Task 224 owner payload locality
+3b8b872d6 Restore DistANN PG18 retry regression coverage
+$ git diff --stat 41392c011..d03997c7a -- src/
+ src/am/ec_distann/generation_read.rs       | 736 ++++++++++++++++++++++++++++-
+ src/am/ec_distann/options.rs               |  80 ++++
+ src/am/ec_distann/remote_endpoint.rs       |  64 ++-
+ src/am/ec_distann/remote_transport.rs      | 218 ++++++++-
+ src/am/ec_distann/stage_counters.rs        | 100 +++-
+ src/tests/ec_distann_physical_lifecycle.rs |  41 ++
+ src/tests/mod.rs                           |  46 +-
+ 7 files changed, 1273 insertions(+), 12 deletions(-)
+
+## Finding 2: expected pass=false line that gate 2 forbids literally
+$ grep -n "pass=false" 001/.../production-run/production/distann-local-multinode.log
+63:[distann-multicluster] physical_benchmark_insert_throughput_ab scale=10k pass=false reason=single_control_skipped corpus_prefix=ec_real_10k query_sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8 query_offset=0 query_slice_sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8 extension_git_sha=41392c011106cb040095fd6004c4d5c0f136f1a0 extension_build_profile=release
+
+## Gate 4/5 baseline verification (Task 191 7883cfcf8 / Task 198 2ff72b3e4)
+scenario=fewer_than_window pass=true rows=5 eager_digest=08efa6098f4a7cbfb47641ffc22b015d68f6294d8a5276b9c7424ff0d2017dfc candidate_digest=08efa6098f4a7cbfb47641ffc22b015d68f6294d8a5276b9c7424ff0d2017dfc null_ok=true external_toast_ok=true remote_requested=6 local_consumed=2 payload_reads=8 payload_read_bound=10 deepening_cap=1024 duplicate_requested=0
+scenario=exactly_one_window pass=true rows=10 eager_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d candidate_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d null_ok=true external_toast_ok=true remote_requested=6 local_consumed=4 payload_reads=10 payload_read_bound=10 deepening_cap=1024 duplicate_requested=0
+
+## Packet-002 artifact hash recomputation
+300b397e120b637f12a5b7918cf75564085708b40083a4f843028b7d4404354d  cargo-test-semantic-batch-restore.log
+c845f60adae821c827fa2f59e591a974c5743cdc3e3009b8daef55af19ea0831  cargo-test-materialization-focused.log
+06989bf4205a830d71e0d37c6d09bcc82bd5a987c7963c8dd66dac70ffc7575f  cargo-fmt-check.log
+315523a0cce27a95c19edbff9ade26bdffb76d673306700e39b9a7cab3e4ea0a  release-build-cli-d03997c7a.log
+850bc4cb9287014b7345ec946d5f689abec5bb8fcf6f9f9c755aedde2d6c6cf5  suite-audit.log
+df1eacf727919ea854e408413d002ca0e9fe63ea3ae7b270239789edbec48043  dry-run.log
+45419760c4b86c3c5ded374b32ea23f8278a8015ca0f4d533cacbec74e9602ea  dry-run/suite-manifest.json
+bd74199c5fc26d7dffc6b72582915529cbd1c7453ec4ff8fdaad82d7605e6f21  crates/ecaz-cli/suites/task239-corrected-semantics-10k.json
