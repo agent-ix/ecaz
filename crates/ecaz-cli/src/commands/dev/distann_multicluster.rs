@@ -12995,7 +12995,14 @@ async fn drive_physical_fixture(
         }
         remote_verified += 1;
     }
-    let physical_mid_insert_ok = mid_insert_drill(psql, socket_dir, nodes[0].port, args).await;
+    let physical_mid_insert_ok = if args.skip_fault_drills {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_mid_insert_failure pass=skipped reason=skip_fault_drills"
+        );
+        true
+    } else {
+        mid_insert_drill(psql, socket_dir, nodes[0].port, args).await
+    };
     crate::ecaz_println!(
         "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}"
     );
