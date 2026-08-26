@@ -1,0 +1,406 @@
+Task 229 packet 002 checkpoint 3 — reviewer seq-03 static verification log
+==========================================================================
+
+Reviewer:      Agent IX / reviewer / claude-opus-5
+Date:          2026-08-26
+Worktree:      /home/peter/dev/ecaz/.worktrees/task229-covering-payload-sidecar
+Branch:        task229-covering-payload-sidecar
+Head at review: 783a27493e0761fccadae740f6e5dbfc803c95c1
+Source commit reviewed: 56a1b37fc632cee8a12dd3e0c32b138afdea3466
+Declared base:          3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+Method: read-only static inspection only — git rev-parse / merge-base / log /
+show / diff / blame, grep, sed, and file reads. No PostgreSQL server, no pgrx,
+no cargo, no test, no fixture, no corpus, and no benchmark command was executed
+by the reviewer. No source, SQL, plan, spec, request.md, or pre-existing
+feedback file was modified.
+
+
+X1 — scope and base confirmation
+--------------------------------
+$ git rev-parse HEAD
+783a27493e0761fccadae740f6e5dbfc803c95c1
+$ git merge-base HEAD origin/main
+3419c9c758bea7d9940b27d9afbcf9e627e84879
+$ git rev-parse origin/main
+3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+RESULT: the declared base is both the real merge-base of HEAD and main AND
+current origin/main. The diff read is the diff request.md cites.
+
+$ git diff --name-status 3419c9c..56a1b37 -- src sql tests
+M sql/bootstrap.sql
+M src/am/ec_distann/build_coordinator/{mod,t1,t2}.rs
+M src/am/ec_distann/{generation_catalog,generation_descriptor,handoff}.rs
+M src/am/ec_distann/{lifecycle_wire,manifest_v2,mod,options}.rs
+M src/am/ec_distann/participant_lifecycle.rs
+A src/am/ec_distann/payload_sidecar.rs
+M src/am/mod.rs
+M src/lib.rs
+M src/tests/ec_distann_physical_lifecycle.rs
+M tests/on_disk_fixtures.rs
+
+The checkpoint-3 increment (255081d..56a1b37) touches 15 source/SQL/test files
+and no plan, spec, suite, or benchmark file. No unrelated campaign code is
+present in the increment.
+
+
+X2 — generation descriptor V2/V3 canonical shape
+------------------------------------------------
+generation_descriptor.rs:21-22   V2 = 2 (legacy/no-cover), V3 = 3 (covered).
+generation_descriptor.rs:486     `pub payload_cover: Option<DistannPayloadCoverDescriptorV1>`
+generation_descriptor.rs:519-525 `version()` = 3 iff payload_cover.is_some(), else 2.
+generation_descriptor.rs:552     `encoder.put_u16(self.version())` — the version
+                                 discriminator remains the FIRST field, so V2 and
+                                 V3 byte strings can never collide.
+generation_descriptor.rs:560-563 covered append is strictly after the existing
+                                 row-schema fingerprint: len-prefixed cover bytes
+                                 followed by the 32-byte cover digest.
+generation_descriptor.rs:570-576 decode accepts exactly {2, 3}; any other version
+                                 returns EC_GENERATION_DESCRIPTOR unsupported.
+generation_descriptor.rs:592-604 V3 branch decodes the cover, then requires
+                                 `descriptor.digest()? == expected_digest`, i.e.
+                                 the embedded digest is verified, not trusted.
+generation_descriptor.rs:512-515 validate() runs `payload_cover.validate()` AND
+                                 `validate_row_schema(&self.row_schema)`, and
+                                 decode() calls validate() at :622 before return.
+
+RESULT: with payload_cover = None the emitted byte string is field-for-field
+identical to base (the diff leaves every put_* call as context and only replaces
+the version literal with `self.version()`). A covered descriptor is a strict
+suffix append under a distinct leading version. Decode of either version
+re-encodes canonically because every added field is fixed-width or
+length-prefixed.
+
+
+X3 — Ready receipt V1/V2 exact lengths and dual decode
+------------------------------------------------------
+manifest_v2.rs:42-43  DISTANN_READY_RECEIPT_BYTES = 303 (V1),
+                      DISTANN_READY_RECEIPT_MAX_BYTES = 359 (V2).
+Arithmetic: 303 + u64 row_count (8) + 32-byte initial_content_digest
+          + u64 heap_bytes (8) + u64 index_bytes (8) = 359. EXACT.
+manifest_v2.rs:492-498  version() = 2 iff payload_sidecar.is_some(), else 1.
+manifest_v2.rs:503      version discriminator is the first field.
+manifest_v2.rs:520-525  the four sidecar fields are appended last, in canonical
+                        fixed-width order, only when a sidecar is present.
+manifest_v2.rs:476-489  validate() rejects sidecar.row_count != owned_record_count.
+manifest_v2.rs:542-550  decode is digest-first: it splits the trailing 32 bytes,
+                        recomputes domain_digest(READY_RECEIPT_DOMAIN, canonical)
+                        and rejects a mismatch BEFORE parsing any field.
+manifest_v2.rs:553-557  decode accepts exactly {1, 2}.
+manifest_v2.rs:579-588  the V2 branch consumes exactly the four sidecar fields.
+manifest_v2.rs:610      decoder.finish("Ready receipt") rejects residue, so a V1
+                        receipt padded to 359 bytes cannot be accepted, and a V2
+                        receipt truncated to 303 cannot be accepted.
+
+RESULT: length is pinned structurally (fixed field layout + finish) and the
+digest gate precedes parsing. Dual decode is correct.
+
+
+X4 — every former fixed-303 consumer
+-------------------------------------
+$ grep -rn "DISTANN_READY_RECEIPT_BYTES|READY_RECEIPT_MAX_BYTES" --include=*.rs .
+Remaining DISTANN_READY_RECEIPT_BYTES (303) uses, each checked:
+  lifecycle_wire.rs:147   `minimum_entry = DISTANN_READY_RECEIPT_BYTES + 4` — used
+                          ONLY as a per-entry LOWER bound before Vec::with_capacity
+                          in decode_ready_receipt_set. 307 remains a valid lower
+                          bound for 363-byte V2 entries. Correct, not stale.
+  src/tests/ec_distann_physical_lifecycle.rs:6117 — asserts the sealed receipt of
+                          a NO-COVER fixture is 303. Correct.
+  tests/size_of_assertions.rs:175 — pins the V1 constant at 303. Correct.
+  src/am/mod.rs:113, src/lib.rs:482, mod.rs:169 — re-exports only.
+Fixed-array consumers converted to bounded variable length:
+  generation_catalog.rs:131   ready_receipt: Option<[u8; 303]> -> Option<Vec<u8>>
+  generation_catalog.rs:264-274 read path bounds len <= 359 AND runs
+                          DistannReadyReceipt::decode BEFORE the row is returned.
+  generation_catalog.rs:711-719 mark_generation_ready takes &[u8], bounds <= 359,
+                          and decodes BEFORE persisting.
+  handoff.rs:1679-1689    the `[u8; 303]` try_into narrowing is deleted; the
+                          encoded Vec is passed straight through.
+  handoff.rs:1583         non-Building early return clones the stored Vec.
+  participant_lifecycle.rs:167-172 compares Vec slices, not fixed arrays.
+  build_coordinator/mod.rs:1301 borrows instead of moving the Vec.
+$ grep -rn "303" --include=*.rs src/ tests/ — no other hardcoded 303 in a
+  receipt context; tests/on_disk_fixtures.rs:1092 asserts 303 for the LEGACY
+  manifest fixture's embedded receipts, which is still correct.
+$ grep -n "ready_receipt" sql/bootstrap.sql
+  355-367: CHECK now accepts exactly (303 AND byte0=1) OR (359 AND byte0=2),
+           with byte1=0 in both arms. No other SQL length assumption exists;
+           ready_receipt_set is CHECK(octet_length > 0).
+Remote transport: remote_transport.rs:2971-3004 returns `Vec<u8>` from bytea with
+  no length assumption. t2.rs:662-696 reads the local seal result as Vec<u8>.
+
+RESULT: the fixed-303 sweep is complete across Rust, SQL, transport, re-export,
+and lifecycle-fixture surfaces.
+
+
+X5 — receipt-set framing under its unchanged V1 domain
+-------------------------------------------------------
+lifecycle_wire.rs:59   READY_RECEIPT_SET_DOMAIN = b"ec_distann_ready_receipt_set_v1\0"
+$ diff base..source on `_DOMAIN: ` lines of lifecycle_wire.rs -> EMPTY (unchanged).
+lifecycle_wire.rs:125-142 encode: count u32 then a u32-length-prefixed entry per
+                       receipt. Entry framing was already length-prefixed in base,
+                       so V2 entries need no framing change; only the capacity hint
+                       moved to MAX_BYTES.
+lifecycle_wire.rs:144-160 decode: bounded count check before Vec::with_capacity,
+                       per-entry get_len_prefixed, then finish() rejects residue.
+                       Each entry goes through DistannReadyReceipt::decode, so V1
+                       and V2 entries are both accepted and both digest-verified.
+
+RESULT: the receipt-set domain and framing are unchanged; dual decode falls out
+of the pre-existing length-prefixed entry shape.
+
+
+X6 — manifest V2/V3 and the global initial-content digest
+----------------------------------------------------------
+manifest_v2.rs:32       V2 = 2 (legacy), V3 = 3 (covered).
+manifest_v2.rs:50-51    NEW domain
+                        b"ec_distann_payload_sidecar_global_initial_content_v1\0".
+$ diff base..source on `_DOMAIN` lines of manifest_v2.rs
+  -> SOURCE_SNAPSHOT_DOMAIN, READY_RECEIPT_DOMAIN, EPOCH_MANIFEST_DOMAIN are
+     byte-identical to base. Exactly one domain is ADDED. No existing domain is
+     edited or removed.
+$ diff base..source on `_DOMAIN: ` lines of generation_descriptor.rs -> EMPTY.
+manifest_v2.rs:708-716  version() = 3 iff either cover field is Some.
+manifest_v2.rs:718-737  payload_sidecar_global_initial_content_digest: count u32,
+                        then per receipt IN SLICE ORDER node_id | row_count |
+                        initial_content_digest, hashed under the new domain. It
+                        returns Err if ANY receipt lacks a sidecar.
+manifest_v2.rs:801-813  validate() zips roster with participant_receipts and
+                        requires receipt.node_id == roster.node_id, and
+                        validate_roster pins roster order — so "slice order" IS
+                        roster order.
+manifest_v2.rs:765-798  the three-arm match:
+                        (None, None)  -> reject any covered receipt.
+                        (Some, Some)  -> RECOMPUTE the global digest from the
+                                         receipts and reject a mismatch; the
+                                         helper additionally rejects any legacy
+                                         receipt in a covered manifest.
+                        _             -> reject unpaired fields.
+manifest_v2.rs:863-869  encode appends the two 32-byte digests only in the paired
+                        case, positioned after global_row_tier_digest and before
+                        the receipt count.
+manifest_v2.rs:882-887  decode accepts exactly {2, 3}; 912-922 consumes the pair
+                        only for V3; 963 validate() runs before return.
+
+RESULT: mixed legacy/covered receipts are rejected from BOTH directions, the
+global digest is domain-separated and roster-ordered, and it is recomputed on
+every decode rather than trusted.
+
+
+X7 — fingerprint V2/V3 emission and binding
+--------------------------------------------
+manifest_v2.rs:626-641  from_versioned_manifest_digest accepts exactly {2, 3} and
+                        writes the manifest version into fingerprint[0..2].
+manifest_v2.rs:620-624  from_manifest_digest is now a V2 wrapper. Remaining
+                        callers: lifecycle_wire.rs:1058 (test), and
+                        src/tests/ec_distann_physical_lifecycle.rs:6356, :6862
+                        (pgrx fixtures). NO production caller remains.
+manifest_v2.rs:969-972  manifest.fingerprint() emits the version matching
+                        manifest.version().
+manifest_v2.rs:651-660  DistannEpochFingerprint::decode accepts exactly {2, 3}.
+manifest_v2.rs:57-62    validate_parent_fingerprint delegates to that decode, so
+                        both versions are accepted as a parent in both directions.
+participant_lifecycle.rs:203 publish now uses manifest.fingerprint()? instead of
+                        the hardcoded-V2 from_manifest_digest.
+lifecycle_wire.rs:238-244 candidate validate requires
+                        fingerprint.version() == manifest.version().
+lifecycle_wire.rs:245-253 and participant_lifecycle.rs:131-140 both require
+                        manifest.payload_cover_descriptor_digest ==
+                        descriptor.payload_cover().map(digest).
+lifecycle_wire.rs:266   `receipts != manifest.participant_receipts` is full struct
+                        equality, so the receipt SET is bound to the manifest
+                        including each payload_sidecar.
+SQL: every epoch_fingerprint CHECK in sql/bootstrap.sql is
+     `octet_length(...) = 34` — version-agnostic. No SQL get_byte gate exists on
+     a fingerprint, descriptor, or manifest column.
+
+RESULT: emission, candidate binding, and parent acceptance are version-correct.
+See X8 for three consumers that are NOT.
+
+
+X8 — FINDING: three production consumers still hardcode fingerprint version 2
+------------------------------------------------------------------------------
+$ grep -rn "\[2, 0\]|!= 2_u16|fingerprint\[0\] != 2" --include=*.rs src/
+Production (non-test) sites:
+  src/am/ec_distann/generation_read.rs:1228
+      RetainedGenerationScan::open:
+          if fingerprint[..2] != [2, 0] {
+              return Err(DistannExpandError::BadInput(
+                  "physical epoch fingerprint is not canonical v2".to_owned()));
+          }
+      Call sites of RetainedGenerationScan::open in generation_read.rs:
+        2651, 2708, 2771, 2885, 3129, 3167, 3204, 3278, 3309, 3388, 3432, 3584,
+        3676, 4560, 4588, 4635, 5650, 5917  (18 sites: scan open, head_search,
+        expand, export, and the physical read endpoints).
+  src/am/ec_distann/handoff.rs:1279
+      ec_distann_epoch_topology:
+          if epoch_fingerprint.len() != 34 || epoch_fingerprint[0] != 2
+             || epoch_fingerprint[1] != 0 { EC_EPOCH_FINGERPRINT_VERSION ... }
+      Its doc comment at handoff.rs:1246 hardcodes the shape as
+      "u16_le(2) || manifest digest".
+  src/am/ec_distann/traversal_replica.rs:208
+      TraversalReplicaIdentity::validate:
+          if self.epoch_fingerprint[..2] != 2_u16.to_le_bytes() {
+              return Err("EC_REPLICA_IDENTITY: epoch fingerprint is not
+                          canonical version 2".to_owned()); }
+Test-only sites (not findings): generation_read.rs:507,
+traversal_replica.rs:2558, lifecycle_wire.rs:1229.
+
+All three read the SAME 34-byte DistannEpochFingerprint whose leading u16 is the
+manifest version that manifest_v2.rs:626-641 now sets to 3 for a covered epoch.
+None of them route through DistannEpochFingerprint::decode.
+
+Reachability at 56a1b37 (see X9): a V3 fingerprint cannot be produced yet, so
+these are not live failures today. They become live the moment checkpoint 4
+makes a covered epoch publishable.
+
+
+X9 — fail-closed proof for a declared cover at this checkpoint
+---------------------------------------------------------------
+handoff.rs:1679 the seal path constructs every DistannReadyReceipt with
+                `payload_sidecar: None` unconditionally.
+t2.rs:655-700   receipts are collected ONLY from local/remote
+                ec_distann_seal_epoch_handoff, so every receipt is V1.
+t2.rs:712-717   `payload_cover_descriptor_digest.map(|_| ...global digest...)`
+                -> with a cover declared this calls
+                payload_sidecar_global_initial_content_digest over V1 receipts,
+                which returns Err at manifest_v2.rs:726-728
+                ("covered manifest has a legacy Ready receipt").
+
+RESULT: with covering_payload_attnums set, build_epoch errors before the manifest
+is constructed and therefore before any candidate, manifest, or fingerprint is
+persisted. No V3 fingerprint, V3 manifest, or V2 receipt can exist at this
+commit. The request's fail-closed claim is accurate. The surfaced error text
+reads as catalog corruption rather than "sidecar relations not implemented yet".
+
+
+X10 — T2 threads the resolved descriptor; no reloption re-read
+---------------------------------------------------------------
+$ grep -n "resolve_payload_cover|payload_cover" build_coordinator/{t1,t2,mod}.rs
+t2.rs:228-236  the ONLY resolve_payload_cover call in t2, taken under the retained
+               control-relation lock and the registry revision lock.
+t2.rs:241-247  replay_registration folds payload_cover_descriptor_digest into the
+               expected registration digest.
+t2.rs:462      the same resolved value is MOVED into the generation descriptor.
+               There is no second relation_options read or cover resolution after
+               replay_registration anywhere in t2.
+t2.rs:261-301  the idempotent replay path returns the stored candidate without
+               re-comparing the cover, but replay_registration at :241 already
+               rejected a divergent cover digest under the same build id, so the
+               drift window stays closed on the replay path too.
+
+RESULT: seq-02 disposition item 4 is genuinely closed.
+
+
+X11 — seq-02 corruption and allocation carry-ins
+-------------------------------------------------
+payload_sidecar.rs:580-706 the new
+`cover_descriptor_decode_rejects_every_persisted_identity_corruption_arm` test
+drives hostile bytes through decode() via a local encode_descriptor_unchecked
+helper, covering: maximum_attribute_count != 16; empty attribute list; count 17
+(> 16); attnum 0; duplicate attnums; reversed/non-increasing attnums; interior
+NUL in an identity string; empty type_namespace / type_name / send / receive;
+non-empty collation; binary_width disagreeing with the type; a one-byte-truncated
+descriptor; and a non-UTF-8 identity byte. That is every arm log X12 of seq-02
+listed as untested.
+payload_sidecar.rs:744-746 adds the invalid-requested-TID decode_row arm
+                       (ItemPointer::INVALID on both sides).
+payload_sidecar.rs:753   adds `decode_payload(&[])`, which is a GENUINE bitmap
+                       truncation (0 bytes < the 1 required bitmap byte), closing
+                       the gap seq-02 named where `&payload[..len-1]` landed on
+                       the value-truncation arm instead.
+payload_sidecar.rs:38-44 fixed_binary_width now takes (&str, &str); the temporary
+                       DistannRowSchemaAttribute with six String clones plus
+                       "covered".to_owned() is deleted (was :101-113).
+payload_sidecar.rs:243-247, 281-284 encode_payload / decode_payload no longer call
+                       self.validate() per row; both carry a comment stating the
+                       descriptor was validated at its resolution or decode
+                       boundary. Constructors are resolve_payload_cover (validates)
+                       and decode (validates); the struct's fields remain
+                       pub(crate) so no out-of-crate caller can build an
+                       unvalidated descriptor.
+payload_sidecar.rs:6-7   DistannRowSchemaAttribute import is now #[cfg(test)],
+                       confirming the production path no longer builds one.
+
+RESULT: seq-02 carry-ins 1, 2, 4 and 5 are closed. Carry-in 3 (dead_code caveat)
+is carried accurately: entry payload encode/decode still has no production row
+caller, and request.md says so rather than citing clean compilation as proof.
+
+
+X12 — frozen legacy byte and digest identity
+---------------------------------------------
+generation_descriptor.rs:1157-1191 decodes the frozen
+  fixtures/on-disk/distann_generation_descriptor_v2.hex, asserts version 2, no
+  cover, byte-identical re-encode, and an unchanged GENERATION_DESCRIPTOR_DOMAIN
+  digest; then round-trips a covered V3 and rejects a one-bit cover-digest flip.
+manifest_v2.rs:1136-1163 decodes the frozen distann_ready_receipt_v1.hex, asserts
+  version 1, byte-identical re-encode, and digest == trailing 32 bytes; then
+  asserts a covered receipt is exactly DISTANN_READY_RECEIPT_MAX_BYTES with
+  leading version 2, round-trips, and rejects a sidecar row_count mismatch.
+manifest_v2.rs:1197-1259 decodes the frozen distann_epoch_manifest_v2.hex, asserts
+  version 2, byte-identical re-encode, unchanged EPOCH_MANIFEST_DOMAIN digest, and
+  a V2 fingerprint; then builds a covered V3, asserts leading version 3, decodes,
+  asserts a V3 fingerprint that re-decodes, asserts a V2 CHILD of a V3 PARENT still
+  encodes as V2, and rejects a flipped global digest.
+lifecycle_wire.rs:1198-1231 asserts V1 and V2 receipt-set framing round-trip and
+  that a covered candidate carries fingerprint [3, 0], round-trips, and fails
+  validate when the fingerprint version is forced to 2.
+tests/on_disk_fixtures.rs:490, 582, 585, 1016, 1097 add byte-identical re-encode
+  assertions to the frozen descriptor, build-candidate, receipt, and manifest
+  fixtures and pin the frozen candidate fingerprint to [2, 0].
+
+RESULT: legacy byte and digest identity is asserted against committed frozen
+fixtures, not against self-generated samples.
+
+
+X13 — coder artifact cross-check
+---------------------------------
+All checkpoint-3 artifacts read in full. Independently reproduced:
+$ git diff --exit-code 3419c9c -- src/am/ec_distann/ambuild.rs \
+    src/am/ec_distann/head_sample.rs src/am/ec_distann/remote_endpoint.rs
+  -> exit 0. Confirms clippy-inherited-files-diff-checkpoint3.log.
+$ git blame -L 794,800 -- src/am/ec_distann/generation_descriptor.rs
+  -> every line of the unnecessary_unwrap arm, including :798, blames to
+     4fe5d5c53a (2026-08-01). Confirms
+     clippy-generation-descriptor-blame-checkpoint3.log; the lint is inherited,
+     not introduced, and only shifted from base line 748 by inserted Task 229 code.
+cargo-clippy-pg18-checkpoint3.log       exit 101, exactly four inherited findings,
+                                        no Task 229 file named.
+cargo-clippy-pg18-checkpoint3-task-clean.log exit 0 with only those four lint
+                                        names allowed.
+cargo-fmt-checkpoint3.log               exit 0.
+cargo-check-pg18-checkpoint3.log        exit 0, dev profile 15.42s.
+cargo-test-payload-sidecar-checkpoint3.log 6 passed / 0 failed / 2596 filtered.
+cargo-test-legacy-identity-checkpoint3.log 3 passed; the third,
+  packet_30976_default_tuning_preserves_legacy_modeled_costs, is an unrelated
+  name match, and manifest.md says so.
+cargo-test-ready-receipt-checkpoint3.log   1 passed.
+cargo-test-receipt-set-checkpoint3.log     1 passed.
+cargo-test-covered-identity-chain-checkpoint3.log 1 passed.
+cargo-test-on-disk-distann-checkpoint3.log 21 passed / 0 failed.
+git-diff-checkpoint3.log                exit 0 (git diff --check clean).
+
+RESULT: every artifact matches what request.md and manifest.md claim. No number
+in request.md is unsupported by a packet-local artifact. This checkpoint makes no
+runtime, latency, recall, or storage claim, so no benchmark provenance is owed by
+it; Task 229's closeout benchmark obligation remains owed by the packet that
+lands the read path.
+
+
+X14 — secondary observations (non-blocking)
+--------------------------------------------
+(a) generation_catalog.rs:264-274 now runs a full DistannReadyReceipt::decode
+    (SHA-256 over the canonical bytes plus validate) on EVERY generation catalog
+    row read, including lookup_retained_generation_by_fingerprint, which is on
+    the read path. generation_read.rs:1232 short-circuits through
+    cached_retained_epoch first, so the cost is paid on cache miss only.
+(b) DistannReadyReceiptPayloadSidecar.row_count is forced equal to
+    owned_record_count by manifest_v2.rs:476-489 and is then hashed into the
+    global initial-content digest, so it currently carries no information the
+    receipt identity does not already carry.
+(c) Nothing enforces cover continuity across epochs: a V3 parent may have a V2
+    child and vice versa (validate_parent_fingerprint accepts either).
+(d) sql/bootstrap.sql is installed via extension_sql_file! (src/lib.rs:518), so
+    the CHECK widening lands on CREATE EXTENSION. Re-bootstrap is required, as
+    request.md states.
