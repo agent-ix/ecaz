@@ -79,6 +79,9 @@ shapes.
 - Run isolated row-heap versus columnar A/B at 10k, 50k, and 100k with a
   checked-in `ecaz bench suite` config. Include id-only, narrow scalar,
   vector-bearing, mixed, and whole-row workload profiles.
+- Compare arms at matched fixture position, or use a preregistered
+  counterbalanced envelope that separates position/warmth from the candidate.
+  Never compare a fresh-build control only against a reused candidate.
 - Report segment reads/bytes by attnum, null/offset/value work, exact-vector
   reads, owner CPU/wall, wire bytes, end-to-end latency/tails, recall/result
   identity, build/handoff time, DML overlay cost, compaction estimate, per-tier
@@ -131,5 +134,4 @@ the opt-in prototype until its mandatory factorial hybrid experiment closes.
 - FR-076, FR-078, FR-079, FR-082, FR-083
 - NFR-007, NFR-016, NFR-018, NFR-021, NFR-022
 - PostgreSQL TOAST and binary type I/O contracts
-
 

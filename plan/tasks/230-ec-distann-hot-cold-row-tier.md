@@ -71,6 +71,9 @@ are required.
 - Run isolated row-heap versus hot/cold A/B at 10k, 50k, and 100k using
   `ecaz bench suite`. Do not combine Task 229's sidecar or Task 231's fixed
   graph blocks with this candidate.
+- Compare arms at matched fixture position, or use a preregistered
+  counterbalanced envelope that separates position/warmth from the candidate.
+  Never compare a fresh-build control only against a reused candidate.
 - Report exact-vector reads, hot/cold tuple and block reads, detoast/send work,
   payload bytes, graph expansion stages, end-to-end latency/tails, recall,
   build/DML cost, per-tier bytes, and conformance.
@@ -109,5 +112,4 @@ and mutation effects. Continue to Tasks 231 and 232 regardless of outcome.
 - FR-076, FR-078, FR-079, FR-082, FR-083
 - NFR-016, NFR-018, NFR-021, NFR-022
 - PostgreSQL TOAST storage behavior
-
 

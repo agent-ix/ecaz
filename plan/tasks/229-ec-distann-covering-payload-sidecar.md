@@ -75,6 +75,9 @@ DML cost.
 - Run isolated sidecar-off/on A/B cells at 10k, 50k, and 100k through a checked-in
   `ecaz bench suite` config. The arms must otherwise share projection policy,
   generation inputs, search settings, and release provenance.
+- Compare arms at matched fixture position, or use a preregistered
+  counterbalanced envelope that separates position/warmth from the candidate.
+  Never compare a fresh-build control only against a reused candidate.
 - Report result/recall identity, mean/p50/p95/p99/max, owner stages, heap and
   sidecar reads, bytes by attribute, wire bytes, build time, DML work, per-node
   storage, and NFR-021/NFR-022 conformance.
@@ -116,4 +119,3 @@ Tasks 230--232 from the operator-selected comparison.
 - Task 218 production lazy-10 attribution
 - Roadmap MAT-27 / ARCH-06
 - FR-076, FR-079, FR-082, FR-083, NFR-016, NFR-018, NFR-021, NFR-022
-

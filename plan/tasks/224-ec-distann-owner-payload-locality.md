@@ -2,7 +2,9 @@
 
 Status: **packet 003 STOP accepted by reviewer seq05; MAT-26 latency unmeasured,
 candidate axis void, no finalist; decision-record correction review-open;
-native 12/10 bounded-read divergence carried to Task 239; MAT-25 retired**
+feature-only/default-off exact `real[]` sender and CLI gate retained as
+diagnostic code by ruling; native 12/10 bounded-read divergence carried to
+Task 239; MAT-25 retired**
 (updated 2026-08-25). Request
 `reviews/task-224/003-isolated-candidate/request.md`; decision record
 `reviews/task-224/003-isolated-candidate/artifacts/screen-decision.md`;

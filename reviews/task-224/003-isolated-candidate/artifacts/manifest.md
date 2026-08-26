@@ -235,10 +235,12 @@ two formerly labelled passes. The candidate reached 400 remote owners, 6,328
 remote candidates/payloads, 12,656 payload columns, and 77,960,960 payload
 bytes; whether the exact sender activated is unknown.
 
-The raw eager 44.6→26.3 ms control/candidate movement is a 41% run-position and
-fixture-warmth confound—about eight times the 5% decision threshold—not a
-candidate result. Candidate lazy-10, control B, and profiled control never ran,
-so `C`, `N`, the usefulness and tail comparisons, `R`, and `D_attr` are not
+The raw eager 44.6→26.3 ms control/candidate movement is a 41% unattributable
+gap—about eight times the 5% decision threshold—not a candidate result. The
+arms differ in both fixture position/warmth and the fast-sender flag whose
+effect is unobservable; the gap is neither a sender win nor evidence of sender
+inactivity. Candidate lazy-10, control B, and profiled control never ran, so
+`C`, `N`, the usefulness and tail comparisons, `R`, and `D_attr` are not
 computable. No post-hoc rerun was attempted or authorized.
 
 Corpus provenance:
@@ -252,7 +254,7 @@ Corpus provenance:
 
 All live-run files are enumerated with byte hashes in
 `live-artifact-sha256.txt`; ledger SHA-256
-`e41ad0bcba7b9bfc3f5ea70a29597aadc9540b87701bf4d710bdd11c53a31040`.
+`24293bb640d391c3880531bcb7e7a7a733914cb22db0498a88220e6c0036b762`.
 Temporary cluster directories were stopped by the harness and are removed
 after this record was captured.
 

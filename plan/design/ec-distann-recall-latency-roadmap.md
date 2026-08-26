@@ -126,7 +126,7 @@ validity requirements.
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
 | 223 | Direct owner tuple materialization | **complete — review-closed ACCEPT; STOP** (2026-08-25) | the reviewer accepted the 0.514999 ms / 4.439647% whole-bucket dominance proof, retired substage instrumentation as decision-obviated, and authorized no direct candidate |
-| 224 | Owner payload heap locality | **packet 003 STOP accepted; MAT-26 unmeasured/no finalist; correction review-open; MAT-25 retired** | activation gate structurally unobservable; raw 41% eager swing is position/warmth confound; native 12/10 bounded-read divergence moved to Task 239; no packet 004 |
+| 224 | Owner payload heap locality | **packet 003 STOP accepted; MAT-26 unmeasured/no finalist; correction review-open; MAT-25 retired** | activation gate structurally unobservable; raw 41% eager gap is unattributable across both position/warmth and the sender flag; feature-only diagnostics retained; native 12/10 bounded-read divergence moved to Task 239; no packet 004 |
 | 225 | Finalist materialization overlap | proposed — independently conditional | Task 224's no-finalist STOP neither satisfies nor rejects its finalist-stability/hideable-RTT premise |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 | 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
@@ -163,9 +163,11 @@ at a structurally unsatisfiable activation assertion: the accepted unprofiled
 configuration suppresses all five outcome counters, so their zero values do
 not establish whether the sender ran. MAT-26's latency effect is unmeasured,
 the candidate axis is void, and Task 224 STOPs with no finalist. Its raw eager
-44.6→26.3 ms movement is a 41% run-position/warmth confound, about eight times
-the decision threshold. No packet 004 or replacement run is proposed; the
-feature-only/default-off diagnostics remain. Task 239 carries the independent
+44.6→26.3 ms movement is a 41% unattributable gap: the arms differ in both
+fixture position/warmth and the sender flag whose effect is unobservable. It is
+neither a candidate win nor evidence of sender inactivity. No packet 004 or
+replacement run is proposed; the feature-only/default-off diagnostics remain.
+Task 239 carries the independent
 12/10 divergence and blocks Task 229 semantic closeout. Task 225 remains
 conditional on its own separately measured finalist-stability and hideable-RTT
 premise.
@@ -177,6 +179,11 @@ The operator-selected storage sequence remains mandatory and unstacked:
 3. Task 231 — fixed-stride dense-ordinal graph/vector node extents;
 4. Task 232 — packed per-attnum columnar immutable row tier; and
 5. Task 233 — fixed-stride graph/vector plus non-vector packed payload hybrid.
+
+Every Task 229--233 A/B must compare arms at matched fixture position or use a
+preregistered counterbalanced envelope that separates position/warmth from the
+candidate. A fresh-build control may never be the sole comparator for a reused
+candidate.
 
 Every layout gets its own 10k/50k/100k recall, latency, storage, construction,
 and DML evidence even if an earlier prototype STOPs or wins. The hybrid reruns
@@ -369,7 +376,7 @@ remain controls rather than new candidates.
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | **review-closed retired by Task 224 packet 002**: 6.785 requested TIDs occupy 6.770 blocks while sorting displaces 72% of rows; locality offers essentially no coalescing |
-| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 STOP accepted; latency unmeasured, candidate axis void, no finalist**: exact release provenance passed, but native semantics exceeded 12/10 bounded reads and the timing activation gate was structurally unobservable; raw 41% eager movement is a position/warmth confound; feature-only diagnostics retained, no packet 004 |
+| MAT-26 | Batch detoast/binary-send work by physical block | **Task 224 packet 003 STOP accepted; latency unmeasured, candidate axis void, no finalist**: exact release provenance passed, but native semantics exceeded 12/10 bounded reads and the timing activation gate was structurally unobservable; raw 41% eager gap is unattributable across both fixture position/warmth and the sender flag; feature-only diagnostics retained, no packet 004 |
 | MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |

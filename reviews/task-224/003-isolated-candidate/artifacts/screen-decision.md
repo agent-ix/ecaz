@@ -114,10 +114,13 @@ prediction files; all three SHA-256 values are
 Its raw eager timing was mean 26.3 ms, p95 29.8 ms, p99 31.6 ms, but it is not a
 decision-bearing candidate result because activation is unobservable and the
 candidate production lazy-10 and control-B arms never ran. Control A eager was
-44.6 ms on the same frozen generation, so run position/warmth alone produced a
-41% swing—roughly eight times the registered 5% usefulness threshold. This
-retrospectively confirms why control B was mandatory and bars the raw 26.3 ms
-from any latency-win claim.
+44.6 ms on the same frozen generation. The arms report the same owner/payload
+workload, but differ in two uncontrolled ways: fixture position/warmth and the
+fast-sender flag whose effect is unobservable. Their 41% gap—roughly eight
+times the registered 5% usefulness threshold—is therefore unattributable in
+either direction: it is neither a candidate win nor evidence that the sender
+did nothing. Control B was the term intended to separate those effects, and it
+never ran.
 
 The activation assertion was structurally unsatisfiable:
 
@@ -183,9 +186,13 @@ STOP, while leaving MAT-26's latency effect explicitly unmeasured.
 
 1. **STOP MAT-26 with its latency effect unmeasured.** The candidate axis was
    void; Task 224 has no finalist and will not run packet 004.
-2. Bar the raw eager 26.3 ms context from any candidate claim. The matched
-   44.6→26.3 ms, 41% position/warmth swing is about eight times the decision
-   threshold, and control B never bounded it.
+2. Bar the raw eager 26.3 ms context from any candidate claim. The 44.6→26.3
+   ms arms differ in both fixture position/warmth and an unobservable sender
+   flag, so the 41% gap is unattributable in either direction. Its magnitude is
+   about eight times the decision threshold, and control B never separated the
+   effects. Tasks 229--233 must compare arms at matched fixture position (or a
+   preregistered counterbalanced envelope), never a fresh-build control against
+   a reused candidate.
 3. Retain the feature-only, default-off candidate and instrumentation as
    diagnostic code. Production behavior remains unchanged.
 4. Carry the independent native semantic control's 12/10 bounded-read

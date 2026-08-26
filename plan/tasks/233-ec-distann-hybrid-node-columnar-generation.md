@@ -89,6 +89,10 @@ disposition without duplicating the exact vector.
 - Run every arm at 10k, 50k, and 100k. Include standard warm and
   controlled-residency profiles plus traversal/rerank-only, id-only, narrow
   scalar, exact-vector projection, mixed, cold/wide, and `SELECT *` workloads.
+- Compare every factorial arm at matched fixture position, or use a
+  preregistered counterbalanced envelope that separates position/warmth from
+  layout effects. Never compare a fresh-build control only against reused
+  candidates.
 - Report main effects and the interaction separately: graph/vector and payload
   reads/bytes/hits, directory probes, owner stages, decode/reconstruction CPU,
   wire bytes, recall/result identity, p50/p95/p99/max and throughput, build and
@@ -146,5 +150,4 @@ default flip receives a separate productionization task and release A/B.
 - PostgreSQL table-AM, TOAST, page-layout, and extension-WAL contracts
 - FR-076, FR-078, FR-079, FR-082, FR-083
 - NFR-007, NFR-016, NFR-018, NFR-021, NFR-022
-
 

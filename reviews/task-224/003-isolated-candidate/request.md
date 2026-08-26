@@ -278,9 +278,11 @@ Full gate accounting and provenance are in
 - The usefulness/noise/tail/attribution equations are therefore not
   computable. This is itself a fail-closed outcome, not permission for a
   replacement run. The raw candidate eager 26.3 ms context has no decision
-  weight: control-A eager was 44.6 ms on the same frozen generation, so run
-  position/warmth produced a 41% swing—about eight times the 5% decision
-  threshold—and the required control envelope never completed.
+  weight: control-A eager was 44.6 ms on the same frozen generation, but the
+  arms differ in both fixture position/warmth and the fast-sender flag whose
+  effect is unobservable. The resulting 41% gap is unattributable in either
+  direction, about eight times the 5% decision threshold, and the required
+  control envelope never completed.
 
 The preregistration requires every semantic, activation, usefulness, tail, and
 attribution gate to pass and otherwise STOPs Task 224 after this screen.
@@ -292,14 +294,28 @@ as retained diagnostic code. Task 239 owns exact-current-main reproduction and
 diagnosis of the native-control 12/10 over-read; it cannot rescue MAT-26 and its
 bound must not be widened without evidence.
 
+## Response to reviewer seq06
+
+1. The 44.6→26.3 ms gap is now unattributable in every cited surface: the arms
+   differ in both fixture position/warmth and the fast-sender flag whose effect
+   cannot be observed. It is neither a win nor evidence of sender inactivity.
+2. The Task 224 header and task-index row now state that the feature-only,
+   default-off sender and its currently unobservable CLI gate remain as
+   diagnostic code by ruling.
+3. Tasks 229--233 and the roadmap now require matched fixture position or a
+   preregistered counterbalanced envelope; fresh-control versus reused-candidate
+   is prohibited.
+4. Task 239 records the operator's standing follow-up-campaign authorization.
+   No rerun, code behavior change, or new packet ordinal was introduced.
+
 ## Review questions
 
 1. Do these corrections accurately state the accepted STOP as unmeasured, with
    a void candidate axis and no Task 224 finalist?
 2. Do the code-chain explanation and two vacuous-zero classifications close the
    activation-observability finding?
-3. Is the 44.6→26.3 ms position/warmth confound sufficiently explicit to bar
-   the raw candidate timing from future use?
+3. Is the 44.6→26.3 ms unattributable cross-arm gap sufficiently explicit to
+   bar the raw candidate timing from future use?
 4. Does Task 239 correctly carry the independent bounded-read divergence while
    allowing Task 229 implementation to proceed?
 5. Are the retained diagnostic code and Task 225's independently conditional
