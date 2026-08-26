@@ -14352,6 +14352,22 @@ mod tests {
     }
 
     #[test]
+    fn materialization_incremental_filter_matches_only_pre_emitted_rows() {
+        assert!(materialization_line_was_emitted_incrementally(
+            "physical_materialization_correctness scale=10k scenario=exactly_one_window"
+        ));
+        assert!(materialization_line_was_emitted_incrementally(
+            "physical_materialization_feature_isolation scale=10k"
+        ));
+        assert!(!materialization_line_was_emitted_incrementally(
+            "physical_benchmark_materialization_correctness scale=10k pass=skipped"
+        ));
+        assert!(!materialization_line_was_emitted_incrementally(
+            "physical_benchmark_recall scale=10k"
+        ));
+    }
+
+    #[test]
     fn payload_projection_variant_is_explicit_and_defaults_on() {
         let variants = parse_benchmark_seed_variants(&[
             "all-columns:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:off".to_owned(),
