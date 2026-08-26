@@ -1,0 +1,217 @@
+# Reviewer seq-02 verification log — packet 013 bounded rereview
+
+Reviewed HEAD: 28d5348dcaf156f9d084c1d0c90033c268b48c91
+Branch:        integrate/distann-campaign-ledger-v2
+Baseline:      origin/main 2adf3d543b7e08b031563dc4ee15e6204d9c0038
+Prior review:  7b37dece73392a1d13355ee753e4b9b5c464abf2 (seq-01 NOT DONE)
+Correction:    e86d7813cb81c0ad2e85a2ff44c3e2497e29a768
+Date:          2026-08-26
+
+Read-only. No PostgreSQL, build, install, cargo, pgrx, or runtime command was
+run. No task file, plan doc, roadmap, imported packet, request, or source file
+was edited by this review. Only this log and
+feedback/2026-08-26-02-reviewer.md were written.
+
+Scope of this round, per seq-01 §"What clears when the two lines are fixed":
+B1, B2, the 227/236 roadmap-widening disclosure, and a no-new-defect /
+no-regression check on the previously passing findings.
+
+================================================================================
+§1. Change set since the seq-01 reviewed HEAD
+================================================================================
+
+$ git diff 7b37dece7..28d5348dc --name-status
+M	plan/tasks/238-ec-distann-retry-snapshot-use-after-free.md
+M	plan/tasks/README.md
+A	reviews/task-archive-cross-cutting/013-distann-campaign-ledger-v2/artifacts/reviewer-seq01-verification.log
+A	reviews/task-archive-cross-cutting/013-distann-campaign-ledger-v2/feedback/2026-08-26-01-reviewer.md
+M	reviews/task-archive-cross-cutting/013-distann-campaign-ledger-v2/request.md
+
+$ git show e86d7813c --stat
+ plan/tasks/238-ec-distann-retry-snapshot-use-after-free.md | 7 ++++---
+ plan/tasks/README.md                                       | 2 +-
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+$ git diff 7b37dece7..28d5348dc --numstat -- .../013-distann-campaign-ledger-v2/request.md
+17	0	reviews/task-archive-cross-cutting/013-distann-campaign-ledger-v2/request.md
+  (additive only; no prior request line rewritten)
+
+Exactly two canonical ledger files changed, plus the seq-01 feedback/artifact
+and an additive request section. Nothing else.
+
+================================================================================
+§2. No runtime / source change (regression check on seq-01 finding 3)
+================================================================================
+
+$ git diff origin/main...28d5348dc --name-only | grep -E '^(src/|crates/|sql/|spec/|Makefile|\.cargo/)'
+NONE (no src/crates/sql/spec/Makefile/.cargo path)
+
+$ git diff origin/main...28d5348dc --name-only | cut -d/ -f1 | sort -u
+plan
+reviews
+
+$ git diff 7b37dece7..28d5348dc --name-only \
+    | grep -E '\.(tsv|tsv\.gz)$|tunnel|awsrunShellScript|ssm-command-invocation\.latest|list-command-invocations|truth-cache'
+NONE
+
+================================================================================
+§3. B1 — Task 238 main-state claim, corrected text
+================================================================================
+
+$ git show e86d7813c -- plan/tasks/238-ec-distann-retry-snapshot-use-after-free.md
+-#77; forced-retry regression coverage restored by `3b8b872d6`; both current-main
+-PG18 callers pass; packet 001 outside closeout review pending** (2026-08-25).
++#77; forced-retry regression coverage is authored against exact current main on
++campaign-stack commit `3b8b872d6` but is not on `main`; both PG18 callers pass
++in packet evidence; DoD item 2 and outside closeout remain open** (updated
++2026-08-26).
+
+$ git show e86d7813c -- plan/tasks/README.md   (line 279, condensed)
+-238. ... regression coverage restored by `3b8b872d6`; both current-main PG18
+-     callers pass; outside closeout review pending** (2026-08-25, P0 ...)
++238. ... forced-retry regression coverage is authored against exact current
++     main on campaign-stack commit `3b8b872d6` but is not on main; both PG18
++     callers pass in packet evidence; DoD item 2 and outside closeout remain
++     open** (updated 2026-08-26, P0 ...) ... this docs-only integration
++     restores the packet evidence and canonical task definition while
++     explicitly preserving the still-open requirement to land the
++     deterministic forced-retry regression test.
+
+Ancestry re-confirmed at this HEAD:
+
+$ git merge-base --is-ancestor 3b8b872d6 origin/main
+on_origin_main=NO
+  subject: Restore DistANN PG18 retry regression coverage
+  contained in: origin/integrate/distann-followup-campaign
+                origin/task223-owner-substage-attribution
+                origin/task224-owner-payload-locality
+                origin/task234-current-tls
+                origin/task235-write-lifecycle-cancellation
+                origin/task239-bounded-read-overfetch
+
+Every surviving mention of the commit in plan/:
+
+$ git grep -n '3b8b872d6' 28d5348dc -- plan
+238-...md:5   campaign-stack commit `3b8b872d6` but is not on `main`; ...
+238-...md:73  2. **Regression test** (implemented and current-main verified in `3b8b872d6`):
+README.md:279 ... authored against exact current main on campaign-stack commit
+              `3b8b872d6` but is not on main; ...
+
+$ git grep -nE 'regression coverage (restored|is on main)|coverage restored by' -- plan
+NONE
+
+Third-surface consistency (roadmap unchanged, still lists the work as remaining):
+
+$ grep -n '^| 238 |' plan/design/ec-distann-recall-latency-roadmap.md
+143:| 238 | Retry snapshot use-after-free | fix on main; closeout review pending |
+     equivalent lifetime fix landed in Task 167 PR #77 before the task was
+     filed; restore deterministic regression coverage, evidence, and canonical
+     bookkeeping |
+
+Open-DoD consistency (task file, unchanged Acceptance section):
+
+$ sed -n '95,101p' plan/tasks/238-...md
+## Acceptance
+1. Historical before/after evidence proves the regression fails without the
+   guard lifetime fix and passes with it; ...
+2. The regression test, evidence, and bookkeeping merge to main. ...
+
+Retained "both PG18 callers pass in packet evidence" claim, substantiated:
+
+$ grep -n 'test result' reviews/task-238/001-retry-snapshot-uaf/artifacts/pg18-current-main-projection-contract.log
+36:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2599 filtered out; finished in 73.90s
+$ grep -n 'test result' reviews/task-238/001-retry-snapshot-uaf/artifacts/pg18-current-main-sibling-handoff.log
+35:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2599 filtered out; finished in 59.70s
+  (matches packet request.md:48-49; claim is now scoped to packet evidence)
+
+B1 CLOSED.
+
+================================================================================
+§4. B2 — dead Task 222 feedback citation
+================================================================================
+
+$ git show e86d7813c -- plan/tasks/238-...md   (References)
+ - `reviews/task-222/002-contract-and-correctness/artifacts/gdb-backtrace.log`
+-- `reviews/task-222/002-contract-and-correctness/feedback/2026-08-24-01-reviewer.md`
+ - Introducing commit `79afb0d82`; fix `010a0accc`
+
+$ git grep -n 'task-222/002-contract-and-correctness/feedback/2026-08-24-01-reviewer.md' 28d5348dc
+artifacts/reviewer-seq01-verification.log:92   (this review's own record of the defect)
+artifacts/reviewer-seq01-verification.log:112  (this review's own record of the defect)
+feedback/2026-08-26-01-reviewer.md:78          (seq-01 blocker text)
+  -> zero remaining occurrences on any canonical ledger surface; the three hits
+     are reviewer records describing the defect, not evidence citations.
+
+$ ls reviews/task-222/002-contract-and-correctness/feedback/
+2026-08-23-02-reviewer.md
+2026-08-23-03-reviewer.md
+
+Link sweep over both corrected files (every reviews/benchmarks/plan/spec/src
+path cited, resolved against this checkout):
+
+$ for f in plan/tasks/238-...md plan/tasks/README.md; do <resolve each cited path>; done
+(no MISSING lines — every cited path resolves)
+
+B2 CLOSED. The surviving sibling citation (gdb-backtrace.log) resolves.
+
+================================================================================
+§5. 227 / 236 roadmap widening — disclosure
+================================================================================
+
+$ git log -1 --format=%B e86d7813c
+Correct Task 238 main-state claims
+
+The docs integration also intentionally fills the previously missing, accurate,
+singular roadmap rows for accepted Tasks 227 and 236.
+
+$ sed -n '22,26p' .../013-distann-campaign-ledger-v2/request.md
+The correction commit message also discloses seq01's non-blocking scope note:
+this integration intentionally fills main's missing, accurate, singular roadmap
+rows for the already-accepted Tasks 227 and 236. ...
+
+Rows re-checked as singular and new relative to main:
+
+$ grep -c '^| 227 |' plan/design/ec-distann-recall-latency-roadmap.md -> 1
+$ grep -c '^| 236 |' plan/design/ec-distann-recall-latency-roadmap.md -> 1
+$ git show origin/main:plan/design/ec-distann-recall-latency-roadmap.md | grep -c '^| 227 |' -> 0
+$ git show origin/main:plan/design/ec-distann-recall-latency-roadmap.md | grep -c '^| 236 |' -> 0
+
+$ git diff 7b37dece7..28d5348dc -- plan/design/
+(empty — the roadmap itself was not touched by the correction; only the
+ disclosure was added)
+
+Disclosure requirement satisfied in both the commit message and the request.
+
+================================================================================
+§6. Previously passing seq-01 findings — regression check
+================================================================================
+
+Main's five accepted README rows, byte-compared against origin/main:
+
+  222: rows_on_main=1  vs_branch=IDENTICAL  rows_on_branch=1
+  226: rows_on_main=1  vs_branch=IDENTICAL  rows_on_branch=1
+  227: rows_on_main=1  vs_branch=IDENTICAL  rows_on_branch=1
+  236: rows_on_main=1  vs_branch=IDENTICAL  rows_on_branch=1
+  239: rows_on_main=1  vs_branch=IDENTICAL  rows_on_branch=1
+
+Task 238 row multiplicity:
+$ grep -c '^238\. `238-' plan/tasks/README.md            -> 1
+$ grep -c '^| 238 |' plan/design/...roadmap.md           -> 1
+
+Findings 1, 4, 4b, 5, 6, 7, 8, 9, 10 from seq-01 touch files the correction did
+not modify (§1 shows only 238-...md, README.md, and packet files changed), so
+their verification at 7b37dece7 carries forward unchanged. Packet trees under
+reviews/task-223, reviews/task-224, reviews/task-238 are untouched by
+e86d7813c, so the byte-exact provenance hashes recorded in seq-01 §4 still hold.
+
+================================================================================
+§7. Working tree state
+================================================================================
+
+$ git status --short
+(clean before this review's own feedback/artifact commit)
+
+================================================================================
+Result: B1 CLOSED, B2 CLOSED, disclosure present, no new defect, no regression
+in any previously passing finding.
+================================================================================
