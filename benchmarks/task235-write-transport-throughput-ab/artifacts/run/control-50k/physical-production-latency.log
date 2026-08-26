@@ -1,6 +1,6 @@
 ┌───────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬───────────────────┬─────────────┬──────────┬─────────┐
 │ top_k ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ worker_batch_size ┆ concurrency ┆ wall_ms  ┆ qps     │
 ╞═══════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═══════════════════╪═════════════╪══════════╪═════════╡
-│ 32    ┆ 50    ┆ 8.66 ms ┆ 0.79 ms ┆ 7.30 ms ┆ 8.62 ms ┆ 9.99 ms ┆ 10.7 ms ┆ 10.8 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 433.4 ms ┆ 115.361 │
+│ 32    ┆ 50    ┆ 9.13 ms ┆ 1.01 ms ┆ 7.37 ms ┆ 9.02 ms ┆ 11.5 ms ┆ 12.0 ms ┆ 12.0 ms ┆ warm        ┆ 0                 ┆ 1           ┆ 457.0 ms ┆ 109.417 │
 └───────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴───────────────────┴─────────────┴──────────┴─────────┘
 [distann-crown-stats] lane=latency label=top_k=32 capacity=0 entries=0 resident_bytes=0 resident_bytes_bound=0 crown_seeds_served=0 crown_fallbacks=0 crown_width_pruned_shards=0 crown_width_pruning_activations=0 fused_head_hops=0 fused_first_round_requested_ids=0
