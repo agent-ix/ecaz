@@ -1,0 +1,108 @@
+# Task 224 packet 003 — reviewer seq05: the MAT-26 activation gate is unreachable by construction
+# checkpoint under review: b834b7fb3715b8fea27d78bbf577c2b47b55d220 (== worktree src/ crates/ at reviewer HEAD c826cc5aa)
+
+== 0. confirm reviewer worktree code == the run checkpoint ==
+$ git diff --stat b834b7fb3 HEAD -- src/ crates/
+(empty == identical)
+
+== LINK 1. the candidate MUST run with profile_owner_locality=false: the owner rejects the pair ==
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if fast_real_array_send && locality_profile_enabled {
+            return Err(DistannExpandError::BadInput(
+                "Task 224 fast real[] sender requires unprofiled production payload SQL".to_owned(),
+            ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if fast_real_array_send && use_packed_payload {
+
+== LINK 2. owner_requested_tids is populated ONLY when locality profiling is on ==
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let locality_profile_enabled = profile_owner_locality;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let tid_profile = locality_profile_enabled
+            .then(|| owner_tid_profile(&nodes))
+            .unwrap_or_default();
+        if nodes.is_empty() {
+-- OwnerTidProfile::default() => requested_tids = 0; the populated form is:
+    OwnerTidProfile {
+        requested_tids: u64::try_from(nodes.len()).unwrap_or(u64::MAX),
+        distinct_heap_blocks: u64::try_from(block_counts.len()).unwrap_or(u64::MAX),
+-- and that field is what the owner ships:
+                response_construct_ns,
+                requested_tids: tid_profile.requested_tids,
+                distinct_heap_blocks: tid_profile.distinct_heap_blocks,
+
+== LINK 3. the coordinator records EVERY fast-array activation metric only if owner_requested_tids > 0 ==
+            if batch.telemetry.owner_requested_tids > 0 {
+                for (stage, nanos) in [
+   ... enclosing block ends at:
+                        metric,
+                        usize::try_from(value).unwrap_or(usize::MAX),
+                    );
+                }
+            }
+-- metrics trapped inside that block:
+2793:                        super::stage_counters::DistannMaterializationWork::OwnerProjectedValues,
+2809:                        super::stage_counters::DistannMaterializationWork::OwnerBinarySendBytes,
+2813:                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayValues,
+2817:                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayFallbackValues,
+2821:                        super::stage_counters::DistannMaterializationWork::OwnerFastRealArrayIneligibleRequests,
+
+== LINK 4. the CLI activation gate requires those exact metrics to be > 0 ==
+            if args.owner_fast_real_array_send {
+                for metric in [
+                    "owner_projected_values",
+                    "owner_binary_send_bytes",
+                    "owner_fast_real_array_values",
+                ] {
+                    let value = work_rows
+                        .iter()
+                        .find(|work| benchmark_log_value(work, "metric").as_deref() == Some(metric))
+                        .and_then(|work| benchmark_log_value(work, "value"))
+                        .ok_or_else(|| {
+                            eyre!("Task 224 MAT-26 activation omitted {metric} telemetry")
+                        })?
+                        .parse::<u64>()
+                        .wrap_err_with(|| format!("decoding Task 224 MAT-26 {metric} telemetry"))?;
+                    if value == 0 {
+                        bail!("Task 224 MAT-26 candidate produced zero {metric}");
+                    }
+                }
+
+== LINK 5. BOTH preregistered candidate steps carry the fatal flag pair ==
+-- timing candidate (dry-run/timing.log):
+--skip-owner-locality-profile --owner-fast-real-array-send
+-- semantic candidate (dry-run/semantics.log):
+--skip-owner-locality-profile --owner-fast-real-array-send
+
+CONCLUSION: fast_real_array_send=true forces profile_owner_locality=false (LINK 1)
+         => tid_profile = Default => owner_requested_tids = 0 (LINK 2)
+         => the coordinator never records owner_projected_values /
+            owner_binary_send_bytes / owner_fast_real_array_* (LINK 3)
+         => the CLI activation assertion bails on the first metric (LINK 4)
+         => every legal MAT-26 candidate step fails activation regardless of
+            whether the exact sender fired. The observed zeros are therefore
+            NOT evidence about the sender in either direction.
+
+COROLLARY: the packet's fallback/ineligible 'pass: required 0' rows are also
+           vacuous - they are the same never-recorded default, not a
+           measured zero. screen-decision.md:123-124 marks them 'pass'.
+
+== LINK 0 (strongest). The CLI REFUSES the only configuration that could report activation ==
+    if args.skip_owner_locality_profile && args.owner_payload_shape.is_none() {
+        bail!("--skip-owner-locality-profile requires --owner-payload-shape");
+    }
+    if args.owner_fast_real_array_send
+        && (args.owner_payload_shape.as_deref() != Some("vector-bearing")
+            || !args.skip_owner_locality_profile)
+    {
+        bail!(
+            "--owner-fast-real-array-send requires --owner-payload-shape vector-bearing and --skip-owner-locality-profile"
+        );
+    }
+
+=> --owner-fast-real-array-send REQUIRES --skip-owner-locality-profile.
+=> --skip-owner-locality-profile => profile_owner_locality=false => requested_tids=0 (LINK 2)
+=> so there is NO argv the CLI accepts under which the activation metrics can be nonzero.
+=> the gate is unsatisfiable in every runnable configuration, not merely unmet in this run.
