@@ -141,7 +141,7 @@ validity requirements.
 | 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
 | 237 | Protocol errors and EXPLAIN | proposed — blocked on 234; 236 complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 | 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
-| 239 | Bounded-read overfetch | operator-confirmed proposed — immediate P1 campaign blocker | reproduce native 12/10 versus accepted 10/10, diagnose regression vs fixture/bound sensitivity, fix or justify exact invariant, include recall, and gate Task 229 semantic closeout |
+| 239 | Bounded-read overfetch | packet 001 exact-current-main reproduction preregistration review-open — immediate P1 campaign blocker | paired normal-release semantics/recall and attribution-release native-sender request-count lanes; reproduce 12/10 versus accepted 10/10 before bisect/fix or invariant justification; gates Task 229 semantic closeout |
 
 ## Post-222 execution program (2026-08-25)
 

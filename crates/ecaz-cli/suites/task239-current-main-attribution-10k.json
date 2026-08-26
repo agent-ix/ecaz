@@ -1,0 +1,90 @@
+{
+  "name": "task239-current-main-attribution-10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-239/001-current-main-reproduction/artifacts/attribution-run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "current-main-attribution-10k",
+      "tags": ["task239", "current_main", "attribution", "native_sender", "10k"],
+      "artifact_dir": "${artifact_dir}/attribution",
+      "run_dir": "/home/peter/.ecaz/clusters/task239-current-main-attribution-10k",
+      "reuse_fixture": false,
+      "nodes": 3,
+      "base_port": 44060,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "full_metrics",
+      "distann_stage_counters": true,
+      "owner_payload_shape": "vector-bearing",
+      "skip_owner_locality_profile": true,
+      "owner_fast_real_array_send": false,
+      "materialization_correctness": true,
+      "skip_recall": false,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 0,
+      "skip_fault_drills": true,
+      "skip_concurrency_drill": true,
+      "skip_routed_delete_vacuum_drill": true,
+      "skip_single_control": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "eager-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 0,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "traversal_replica": false,
+          "typed_locator": false,
+          "packed_payload": false,
+          "expanded_locator": false,
+          "payload_projection": true,
+          "nfr_021": {
+            "id": "task239-current-main-attribution-eager",
+            "role": "context",
+            "admissibility": "nonconforming",
+            "rationale": "Exact-current-main attribution-release eager control for the native-sender bounded-read signal; one-iteration timing is non-decision context."
+          }
+        },
+        {
+          "name": "lazy10-production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "traversal_replica": false,
+          "typed_locator": false,
+          "packed_payload": false,
+          "expanded_locator": false,
+          "payload_projection": true,
+          "nfr_021": {
+            "id": "task239-current-main-attribution-lazy10",
+            "role": "context",
+            "admissibility": "nonconforming",
+            "rationale": "Exact-current-main attribution-release lazy-10 production path with native sender and strict payload_reads <= requested_rows gate; one-iteration timing is non-decision context."
+          }
+        }
+      ]
+    }
+  ]
+}

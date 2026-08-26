@@ -1,8 +1,8 @@
 # Task 239: ec_distann Bounded-Read Overfetch
 
-Status: **operator-confirmed under the standing follow-up-campaign
-authorization; proposed — immediate P1 campaign blocker required before Task
-229 semantic closeout** (2026-08-25). Priority: P1 correctness/performance.
+Status: **packet 001 exact-current-main reproduction preregistration
+review-open; immediate P1 campaign blocker required before Task 229 semantic
+closeout** (updated 2026-08-26). Priority: P1 correctness/performance.
 
 Origin: Task 224 packet 003 native-control semantic evidence and reviewer
 feedback `reviews/task-224/003-isolated-candidate/feedback/2026-08-25-05-reviewer.md`.
