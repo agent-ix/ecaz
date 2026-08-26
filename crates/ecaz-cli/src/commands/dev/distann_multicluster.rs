@@ -2875,7 +2875,7 @@ async fn materialization_result_json(
     variant: &BenchmarkSeedVariant,
     sql: &str,
     has_attribution_hooks: bool,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let reset_sql = if has_attribution_hooks {
         "SELECT ec_distann_stage_scoring_reset();"
     } else {
@@ -2887,7 +2887,9 @@ async fn materialization_result_json(
             materialization_variant_settings_sql(variant, has_attribution_hooks),
         ))
         .await?;
-    coordinator
+    let effective_batch_size =
+        materialization_batch_size_setting(coordinator, has_attribution_hooks).await?;
+    let result = coordinator
         .query_one(sql, &[])
         .await
         .wrap_err_with(|| {
@@ -2897,20 +2899,43 @@ async fn materialization_result_json(
             )
         })?
         .try_get::<_, String>(0)
-        .wrap_err("decoding materialization semantic result")
+        .wrap_err("decoding materialization semantic result")?;
+    Ok((result, effective_batch_size))
+}
+
+async fn materialization_batch_size_setting(
+    coordinator: &tokio_postgres::Client,
+    has_attribution_hooks: bool,
+) -> Result<String> {
+    if !has_attribution_hooks {
+        return Ok("production".to_owned());
+    }
+    coordinator
+        .query_one(
+            "SELECT current_setting(
+                'ec_distann.benchmark_materialization_batch_size', true
+             )",
+            &[],
+        )
+        .await?
+        .try_get::<_, Option<String>>(0)?
+        .ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "attribution build did not expose benchmark_materialization_batch_size"
+            )
+        })
 }
 
 fn materialization_variant_settings_sql(
     variant: &BenchmarkSeedVariant,
     has_attribution_hooks: bool,
 ) -> String {
-    let mut settings = Vec::new();
-    if variant.materialization_batch_size != 10 {
-        settings.push(format!(
-            "SET ec_distann.benchmark_materialization_batch_size = {}",
-            variant.materialization_batch_size
-        ));
-    }
+    // Every semantic arm shares one coordinator session. Keep this SET
+    // unconditional so a control value cannot leak into a later candidate.
+    let mut settings = vec![format!(
+        "SET ec_distann.benchmark_materialization_batch_size = {}",
+        variant.materialization_batch_size
+    )];
     if variant.owner_payload_plan_cache {
         settings.push("SET ec_distann.benchmark_owner_payload_plan_cache = on".to_owned());
     }
@@ -5852,10 +5877,11 @@ async fn compare_materialization_scenario(
     expected_rows: usize,
     qualified: bool,
     has_attribution_hooks: bool,
+    line_suffix: &str,
 ) -> Result<String> {
-    let control_json =
+    let (control_json, control_batch_size) =
         materialization_result_json(coordinator, control, sql, has_attribution_hooks).await?;
-    let candidate_json =
+    let (candidate_json, candidate_batch_size) =
         materialization_result_json(coordinator, candidate, sql, has_attribution_hooks).await?;
     let eager_value: serde_json::Value = serde_json::from_str(&control_json)?;
     let candidate_value: serde_json::Value = serde_json::from_str(&candidate_json)?;
@@ -5916,17 +5942,19 @@ async fn compare_materialization_scenario(
         && null_ok
         && external_toast_ok
         && attribution_pass;
+    let line = format!(
+        "physical_materialization_correctness scale={scale} scenario={scenario} pass={pass} rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} attribution_available={has_attribution_hooks} control_batch_size={control_batch_size} candidate_batch_size={candidate_batch_size} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
+        hex::encode(Sha256::digest(control_json.as_bytes())),
+        hex::encode(Sha256::digest(candidate_json.as_bytes())),
+    );
+    crate::ecaz_println!("[distann-multicluster] {line}{line_suffix}");
     if !pass {
         bail!(
-            "materialization correctness scenario {scenario} failed: rows={rows}/{expected_rows} identity={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads}/{payload_read_bound} duplicate_requested={duplicate_requested}",
+            "materialization correctness scenario {scenario} failed: rows={rows}/{expected_rows} identity={} null_ok={null_ok} external_toast_ok={external_toast_ok} control_batch_size={control_batch_size} candidate_batch_size={candidate_batch_size} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads}/{payload_read_bound} duplicate_requested={duplicate_requested}",
             eager_value == candidate_value
         );
     }
-    Ok(format!(
-        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} attribution_available={has_attribution_hooks} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
-        hex::encode(Sha256::digest(control_json.as_bytes())),
-        hex::encode(Sha256::digest(candidate_json.as_bytes())),
-    ))
+    Ok(line)
 }
 
 async fn run_materialization_correctness(
@@ -5938,6 +5966,7 @@ async fn run_materialization_correctness(
     scale: &str,
     corpus: &str,
     queries: &str,
+    line_suffix: &str,
 ) -> Result<Vec<String>> {
     if nodes.len() < 2 {
         bail!("materialization correctness requires at least two physical owners");
@@ -6204,15 +6233,18 @@ async fn run_materialization_correctness(
                 limit as usize,
                 qualified,
                 has_attribution_hooks,
+                line_suffix,
             )
             .await?,
         );
     }
 
     if !has_attribution_hooks {
-        lines.push(format!(
+        let line = format!(
             "physical_materialization_feature_isolation scale={scale} normal_release=true attribution_hooks_absent=true semantic_scenarios=7"
-        ));
+        );
+        crate::ecaz_println!("[distann-multicluster] {line}{line_suffix}");
+        lines.push(line);
         return Ok(lines);
     }
 
@@ -6224,6 +6256,8 @@ async fn run_materialization_correctness(
                 materialization_variant_settings_sql(candidate, has_attribution_hooks),
             ))
             .await?;
+        let candidate_batch_size =
+            materialization_batch_size_setting(coordinator, has_attribution_hooks).await?;
         let mixed_sql = materialization_semantic_sql(corpus, queries, "TRUE", 10, query_offset);
         let _ = coordinator.query_one(&mixed_sql, &[]).await?;
         let work = coordinator
@@ -6246,28 +6280,43 @@ async fn run_materialization_correctness(
             }
         }
         if remote > 0 && local > 0 && remote + local == 10 && duplicate_requested == 0 {
-            mixed = Some((query_offset, remote, local, duplicate_requested));
+            mixed = Some((
+                query_offset,
+                remote,
+                local,
+                duplicate_requested,
+                candidate_batch_size,
+            ));
             break;
         }
     }
-    let (mixed_query_offset, remote, local, duplicate_requested) = mixed.ok_or_else(|| {
-        color_eyre::eyre::eyre!("no mixed local/remote top-10 in first 10 queries")
-    })?;
-    lines.push(format!(
-        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local} duplicate_requested={duplicate_requested}"
-    ));
+    let (mixed_query_offset, remote, local, duplicate_requested, candidate_batch_size) = mixed
+        .ok_or_else(|| {
+            color_eyre::eyre::eyre!("no mixed local/remote top-10 in first 10 queries")
+        })?;
+    let mixed_line = format!(
+        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} candidate_batch_size={candidate_batch_size} remote_consumed={remote} local_consumed={local} duplicate_requested={duplicate_requested}"
+    );
+    crate::ecaz_println!("[distann-multicluster] {mixed_line}{line_suffix}");
+    lines.push(mixed_line);
 
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_stage_scoring_reset();
-             {}
-             BEGIN;
+             {}",
+            materialization_variant_settings_sql(candidate, has_attribution_hooks),
+        ))
+        .await?;
+    let candidate_batch_size =
+        materialization_batch_size_setting(coordinator, has_attribution_hooks).await?;
+    coordinator
+        .batch_execute(&format!(
+            "BEGIN;
              DECLARE task184_materialization_cursor NO SCROLL CURSOR FOR
              SELECT id, source_id, source, payload_note
                FROM {corpus}
               ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id OFFSET {mixed_query_offset} LIMIT 1)
-              LIMIT 40;",
-            materialization_variant_settings_sql(candidate, has_attribution_hooks),
+              LIMIT 40;"
         ))
         .await?;
     let first_rows = coordinator
@@ -6329,11 +6378,13 @@ async fn run_materialization_correctness(
     let Some(later_error) = later_error else {
         bail!("post-first-batch remote-owner outage returned a complete prefix without error");
     };
-    lines.push(format!(
-        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} duplicate_requested={duplicate_requested} error_digest={}",
+    let failure_line = format!(
+        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} candidate_batch_size={candidate_batch_size} first_remote_requested={requested} duplicate_requested={duplicate_requested} error_digest={}",
         first_rows.len(),
         hex::encode(Sha256::digest(later_error.to_string().as_bytes())),
-    ));
+    );
+    crate::ecaz_println!("[distann-multicluster] {failure_line}{line_suffix}");
+    lines.push(failure_line);
     Ok(lines)
 }
 
@@ -9035,6 +9086,10 @@ async fn run_physical_benchmarks(
             .await?;
         }
     }
+    let line_provenance_suffix = format!(
+        " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+        args.query_offset,
+    );
     if task167_quality_gate_failed && args.materialization_correctness {
         lines.push(format!(
             "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=candidate_default_quality_gate_failed"
@@ -9050,15 +9105,13 @@ async fn run_physical_benchmarks(
                 scale,
                 &physical_corpus,
                 &physical_queries,
+                &line_provenance_suffix,
             )
             .await?,
         );
     }
     for line in &mut lines {
-        line.push_str(&format!(
-            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
-            args.query_offset
-        ));
+        line.push_str(&line_provenance_suffix);
     }
     Ok(lines)
 }
@@ -9071,6 +9124,11 @@ fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
         || args.top_k != 10
         || args.head_index_cap != 4096
         || args.candidate_heap_limit.unwrap_or(32) != 32
+}
+
+fn materialization_line_was_emitted_incrementally(line: &str) -> bool {
+    line.starts_with("physical_materialization_correctness ")
+        || line.starts_with("physical_materialization_feature_isolation ")
 }
 
 fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
@@ -9420,7 +9478,9 @@ async fn drive_reused_physical_fixture(
         Vec::new()
     };
     for line in &benchmark_lines {
-        crate::ecaz_println!("[distann-multicluster] {line}");
+        if !materialization_line_was_emitted_incrementally(line) {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
     }
     drop(coordinator);
     connection_task.abort();
@@ -10421,7 +10481,9 @@ async fn drive_physical_fixture(
         Vec::new()
     };
     for line in &benchmark_lines {
-        crate::ecaz_println!("[distann-multicluster] {line}");
+        if !materialization_line_was_emitted_incrementally(line) {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
     }
     if let Some(failure) = task167_quality_gate_failure(&benchmark_lines) {
         let mut summary = format!(
@@ -14274,6 +14336,35 @@ mod tests {
             parse_benchmark_seed_variants(&["eager:persisted_head:32:32:rabitq:0".to_owned()])
                 .expect("explicit eager variant parses");
         assert_eq!(eager[0].materialization_batch_size, 0);
+    }
+
+    #[test]
+    fn materialization_semantics_always_restore_the_variant_batch_size() {
+        let variants = parse_benchmark_seed_variants(&[
+            "eager:persisted_head:32:32:rabitq:0".to_owned(),
+            "lazy:persisted_head:32:32:rabitq:10".to_owned(),
+        ])
+        .expect("materialization variants parse");
+        assert!(materialization_variant_settings_sql(&variants[0], true)
+            .contains("benchmark_materialization_batch_size = 0"));
+        assert!(materialization_variant_settings_sql(&variants[1], true)
+            .contains("benchmark_materialization_batch_size = 10"));
+    }
+
+    #[test]
+    fn materialization_incremental_filter_matches_only_pre_emitted_rows() {
+        assert!(materialization_line_was_emitted_incrementally(
+            "physical_materialization_correctness scale=10k scenario=exactly_one_window"
+        ));
+        assert!(materialization_line_was_emitted_incrementally(
+            "physical_materialization_feature_isolation scale=10k"
+        ));
+        assert!(!materialization_line_was_emitted_incrementally(
+            "physical_benchmark_materialization_correctness scale=10k pass=skipped"
+        ));
+        assert!(!materialization_line_was_emitted_incrementally(
+            "physical_benchmark_recall scale=10k"
+        ));
     }
 
     #[test]

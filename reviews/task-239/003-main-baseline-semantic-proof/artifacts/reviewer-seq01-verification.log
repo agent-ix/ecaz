@@ -1,0 +1,105 @@
+# Task 239 packet 003 reviewer seq01 verification (read-only)
+# branch task239-main-port; all commands run from the worktree root
+
+$ git rev-parse HEAD; git rev-parse origin/task239-main-port; git status --porcelain
+cd59ed950efd60befe45cfdef8c4a40b99082ba8
+cd59ed950efd60befe45cfdef8c4a40b99082ba8
+?? reviews/task-239/003-main-baseline-semantic-proof/artifacts/reviewer-seq01-verification.log
+(clean)
+
+$ git diff --stat 41392c011 4ab2aa9a9 -- src
+(no src/** delta)
+
+$ git diff --stat 41392c011 4ab2aa9a9 -- src crates
+ .../src/commands/dev/distann_multicluster.rs       | 171 ++++++++++++++++-----
+ .../suites/task239-main-port-semantics-10k.json    |  86 +++++++++++
+ 2 files changed, 217 insertions(+), 40 deletions(-)
+
+$ git show 41392c011:src/am/ec_distann/stage_counters.rs | grep -n 'ALL: \[Self;'
+52:    pub(crate) const ALL: [Self; 37] = [
+220:    pub(crate) const ALL: [Self; 33] = [
+352:    pub(crate) const ALL: [Self; 8] = [
+$ git show 4ab2aa9a9:src/am/ec_distann/stage_counters.rs | grep -n 'ALL: \[Self;'
+52:    pub(crate) const ALL: [Self; 37] = [
+220:    pub(crate) const ALL: [Self; 33] = [
+352:    pub(crate) const ALL: [Self; 8] = [
+$ git show 4ab2aa9a9:crates/ecaz-cli/src/commands/dev/distann_multicluster.rs | grep -n 'expected_counter_groups'
+8347:            let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
+8348:            if stage_rows.len() != 37 * expected_counter_groups {
+8351:                    37 * expected_counter_groups,
+8352:                    expected_counter_groups,
+8419:            if work_rows.len() != 34 * expected_counter_groups {
+8422:                    34 * expected_counter_groups,
+8423:                    expected_counter_groups,
+
+$ diff -u <(git diff 8d8c181b8^ 8d8c181b8 -- <cli>) <(git diff 21c013079^ 21c013079 -- <cli>)
+-+        "{} corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+-+        task224_arm_provenance(
+-+            args.owner_payload_shape.is_some() && !args.skip_owner_locality_profile,
+-+            args.owner_fast_real_array_send,
+-+        ),
+++        " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+--        line.push_str(&task224_arm_provenance(
+--            args.owner_payload_shape.is_some() && !args.skip_owner_locality_profile,
+--            args.owner_fast_real_array_send,
+--        ));
+-     )
++         || args.candidate_heap_limit.unwrap_or(32) != 32
+(only hunk-offset lines and the task224_arm_provenance prefix removal differ; see feedback seq01 section 1)
+
+$ sha256sum config at 0adea669b / 4ab2aa9a9 / worktree
+53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  -
+53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  -
+53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  crates/ecaz-cli/suites/task239-main-port-semantics-10k.json
+
+$ sha256sum packet artifacts
+6f175d7126514288c7663a04aeb90b7f7b29e65b1188ccbecfcac3551d339305  reviews/task-239/003-main-baseline-semantic-proof/artifacts/cargo-fmt-check.log
+02c4af9165d24aae92ace70bfc3b28c1b8734a57703e69461985b05889d50a0e  reviews/task-239/003-main-baseline-semantic-proof/artifacts/cargo-test-materialization-focused.log
+a537a695e5652171c959f900b5a9991d47671902cdfca5668cb6b1c7aea1f5ef  reviews/task-239/003-main-baseline-semantic-proof/artifacts/release-build-cli-4ab2aa9a9.log
+e9c6c1acee8bb44567d2fa19722cc0476410607a5a1fb802dc7e549f928a130e  reviews/task-239/003-main-baseline-semantic-proof/artifacts/suite-audit.log
+74c1a5c8e5c736a4b72ac268eb7f24273d33cf0f91529e43b03e23b37a4948a4  reviews/task-239/003-main-baseline-semantic-proof/artifacts/dry-run.log
+3612b3cc2c37bfcbe0349c1b025af8d36988cedc211ad3a5b4e5a0524a339723  reviews/task-239/003-main-baseline-semantic-proof/artifacts/dry-run/suite-manifest.json
+
+$ sha256sum /home/peter/.cargo-target/release/ecaz
+ce5bfeb1ea486c2fbed3027a703bba49122ac5123f46672cd0aaf1b4b0eb5163  /home/peter/.cargo-target/release/ecaz
+-rwxr-xr-x 2 peter peter 25547120 2026-08-26 03:12 /home/peter/.cargo-target/release/ecaz
+
+$ git -C /home/peter/dev/ecaz/.worktrees/task239-main-port-run-build rev-parse HEAD; git status --porcelain
+4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c
+(clean)
+
+$ ls -d /home/peter/.ecaz/clusters/task239*
+ls: cannot access '/home/peter/.ecaz/clusters/task239*': No such file or directory
+$ ls -d reviews/task-239/003-main-baseline-semantic-proof/artifacts/run
+ls: cannot access 'reviews/task-239/003-main-baseline-semantic-proof/artifacts/run': No such file or directory
+
+$ preregistered gate 4/5 counter+digest provenance
+scenario=fewer_than_window pass=true rows=5 eager_digest=08efa6098f4a7cbfb47641ffc22b015d68f6294d8a5276b9c7424ff0d2017dfc candidate_digest=08efa6098f4a7cbfb47641ffc22b015d68f6294d8a5276b9c7424ff0d2017dfc null_ok=true external_toast_ok=true remote_requested=6 local_consumed=2 payload_reads=8 payload_read_bound=10 deepening_cap=1024 duplicate_requested=0
+scenario=exactly_one_window pass=true rows=10 eager_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d candidate_digest=df979e2df3cc556ce8caffcca7401a832ab8e945c5078bca1e7fa37c56cfc77d null_ok=true external_toast_ok=true remote_requested=6 local_consumed=4 payload_reads=10 payload_read_bound=10 deepening_cap=1024 duplicate_requested=0
+
+$ nine-scenario reachability precedent (task-198 attribution build)
+scenario=corrupt_partial_image_fallback scenario=durable_mutation_invalidation scenario=exactly_one_window scenario=fewer_than_window scenario=idempotent_build_replay scenario=mid_scan_full_restart scenario=mixed_local_remote scenario=more_than_window scenario=null_payload scenario=owner_outage_partial_build scenario=post_first_batch_remote_failure scenario=ready_semantic_identity scenario=reject_first_window scenario=reject_multiple_windows scenario=retire_reclaim_and_removed_fallback scenario=toasted_projection_qual 
+
+$ packet-001 production-lane core digests (additional free gate values)
+scenario=more_than_window pass=true rows=15 eager_digest=82f675ad84705e13d0fc9789311c7ae31afcde99bb87a32e6b11df42638e4013
+scenario=reject_first_window pass=true rows=10 eager_digest=3568e635d294a8ea2e7454f1913f652a8d20cb9f1844d1926e4c5466eeb44755
+scenario=reject_multiple_windows pass=true rows=10 eager_digest=f4aeaffeb10657ae0907039af6ec9bc91a8637e140a270dee419a3f7ce37f73c
+scenario=null_payload pass=true rows=10 eager_digest=fef30f6c6a27365ecc1f08e73aefeb1a5bcbc06c44e2593983b13297f23f8fb8
+scenario=toasted_projection_qual pass=true rows=10 eager_digest=001d1fa653aef3470989267a7446a9575b9dcae8f00c240f4f726b6b01e878d4
+
+$ packet-001 production step exit status (insert_throughput_ab pass=false is non-fatal)
+[('current-main-production-10k', 'succeeded', 0)]
+
+$ production lazy-10 policy equivalence
+115:pub(super) const PRODUCTION_MATERIALIZATION_BATCH_SIZE: usize = 10;
+842:            .unwrap_or(PRODUCTION_MATERIALIZATION_BATCH_SIZE);
+845:    PRODUCTION_MATERIALIZATION_BATCH_SIZE
+pub(super) fn materialization_batch_size() -> usize {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return usize::try_from(ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC.get())
+            .unwrap_or(PRODUCTION_MATERIALIZATION_BATCH_SIZE);
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    PRODUCTION_MATERIALIZATION_BATCH_SIZE
+}

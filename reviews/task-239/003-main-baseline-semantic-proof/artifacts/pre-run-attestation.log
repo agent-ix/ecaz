@@ -1,0 +1,6 @@
+2026-08-26T03:46:25-07:00
+4ab2aa9a90f14b045298ac9fe408f9a4b586bf3c
+worktree_clean=true
+ce5bfeb1ea486c2fbed3027a703bba49122ac5123f46672cd0aaf1b4b0eb5163  /home/peter/.cargo-target/release/ecaz
+53e13d779e2452a4282f8a076c17eb082396df615efd3e45393d2054257a4532  crates/ecaz-cli/suites/task239-main-port-semantics-10k.json
+ports_free=true

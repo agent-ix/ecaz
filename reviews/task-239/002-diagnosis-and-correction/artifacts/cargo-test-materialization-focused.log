@@ -1,0 +1,16 @@
+Script started on 2026-08-26 01:35:03-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-8892c85f4878be67)
+
+running 6 tests
+test commands::dev::distann_multicluster::tests::eager_materialization_control_is_forwarded_as_explicit_zero ... ok
+test commands::dev::distann_multicluster::tests::materialization_semantic_sql_projects_null_and_varlena_evidence ... ok
+test commands::bench::tests::distann_materialization_work_merges_and_reports_per_scan_mean ... ok
+test commands::dev::distann_multicluster::tests::materialization_variant_parser_is_backward_compatible ... ok
+test commands::dev::distann_multicluster::tests::materialization_semantics_always_restore_the_variant_batch_size ... ok
+test commands::bench::suite::tests::distann_materialization_correctness_is_suite_addressable_and_structured ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 537 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-26 01:35:04-07:00 [COMMAND_EXIT_CODE="0"]
