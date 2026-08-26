@@ -1,15 +1,15 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **current-TLS implementation and closeout gates complete; packet 004
-review-open; outside ACCEPT/REJECT verdict pending** (2026-08-25). The secure
-PG18 matrix passes 25/25 cells with no partial rows or leaked remote work.
-Fresh `ecaz bench suite` control/candidate runs at 10k/50k/100k are
-recall/storage neutral within measurement resolution (one 100k top-10 boundary
-hit and at most one 8 KiB storage page) and show warm mean latency deltas of
--3.84% / -6.37% / -4.52%. This supersedes the historical pre-Task-236 negative
-performance signal for current product disposition while retaining it as
-evidence. Coder recommendation: ACCEPT; outside verdict remains required.
-Evidence: `reviews/task-234/004-current-tls-reintegration/` and
+Status: **packet 004 NOT DONE latency gap resolved; packet 005 review-open;
+outside ACCEPT/REJECT verdict pending** (2026-08-26). The secure PG18 matrix
+passes 25/25 cells with no partial rows or leaked remote work, and the accepted
+10k/50k/100k recall/storage findings are unchanged. Reviewer-requested 50k
+same-fixture repeats measure control 8.83 -> 8.47 ms (-4.08%) and candidate
+9.43 -> 8.74 ms (-7.32%); the repeat-only candidate delta is +3.19%, inside
+the directly observed drift band that covers the historical +7.1% signal.
+Coder recommendation: ACCEPT; outside verdict remains required. Evidence:
+`reviews/task-234/004-current-tls-reintegration/feedback/2026-08-25-01-reviewer.md`,
+`reviews/task-234/005-50k-reuse-drift-bound/`, and
 `benchmarks/task234-current-tls-read-rpc-cancellation-ab/`. Task 237 and Task
 228 stay blocked on the outside disposition.
 Priority: P0 distributed-read correctness/operations.

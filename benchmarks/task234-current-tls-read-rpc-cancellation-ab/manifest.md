@@ -89,6 +89,55 @@ all recorded warm latency percentiles. Accept the implementation for outside
 review; do not treat these single sequential latency runs as a general-purpose
 performance claim.
 
+## Reviewer-required 50k reuse drift bound (2026-08-26)
+
+Packet 004 feedback accepted every gate except the latency disposition and
+requested one `reuse_fixture: true` 50k repeat for each arm. The original
+fixtures had already been removed, so each arm was rebuilt once and then
+repeated immediately against that exact stopped fixture. No 10k/100k fixture
+or fault matrix was rerun.
+
+Secure fixture reuse required two narrow runner corrections. The fixture now
+reloads its existing TLS artifacts and role instead of replacing them, and the
+documented `skip_fault_drills` path skips the mutating routed DELETE/VACUUM
+lifecycle drill before shutdown. The reuse validator remains strict: both
+repeat steps attested 50,000 source rows, the exact extension SHA and release
+profile, the query slice, and `persisted_head` before measuring.
+
+| Arm | Observation | Mean | p50 | p95 | p99 | Same-fixture mean shift |
+|---|---|---:|---:|---:|---:|---:|
+| control | fresh seed | 8.83 | 8.57 | 10.90 | 11.30 | — |
+| control | reuse repeat | 8.47 | 8.36 | 10.40 | 10.60 | -4.08% |
+| candidate | fresh seed | 9.43 | 9.30 | 10.90 | 11.10 | — |
+| candidate | reuse repeat | 8.74 | 8.53 | 10.50 | 10.80 | -7.32% |
+| repeat delta | candidate vs control | +3.19% | +2.03% | +0.96% | +1.89% | — |
+
+The old 50k observations were 8.16 ms control and 7.64 ms candidate. Relative
+to that old control, today's control seed/repeat are +8.21%/+3.80%; within the
+new fixture, control itself shifts -4.08% on immediate reuse. The resulting
+run-to-run band covers the historical screened +7.1% signal. The candidate's
+repeat-only +3.19% mean delta is also inside the directly observed drift band,
+so the evidence supports no resolved latency regression rather than a speedup
+claim. Final ACCEPT/REJECT disposition remains with the outside reviewer.
+
+The targeted commands were:
+
+```text
+/home/peter/.cargo-target/debug/ecaz bench suite run \
+  --config benchmarks/task234-current-tls-read-rpc-cancellation-ab/suite.json \
+  --only control-50k-drift-seed --only control-50k-drift-repeat \
+  --manifest-output benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-manifest-control-drift-v2.json \
+  --results-output benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-results-control-drift-v2.jsonl \
+  --log-file benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-control-drift-v2.log
+
+/home/peter/.cargo-target/debug/ecaz bench suite run \
+  --config benchmarks/task234-current-tls-read-rpc-cancellation-ab/suite.json \
+  --only candidate-50k-drift-seed --only candidate-50k-drift-repeat \
+  --manifest-output benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-manifest-candidate-drift-v2.json \
+  --results-output benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-results-candidate-drift-v2.jsonl \
+  --log-file benchmarks/task234-current-tls-read-rpc-cancellation-ab/artifacts/suite-candidate-drift-v2.log
+```
+
 ## Durable artifacts
 
 - `suite.json` — preregistered six-step config; SHA-256
@@ -105,4 +154,16 @@ performance claim.
   recall, latency, predictions, head membership, and PostgreSQL diagnostic
   logs. The suite results JSONL and manifests are the machine-readable source
   of truth; per-step summaries contain the cited result lines.
-
+- `suite.json` after the reviewer follow-up — ten-step config; SHA-256
+  `c8b5f71eb677820deff07dffe445c97a8f959710aa2b8836dd36da5c48018812`.
+- `artifacts/suite-manifest-control-drift-v2.json` and
+  `artifacts/suite-results-control-drift-v2.jsonl` — completed control
+  seed/reuse run; SHA-256 `157576a702eb9a7b46b151dcfa8b1788b4d2715216affad7df22312e00ba618f`
+  and `deae038ea100e78065febc1a67cb2dcd38f6b0e6799cf3bd09e8169f5bd353dc`.
+- `artifacts/suite-manifest-candidate-drift-v2.json` and
+  `artifacts/suite-results-candidate-drift-v2.jsonl` — completed candidate
+  seed/reuse run; SHA-256 `500851cbff6cc7217456c4e8dd59828cce2dbd3afb28773564d1d60d91228156`
+  and `d28d13bcab5197a568e9beace28dbe8594e8fcf6769eda7767746a3915d88e3d`.
+- `artifacts/run/{control,candidate}-50k-drift-{seed,repeat}/` — the four
+  compact summaries and latency logs cited above. Fixtures remained isolated
+  one-index-per-owner; PGDATA and corpus data are not committed.
