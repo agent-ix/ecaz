@@ -1,0 +1,241 @@
+# Task 229 packet 001 reviewer verification log (seq 03, narrow B1/B2 rereview of request seq-04)
+
+Agent: Agent IX (reviewer, claude-opus-5)
+Date: 2026-08-26
+Branch: task229-covering-payload-sidecar
+Head SHA at review: 3e4e3c2913680f8b2e7cdff04251d4aedfe43cb7
+Packet head SHA claimed by request: 3419c9c758bea7d9940b27d9afbcf9e627e84879 (= origin/main)
+Mode: read-only static inspection. No build, PostgreSQL, pgrx, test, fixture, or
+benchmark command was run.
+Scope: ONLY seq-02 blockers B1 and B2 (feedback/2026-08-26-02-reviewer.md).
+Every seq-01 item that seq-02 closed was left untouched and unreviewed here.
+
+---
+
+## X1  git state and diff scope
+
+$ git rev-parse HEAD
+3e4e3c2913680f8b2e7cdff04251d4aedfe43cb7
+
+$ git merge-base HEAD 3419c9c758bea7d9940b27d9afbcf9e627e84879
+3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+$ git status --porcelain
+(empty at review start)
+
+$ git diff --name-only 3419c9c758bea7d9940b27d9afbcf9e627e84879 HEAD
+plan/design/ec-distann-recall-latency-roadmap.md
+plan/tasks/229-ec-distann-covering-payload-sidecar.md
+plan/tasks/README.md
+reviews/task-229/001-plan/artifacts/current-main-architecture.md
+reviews/task-229/001-plan/artifacts/manifest.md
+reviews/task-229/001-plan/artifacts/reviewer-seq01-verification.log
+reviews/task-229/001-plan/artifacts/reviewer-seq02-verification.log
+reviews/task-229/001-plan/artifacts/seq01-disposition.md
+reviews/task-229/001-plan/artifacts/seq02-disposition.md
+reviews/task-229/001-plan/feedback/2026-08-26-01-reviewer.md
+reviews/task-229/001-plan/feedback/2026-08-26-02-reviewer.md
+reviews/task-229/001-plan/request.md
+
+No file under `src/`, `sql/`, `crates/`, `spec/`, `tests/` or `fixtures/`
+differs from the main the plan claims, and HEAD's merge-base IS that main. The
+revision was therefore reviewed against exactly the source it cites.
+
+---
+
+## X2  revision delta is confined to the two blockers
+
+$ git diff f70c439e9 HEAD -- reviews/task-229/001-plan/request.md
+(hunks, summarized)
+  - header seq 03 -> 04 and the intro/rereview-ask paragraphs (scope statement
+    only)
+  - §2: "A read resolves one bounded batch" -> "Remote reads resolve ..." plus a
+    new 9-line local paragraph (`FrozenPayloadPending { vec_id, row_tid }`,
+    `materialize_pending_physical_window`, one local SPI per snapshot attempt
+    per window, both echoes checkable)
+  - §3: the four-sentence local-owner paragraph replaced by (a) a common
+    structural-ERROR bullet, (b) a remote-only visibility paragraph, (c) a new
+    local `FrozenPayloadPending` visibility paragraph
+  - §5 packet 002 item 5: adds separate local batched-SPI initial/retry stages,
+    local batch count and rows per batch
+  - closing rereview ask narrowed to B1/B2
+
+$ git diff f70c439e9 HEAD -- reviews/task-229/001-plan/artifacts/seq02-disposition.md
+new file, 11 lines, B1/B2 rows only
+
+Checked for silent reopening of accepted rulings: the §3 structural-ERROR list
+is reworded but set-identical to seq-03's (absent sidecar relation, cover/schema
+mismatch after catalog resolution, key or `vec_id` echo mismatch, malformed
+length/null shape, visible row-tier tuple with no matching visible sidecar
+tuple, any decode failure). §§1, 4, 6 and the packet 003 checkpoint list are
+byte-identical to the seq-03 text seq-02 accepted. No format, descriptor,
+catalog, lifecycle, DML, threshold or evidence decision changed.
+
+---
+
+## X3  B1 — control behavior the local rule must match, in current source
+
+$ sed -n '1248,1301p' src/am/ec_distann/custom_scan.rs
+  :1248        CustomScanOutputRow::Frozen(tid) => {
+  :1256        let mut visible = pg_sys::table_tuple_fetch_row_version(
+  :1261            (*estate).es_snapshot,
+  :1269        if !visible {
+  :1271            crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
+  :1279            visible = pg_sys::table_tuple_fetch_row_version(
+  :1286                latest.as_ptr(),
+  :1291        if visible { ... return ExecCopySlot(scan_slot, state.frozen_row_slot); }
+  :1296        pgrx::error!(
+  :1297            "EC_GENERATION_MISSING: published row-tier tuple ({},{}) disappeared",
+  :1298            tid.block_number,
+  :1299            tid.offset_number
+  :1300        );
+
+Control = two attempts (es_snapshot, then latest), then ERROR. It never skips.
+`CustomScanOutputRow::RemoteSkipped { .. } => continue` at :1318 remains the
+only `continue` arm; `Local(tid)` silent-skip stays at :1246 and is untouched by
+the plan.
+
+Request seq-04 §3 (request.md:149-165) states, in order: batched sidecar lookup
+under `estate.es_snapshot`; initial miss probes the same exact row-tier TIDs
+under `es_snapshot` (visible row tier + no sidecar = corruption); rows invisible
+in both stores retry together under `ActiveSnapshotGuard::latest()`; second
+sidecar miss probes the exact row-tier TID under that latest guard; visible row
+tier = corruption; both still invisible raise the existing error verbatim and
+"do not skip". Error string quoted in request.md:159 is byte-identical to
+custom_scan.rs:1297. Attempt-for-attempt parity: MET.
+
+Remote-only scoping: request.md:143-147 confines
+`tuple_payload_missing -> RemoteSkipped` to the remote paragraph and ends "No
+local row becomes skippable through this rule." Explicit: MET.
+
+## X4  the named retry guard exists and is the same snapshot
+
+$ grep -rn "ActiveSnapshotGuard::latest\|RegisteredSnapshotGuard::latest" src/
+  src/am/ec_spire/custom_scan/planner.rs:542   ActiveSnapshotGuard::latest()
+  src/am/ec_hnsw/build.rs:668                  ActiveSnapshotGuard::latest()
+  src/am/ec_distann/custom_scan.rs:1271        RegisteredSnapshotGuard::latest()
+  (plus ec_ivf/scan.rs:3922, ec_hnsw/scan.rs:1869, ec_diskann/scan_state.rs:412,
+   physical_dml.rs:1499,1709,2040, generation_read.rs:458, traversal_replica.rs:1561)
+
+$ sed -n '1,3p;18,23p;58,70p' src/storage/snapshot_guard.rs
+  //! `RegisteredSnapshotGuard` owns register/unregister only, while
+  //! `ActiveSnapshotGuard` also pushes/pops the backend active-snapshot stack.
+  impl RegisteredSnapshotGuard {
+      pub(crate) fn latest() -> Option<Self> {
+          let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+  impl ActiveSnapshotGuard {
+      pub(crate) fn latest() -> Option<Self> {
+          let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+          if snapshot.is_null() { return None; }
+          unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+
+Both constructors are `RegisterSnapshot(GetLatestSnapshot())`; `ActiveSnapshotGuard`
+only adds the push/pop SPI needs. The plan's claim at request.md:155-157 —
+"the active-SPI form of the same `GetLatestSnapshot` retry the current direct
+fetch performs with `RegisteredSnapshotGuard::latest()`" — is accurate as
+written. B1's "matching :1269-1285 attempt-for-attempt" is satisfiable by the
+named mechanism.
+
+## X5  B1 corruption arm is derivable locally, not only remotely
+
+Same-transaction insertion is stated for both sidecar creation paths:
+request.md:214-216 (sidecar heap/index creation shares the row/graph generation
+transaction; Ready requires initial sidecar count == owned record count) and
+request.md:221-225 (insert appends row-tier tuple, then its TID-keyed sidecar
+tuple, in the same owner transaction; same-identity replacement appends a new
+pair and never updates the old sidecar row). Neither tuple is ever deleted or
+updated (request.md:229-231, retention derived from the row tier's append-only
+rule), so the pair shares xmin and carries no xmax. "Visible row tier + no
+visible sidecar" is therefore impossible except under corruption on the local
+class for the same reason seq-02 accepted it on the remote class. The
+candidate/control divergence on that arm is the ERROR B1 itself required.
+
+---
+
+## X6  B2 — local mechanism, batching site, and `vec_id` carriage
+
+$ grep -n "materialize_pending_physical_window\|enum CustomScanOutputRow\|Frozen\|RemotePending\|RemoteSkipped" src/am/ec_distann/custom_scan.rs
+  :616  enum CustomScanOutputRow {
+  :621      Frozen(crate::storage::page::ItemPointer),          <- no vec_id
+  :632      RemotePending { vec_id, owner_heap_tid },
+  :639      RemoteSkipped { vec_id },
+  :1213 if matches!(state.outputs.get(output_index), Some(RemotePending { .. }))
+  :1217     materialize_pending_physical_window(state, output_index);
+  :1327 fn materialize_pending_physical_window(state, output_index)
+  :1331     let batch_size = super::options::materialization_batch_size();
+  :1335     let (window_start, window_end) = pending_materialization_window(...)
+  :1374     .materialize_remote_payload_pairs(&remote_pairs, &state.payload_attnums)
+  :1733 CustomScanOutputRow::Frozen(hit.heap_tid)     (lazy build site)
+  :1789 Some(CustomScanOutputRow::Frozen(hit.heap_tid)) (eager build site)
+
+Mechanism named by the plan (request.md:82-89): batched at window
+materialization in `materialize_pending_physical_window`, SPI
+`unnest(row_tids, vec_ids) WITH ORDINALITY`, "at most one local SPI ... per
+snapshot attempt and window, never SPI per row". B2 asked for exactly this
+choice to be stated (batched-at-materialization vs per-row; SPI vs direct
+index_beginscan). Both axes are now answered, and the answer is the non-per-row
+branch, so B2's conditional "state why per-row planner cost does not confound
+the primary endpoint" does not apply. The cost that remains — ~1-2 SPI
+executions replacing ~4 direct `table_tuple_fetch_row_version` calls per
+lazy-10 window — is carried inside the candidate arm of the §6 same-generation
+A/B and is gated two-sided (>=5.0% AND >=0.50 ms on both pairs), so it cannot
+silently inflate the primary endpoint.
+
+Batching site is feasible against the current shape: `pending_materialization_window`
+(:1422-1436) already returns `(output_index, min(window_start+batch_size,
+proven))`, a window that spans local and remote outputs alike, so gathering
+local pending rows from the same slice is a generalization of an existing loop,
+not a new pass. Eager mode's single batch has a direct precedent at :1773-1775
+(`materialize_remote_payloads(&hits, ...)` once over all hits).
+
+$ sed -n '1729,1752p;1784,1799p' src/am/ec_distann/custom_scan.rs
+  :1729 state.outputs = hits.into_iter().map(|hit| {
+  :1732     if hit.heap_tid != ItemPointer::INVALID {
+  :1733         CustomScanOutputRow::Frozen(hit.heap_tid)
+  :1744     ... hit.vec_id ...
+  :1747     RemotePending { vec_id: hit.vec_id, owner_heap_tid: hit.owner_heap_tid }
+  :1788     let output = if hit.heap_tid != ItemPointer::INVALID {
+  :1789         Some(CustomScanOutputRow::Frozen(hit.heap_tid))
+  :1792     remote_payloads.get(&hit.vec_id)
+
+`hit.vec_id` is in scope at both `Frozen` construction sites (used at :1717,
+:1725, :1744, :1747, :1792 in the same closures), so the seq-02 W5 consequence
+is closed by construction: `FrozenPayloadPending { vec_id, row_tid }` can be
+built "at ranking time, when both identities are available" (request.md:83-84)
+without any new plumbing, and the `vec_id` echo check §2 requires becomes
+expressible locally.
+
+Telemetry fold-in: request.md:256-259 now requires local batched SPI
+initial/retry work and remote owner lookup work as separate stages, "including
+local batch count and rows per batch, so per-row SPI cannot hide in the primary
+endpoint". That is B2's third bullet.
+
+## X7  incidental claims in the new local paragraph, checked
+
+$ sed -n '2018,2024p' src/am/ec_distann/custom_scan.rs
+  unsafe extern "C-unwind" fn custom_scan_recheck(...) -> bool {
+      // Remote virtual tuples have no coordinator heap identity to re-fetch.
+      true
+  }
+
+request.md:164-165's "`custom_scan_recheck` retains its existing unconditional
+virtual-row contract" is accurate: the callback returns `true` unconditionally
+today and the plan converts only physical `Frozen` rows, never `Local(tid)`
+(:1225-1246, untouched per request.md:161-163).
+
+---
+
+## X8  verdict
+
+B1 closed, B2 closed. No remaining blocker inside the reviewed scope. Verdict
+recorded in `feedback/2026-08-26-03-reviewer.md`: **DONE**, packet 002
+implementation authorized.
+
+Observations passed forward as packet 002 implementation notes, NOT findings and
+NOT gating: (a) the materialization trigger at :1213 and the
+"window contains no pending rows" guard at :1347-1349 both predicate on
+`RemotePending` and must widen with the new variant; (b) the plan does not say
+what happens when `ActiveSnapshotGuard::latest()` returns `None`, where the
+control degrades into the same ERROR (:1269-1300) — behaviorally equivalent
+either way; (c) eager mode at :1784 batches over all hits rather than the proven
+prefix, a wording nuance against request.md:86.

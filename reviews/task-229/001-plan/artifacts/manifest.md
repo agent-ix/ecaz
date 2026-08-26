@@ -149,3 +149,61 @@ performance claim.
   two-snapshot/error parity, batched local SPI mechanism, `vec_id` carriage,
   and separately attributable local/remote telemetry
 - Runtime / benchmark / test work: none
+
+## Reviewer artifacts (seq 03, narrow B1/B2 rereview of request seq-04)
+
+- Artifact: `reviewer-seq03-verification.log`
+- Cited by: `feedback/2026-08-26-03-reviewer.md`
+- Agent / role / model: Agent IX / reviewer / claude-opus-5
+- Head SHA at review: `3e4e3c2913680f8b2e7cdff04251d4aedfe43cb7`
+  (`git diff --name-only 3419c9c75 3e4e3c291` touches only `plan/**` and
+  `reviews/task-229/**`, and `git merge-base` of HEAD and `3419c9c75` IS
+  `3419c9c75`; `src/`, `sql/`, `crates/`, `spec/`, `tests/` and `fixtures/` are
+  unchanged from the main the plan targets)
+- Task / packet: `reviews/task-229/001-plan/`
+- Date: 2026-08-26 America/Los_Angeles
+- Lane / fixture / storage format / rerank mode: not applicable — static source
+  review, no lane, no fixture, no index built
+- Isolated vs shared surfaces: not applicable — no index or table was created
+- Command: a single read-only `git` + `grep` + `sed` capture block over
+  `src/am/ec_distann/custom_scan.rs`, `src/storage/snapshot_guard.rs`, and the
+  `f70c439e9..3e4e3c291` diff of `request.md` and `seq02-disposition.md`
+- Runtime / benchmark / test work: none. No build, PostgreSQL, pgrx, test,
+  fixture, or benchmark command was run.
+- Scope: deliberately narrow. ONLY seq-02 blockers B1 and B2 were reviewed. No
+  seq-01 item that seq-02 closed was reopened or re-examined.
+- Key result lines cited by the feedback file:
+  - X2 — `git diff f70c439e9 3e4e3c291 -- request.md`: the delta is the §2 local
+    paragraph, the §3 remote/local visibility split, the §5 telemetry sentence,
+    and the scope statements. §§1, 4, 6 and the packet 003 checkpoint list are
+    byte-identical to the seq-03 text seq-02 accepted; §3's structural ERROR
+    list is reworded but set-identical. No accepted ruling reopened.
+  - X3 — **B1 closed.** `custom_scan.rs:1256-1290` (control: `es_snapshot` then
+    `RegisteredSnapshotGuard::latest()`), `:1296-1300` (control errors, never
+    skips), `:1318` (`RemoteSkipped` still the only skipping arm) against
+    `request.md:143-159`: local rule now stated separately, two-snapshot parity,
+    row-tier probe under both snapshots, error string byte-identical to
+    `custom_scan.rs:1297`, "They do not skip", and `RemoteSkipped` explicitly
+    remote-only.
+  - X4 — `snapshot_guard.rs:20-22` and `:60-68`: both `latest()` constructors
+    are `RegisterSnapshot(GetLatestSnapshot())`; `ActiveSnapshotGuard` adds only
+    the `PushActiveSnapshot` SPI needs, so the plan's substitution claim at
+    `request.md:155-157` is accurate. `ActiveSnapshotGuard::latest()` is a real,
+    used API (`ec_spire/custom_scan/planner.rs:542`, `ec_hnsw/build.rs:668`).
+  - X5 — `request.md:214-216`, `:221-225`, `:229-231`: both tuples share an
+    inserting transaction on both creation paths and neither is ever deleted or
+    updated, so the local corruption arm is derivable, not asserted.
+  - X6 — **B2 closed.** `custom_scan.rs:1422-1436` (window slice already spans
+    local and remote outputs), `:1400-1414` (the loop the plan generalizes),
+    `:1773-1775` (eager single-batch precedent), `:1733`/`:1789` with
+    `hit.vec_id` live at `:1744,:1747,:1792` (the seq-02 W5 `vec_id` gap closes
+    by construction) against `request.md:82-89` and `:256-259`: mechanism named
+    (batched SPI at `materialize_pending_physical_window`, never per row), site
+    feasible, telemetry separates local initial/retry from remote owner work.
+  - X7 — `custom_scan.rs:2018-2024`: `custom_scan_recheck` returns `true`
+    unconditionally, so `request.md:164-165`'s contract claim is accurate.
+- Verdict recorded in the feedback file: **DONE**. Both seq-02 blockers closed;
+  **packet 002 implementation authorized**. Three non-gating implementation
+  notes carried forward (materialization trigger/guard predicates at `:1213`
+  and `:1347-1349` must widen for the new variant; unstated `None` case for
+  `ActiveSnapshotGuard::latest()`; eager-mode "proven set" wording nuance).
