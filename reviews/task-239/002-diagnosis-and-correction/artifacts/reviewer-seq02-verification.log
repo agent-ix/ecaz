@@ -1,0 +1,220 @@
+# Task 239 packet 002 reviewer seq02 verification log
+
+Read-only verification for `feedback/2026-08-26-02-reviewer.md`. Nothing was
+installed, no fixture was created, and no suite was run. Only this log and the
+seq02 feedback file were written.
+
+## Branch and remote state
+
+```text
+$ git log --oneline -5
+943783831 Correct Task 239 packet 002 preregistration
+ddc004c53 Review Task 239 packet 002: NOT DONE, live run not authorized
+e5cd32c0a Request review of Task 239 harness correction
+d03997c7a Add Task 239 corrected semantic suite
+8d8c181b8 Fix Task 239 semantic batch attribution
+
+$ git rev-parse HEAD
+943783831face298d6ad4b9aad46d376d97093ec
+$ git rev-parse origin/task239-bounded-read-overfetch
+943783831face298d6ad4b9aad46d376d97093ec
+$ git status --porcelain
+(clean)
+
+$ env -u GITHUB_TOKEN gh api repos/agent-ix/ecaz/git/ref/heads/main --jq .object.sha
+41392c011106cb040095fd6004c4d5c0f136f1a0
+```
+
+Remote main is still exactly the packet-001 extension baseline, so the
+re-pinned build point in the corrected packet is current main.
+
+## Correction commit scope
+
+```text
+$ git show --stat 943783831
+ plan/design/ec-distann-recall-latency-roadmap.md   |  2 +-
+ plan/tasks/239-ec-distann-bounded-read-overfetch.md |  8 ++++--
+ plan/tasks/README.md                               |  2 +-
+ .../artifacts/manifest.md                          | 19 +++++++++----
+ .../002-diagnosis-and-correction/request.md        | 32 ++++++++++++++++------
+ 5 files changed, 43 insertions(+), 20 deletions(-)
+```
+
+Documentation and preregistration only. No `src/**`, no `crates/**`, no suite
+config, no new run artifacts.
+
+## Finding 1 — extension/CLI build-point split
+
+`request.md:57-63` and `artifacts/manifest.md:5-12,104-120` now pin:
+
+- extension build/install at exact `41392c011106cb040095fd6004c4d5c0f136f1a0`
+- corrected release CLI/config at exact `d03997c7aef2ff217d0535b47d0b8af765b8500f`
+
+No residual claim that the extension is built at `d03997c7a`:
+
+```text
+$ grep -rn "d03997c7a" reviews/task-239/002-diagnosis-and-correction/ \
+    plan/tasks/239-*.md plan/tasks/README.md plan/design/ec-distann-recall-latency-roadmap.md \
+    | grep -v feedback/
+request.md:51   Config checkpoint d03997c7a... adds
+request.md:60   release CLI from the separate clean detached checkout at exact d03997c7a...
+request.md:92   manifest records runner SHA d03997c7a... and the exact config hash
+request.md:137  Exact d03997c7a release CLI build: pass
+request.md:140  Exact-code dry run: runner SHA d03997c7a...
+artifacts/dry-run/suite-manifest.json:8  "runner_git_commit": "d03997c7a..."
+artifacts/manifest.md:6,71,95,115,118   corrected CLI/config only
+```
+
+Every surviving `d03997c7a` reference is scoped to the CLI, the config, the
+dry-run runner SHA, or the CLI build log. No extension reference remains.
+
+Both detached checkouts exist at the claimed SHAs and are clean:
+
+```text
+$ git worktree list | grep task239
+.worktrees/task239-bounded-read-overfetch   943783831 [task239-bounded-read-overfetch]
+.worktrees/task239-corrected-run-build      d03997c7a (detached HEAD)
+.worktrees/task239-main-run-build           41392c011 (detached HEAD)
+
+$ git -C .worktrees/task239-corrected-run-build status --porcelain
+(clean)
+$ git -C .worktrees/task239-main-run-build status --porcelain
+(clean)
+```
+
+### Executability of the d039-CLI x 41392c011-extension pairing
+
+This pairing was never previously executed, so each cross-version dependency
+was checked directly.
+
+1. Unregistered GUC `SET`. `distann_multicluster.rs:9231-9235` unconditionally
+   issues `SET ec_distann.benchmark_fast_real_array_send = off` immediately
+   before `run_materialization_correctness`. Main does not register it:
+
+   ```text
+   $ git show 41392c011:src/am/ec_distann/options.rs | grep -n "benchmark_"
+   450 ec_distann.benchmark_head_policy
+   459 ec_distann.benchmark_training_query_path
+   468 ec_distann.benchmark_exact_neighbor
+   477 ec_distann.benchmark_traversal_replica_fail_batch
+   488 ec_distann.benchmark_materialization_batch_size
+   499 ec_distann.benchmark_owner_payload_plan_cache
+   508 ec_distann.benchmark_typed_locator
+   517 ec_distann.benchmark_packed_payload
+   526 ec_distann.benchmark_expanded_locator
+   535 ec_distann.benchmark_payload_projection
+   658 ec_distann.benchmark_seed_mode
+   667 ec_distann.benchmark_head_search_width
+   678 ec_distann.benchmark_head_seed_count
+   (no benchmark_fast_real_array_send)
+
+   $ grep -rn "mark_guc_prefix_reserved\|MarkGUCPrefixReserved" src/ crates/
+   (no matches)
+   ```
+
+   The `ec_distann` prefix is not reserved, so PostgreSQL accepts the `SET` as
+   a placeholder. Independently corroborated by packet-001 seq02's Task 199
+   precedent (`reviews/task-199/003-release-matrix-and-decision/artifacts/repeat-50k/normal-release-ab-50k/distann-multinode-summary.log:76-83`).
+
+2. New SQL-exposed functions in the Task 224 delta are never called by the CLI:
+
+   ```text
+   $ git diff 41392c011..d03997c7a -- src/ | grep "^+.*pg_extern" -A1
+   +fn ec_distann_profile_binary_send(value: AnyElement) -> Vec<u8>
+   +fn ec_distann_fast_real_array_send(value: AnyElement) -> Vec<u8>
+
+   $ grep -n "ec_distann_profile_binary_send\|ec_distann_fast_real_array_send" \
+       crates/ecaz-cli/src/commands/dev/distann_multicluster.rs
+   (no matches)
+   ```
+
+3. New stage-counter labels (indices 37-39, plus appended
+   `DistannMaterializationWork` variants) are not required by the CLI. The only
+   mention of `owner_requested_tids` is a comment at `:8515`, inside the
+   `args.owner_fast_real_array_send` branch (`:8518`), which is off.
+
+4. Preflight does not require runner SHA == extension SHA.
+   `validate_extension_preflight` (`:477-544`) checks cross-node unanimity,
+   `build_profile == "release"`, and absence of `pg-test` only.
+   `validate_query_stage_counter_feature` (`:547-560`) additionally requires
+   `distann-head-attribution-benchmark`, which the pinned install command
+   provides.
+
+5. The new attestation reads `ec_distann.benchmark_materialization_batch_size`
+   (`materialization_batch_size_setting`, `:2966-2988`), which main registers
+   under the attribution feature (`options.rs:488`).
+
+6. The emitted per-row provenance suffix takes `extension_git_sha` from the
+   preflight result (`:9217-9224`), so rows will carry
+   `extension_git_sha=41392c011...`, directly comparable to packet 001's rows.
+
+Packet 001's preflight line format matches gate 1's expected string exactly:
+
+```text
+$ grep -n release_profile_preflight \
+    reviews/task-239/001-current-main-reproduction/artifacts/attribution-run/attribution/distann-local-multinode.log
+4: release_profile_preflight status=passed nodes=3 unanimous=true \
+   extension_git_sha=41392c011106cb040095fd6004c4d5c0f136f1a0 \
+   extension_build_profile=release \
+   extension_features=distann-head-attribution-benchmark,pg18 debug_override=false
+```
+
+## Finding 2 — pass=false gate scoping
+
+`request.md:100-104` now scopes the gate to
+`physical_materialization_correctness` rows and names the expected
+`skip_single_control` artifact.
+
+All nine scenario rows use that prefix; the only other prefix carries no
+`pass=` field:
+
+```text
+$ grep -n "physical_materialization_correctness\|physical_materialization_feature_isolation" \
+    crates/ecaz-cli/src/commands/dev/distann_multicluster.rs
+6006: physical_materialization_correctness ... pass={pass} ...      (seven core rows)
+6304: physical_materialization_feature_isolation ... semantic_scenarios=7   (no pass= field)
+6358: physical_materialization_correctness ... scenario=mixed_local_remote pass=true ...
+6442: physical_materialization_correctness ... scenario=post_first_batch_remote_failure pass=true ...
+9278: line.starts_with("physical_materialization_correctness ")
+9279:   || line.starts_with("physical_materialization_feature_isolation ")
+```
+
+The accepted skip row is emitted at `:9125` and gated by
+`skip_single_control`, which the config sets:
+
+```text
+$ grep -n "skip_single_control\|skip_routed_delete\|materialization_correctness\|reuse_fixture\|compact_artifacts" \
+    crates/ecaz-cli/suites/task239-corrected-semantics-10k.json
+14: "reuse_fixture": false
+28: "materialization_correctness": true
+34: "skip_routed_delete_vacuum_drill": true
+35: "skip_single_control": true
+36: "compact_artifacts": true
+```
+
+The gate's quoted text is byte-consistent with packet 001 lane 1's only
+`pass=false` line:
+
+```text
+$ grep -n "pass=false" \
+    reviews/task-239/001-current-main-reproduction/artifacts/production-run/production/distann-local-multinode.log
+63: physical_benchmark_insert_throughput_ab scale=10k pass=false reason=single_control_skipped ...
+```
+
+## Item 3 — folded failure-path evidence wording
+
+`request.md:82-86` states the main `distann-local-multinode.log` is the
+authoritative failure-path evidence and that the compact summary and
+`results.jsonl` are not written on that path. Consistent with
+`compact_artifacts: true` and with packet 001, whose failed attribution lane
+produced `attribution-run/suite-manifest.json` but no `results.jsonl`.
+
+## No unauthorized run
+
+```text
+$ ls ~/.ecaz/clusters/ | grep task239
+(no matches; no task239-corrected-semantics-10k directory)
+```
+
+No packet-002 live artifacts were added by `943783831`; the packet still
+contains only the dry-run, build, test, audit, and reviewer verification logs.

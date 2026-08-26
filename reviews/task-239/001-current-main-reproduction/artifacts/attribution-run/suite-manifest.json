@@ -1,0 +1,112 @@
+{
+  "suite": "task239-current-main-attribution-10k",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/crates/ecaz-cli/suites/task239-current-main-attribution-10k.json",
+  "config_sha256": "24b261617eed9a940391dd6ddab433c1ab888d1258a12c67a428cb4495c26292",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787731784622,
+  "runner_git_commit": "41392c011106cb040095fd6004c4d5c0f136f1a0",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "current-main-attribution-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/attribution-run/attribution",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task239-current-main-attribution-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/attribution-run/attribution/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--materialization-correctness",
+        "--benchmark-iterations",
+        "1",
+        "--benchmark-warmup-iterations",
+        "0",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "44060",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "eager-control:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on",
+        "--benchmark-seed-variant",
+        "lazy10-production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task239",
+        "current_main",
+        "attribution",
+        "native_sender",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "eager-control",
+          "id": "task239-current-main-attribution-eager",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Exact-current-main attribution-release eager control for the native-sender bounded-read signal; one-iteration timing is non-decision context."
+        },
+        {
+          "variant": "lazy10-production",
+          "id": "task239-current-main-attribution-lazy10",
+          "role": "context",
+          "admissibility": "nonconforming",
+          "rationale": "Exact-current-main attribution-release lazy-10 production path with native sender and strict payload_reads <= requested_rows gate; one-iteration timing is non-decision context."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/attribution-run/attribution/distann-multinode-summary.log",
+        "/home/peter/dev/ecaz/.worktrees/task239-bounded-read-overfetch/reviews/task-239/001-current-main-reproduction/artifacts/attribution-run/attribution/physical-head-membership.json"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1787731784643,
+      "finished_at_unix_ms": 1787731946338,
+      "duration_ms": 152465,
+      "exit_code": 1
+    }
+  ]
+}
