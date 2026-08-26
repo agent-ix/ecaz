@@ -8,6 +8,23 @@ seq: 01
 
 # DistANN follow-up campaign ledger — clean current-main integration
 
+## Seq01 correction response
+
+Commit `e86d7813c` closes both seq01 blockers without changing import scope:
+
+1. Task 238's header and README row now state unambiguously that the equivalent
+   lifetime fix is on main, while forced-retry test commit `3b8b872d6` is only
+   authored against exact main on the campaign stack and is **not** on main.
+   DoD item 2 and outside closeout remain open.
+2. The sole dead Task 222 feedback citation was removed from Task 238; the
+   packet-local/backtrace reference remains.
+
+The correction commit message also discloses seq01's non-blocking scope note:
+this integration intentionally fills main's missing, accurate, singular roadmap
+rows for the already-accepted Tasks 227 and 236. Please perform the bounded
+seq02 rereview authorized by
+`feedback/2026-08-26-01-reviewer.md`.
+
 This packet requests review of the clean campaign-ledger integration at
 `8d63e3d2a842a257fcff20cdc79c34f005132b24` on branch
 `integrate/distann-campaign-ledger-v2`.
