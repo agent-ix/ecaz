@@ -14,7 +14,7 @@ use super::generation_descriptor::{
 };
 use super::manifest_v2::{
     DistannEpochFingerprint, DistannEpochManifestV2, DistannReadyReceipt, DistannSourceSnapshot,
-    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_READY_RECEIPT_BYTES,
+    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_MAX_BYTES,
 };
 use super::node_registry::validate_canonical_index_locator;
 
@@ -129,7 +129,7 @@ fn encode_ready_receipt_set(receipts: &[DistannReadyReceipt]) -> Result<Vec<u8>,
     let mut encoder = CanonicalEncoder::with_capacity(
         4 + receipts
             .len()
-            .saturating_mul(DISTANN_READY_RECEIPT_BYTES + 4),
+            .saturating_mul(DISTANN_READY_RECEIPT_MAX_BYTES + 4),
     );
     encoder.put_u32(
         u32::try_from(receipts.len())
@@ -235,6 +235,22 @@ impl DistannBuildCandidateV1 {
             Some(&self.manifest_digest),
             "candidate fingerprint",
         )?;
+        if DistannEpochFingerprint::decode(&self.epoch_fingerprint)?.version() != manifest.version()
+        {
+            return Err(
+                "EC_PUBLISH_DIGEST: candidate fingerprint version disagrees with manifest"
+                    .to_owned(),
+            );
+        }
+        let descriptor_cover_digest = descriptor
+            .payload_cover()
+            .map(|cover| cover.digest())
+            .transpose()?;
+        if manifest.payload_cover_descriptor_digest != descriptor_cover_digest {
+            return Err(
+                "EC_PUBLISH_DIGEST: manifest payload cover disagrees with descriptor".to_owned(),
+            );
+        }
         if build_spec.epoch != manifest.epoch
             || build_spec.build_id != manifest.build_id
             || build_spec.parent_fingerprint != manifest.parent_fingerprint
@@ -929,7 +945,9 @@ mod tests {
     use super::super::generation_descriptor::{
         encode_roster, sample_generation_descriptor, DistannBuildOptions, DistannOwnerExpectation,
     };
-    use super::super::manifest_v2::{sample_manifest_v2, DistannSourceSnapshot};
+    use super::super::manifest_v2::{
+        sample_manifest_v2, DistannReadyReceiptPayloadSidecar, DistannSourceSnapshot,
+    };
     use super::*;
 
     fn sample_snapshot() -> DistannSourceSnapshot {
@@ -947,14 +965,43 @@ mod tests {
     }
 
     fn sample_candidate() -> DistannBuildCandidateV1 {
+        sample_candidate_with_cover(false)
+    }
+
+    fn sample_candidate_with_cover(covered: bool) -> DistannBuildCandidateV1 {
         let snapshot = sample_snapshot();
-        let descriptor = sample_generation_descriptor();
+        let mut descriptor = sample_generation_descriptor();
+        if covered {
+            descriptor.payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+                &descriptor.row_schema,
+                3,
+                Some(&[1]),
+            )
+            .unwrap();
+        }
         let mut manifest = sample_manifest_v2();
         manifest.source_snapshot_digest = snapshot.digest().unwrap();
         manifest.generation_descriptor_digest = descriptor.digest().unwrap();
         manifest.row_schema_fingerprint = descriptor.row_schema.fingerprint().unwrap();
         for receipt in &mut manifest.participant_receipts {
             receipt.generation_descriptor_digest = manifest.generation_descriptor_digest;
+        }
+        if let Some(cover) = descriptor.payload_cover() {
+            manifest.payload_cover_descriptor_digest = Some(cover.digest().unwrap());
+            for (index, receipt) in manifest.participant_receipts.iter_mut().enumerate() {
+                receipt.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
+                    row_count: receipt.owned_record_count,
+                    initial_content_digest: [0xD0 + index as u8; DIGEST_BYTES],
+                    heap_bytes: 4096,
+                    index_bytes: 8192,
+                });
+            }
+            manifest.global_payload_sidecar_initial_content_digest = Some(
+                DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(
+                    &manifest.participant_receipts,
+                )
+                .unwrap(),
+            );
         }
         let build_spec = DistannBuildSpec {
             epoch: manifest.epoch,
@@ -1145,6 +1192,42 @@ mod tests {
             decision.abandoned_binding_set_bytes().unwrap(),
             set.encode().unwrap()
         );
+    }
+
+    #[test]
+    fn ready_receipt_set_framing_accepts_bounded_v1_and_v2_entries() {
+        let legacy = super::super::manifest_v2::sample_manifest_v2().participant_receipts;
+        let legacy_bytes = encode_ready_receipt_set(&legacy).unwrap();
+        assert_eq!(decode_ready_receipt_set(&legacy_bytes).unwrap(), legacy);
+
+        let mut covered = super::super::manifest_v2::sample_manifest_v2().participant_receipts;
+        for (index, receipt) in covered.iter_mut().enumerate() {
+            receipt.payload_sidecar = Some(
+                super::super::manifest_v2::DistannReadyReceiptPayloadSidecar {
+                    row_count: receipt.owned_record_count,
+                    initial_content_digest: [0xC0 + index as u8; DIGEST_BYTES],
+                    heap_bytes: 4096,
+                    index_bytes: 8192,
+                },
+            );
+        }
+        let covered_bytes = encode_ready_receipt_set(&covered).unwrap();
+        assert!(covered_bytes.len() > legacy_bytes.len());
+        assert_eq!(decode_ready_receipt_set(&covered_bytes).unwrap(), covered);
+    }
+
+    #[test]
+    fn covered_build_candidate_binds_v3_descriptor_manifest_and_fingerprint() {
+        let candidate = sample_candidate_with_cover(true);
+        assert_eq!(candidate.epoch_fingerprint[..2], [3, 0]);
+        assert_eq!(
+            DistannBuildCandidateV1::decode(&candidate.encode().unwrap()).unwrap(),
+            candidate
+        );
+
+        let mut wrong_fingerprint_version = candidate;
+        wrong_fingerprint_version.epoch_fingerprint[..2].copy_from_slice(&2_u16.to_le_bytes());
+        assert!(wrong_fingerprint_version.validate().is_err());
     }
 
     #[test]

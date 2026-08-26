@@ -354,8 +354,15 @@ CREATE TABLE ec_distann_generation (
     ),
     ready_receipt bytea CHECK (
         ready_receipt IS NULL OR (
-            octet_length(ready_receipt) = 303
-            AND get_byte(ready_receipt, 0) = 1
+            (
+                (
+                    octet_length(ready_receipt) = 303
+                    AND get_byte(ready_receipt, 0) = 1
+                ) OR (
+                    octet_length(ready_receipt) = 359
+                    AND get_byte(ready_receipt, 0) = 2
+                )
+            )
             AND get_byte(ready_receipt, 1) = 0
         )
     ),

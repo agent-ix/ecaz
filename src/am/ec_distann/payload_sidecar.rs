@@ -3,7 +3,9 @@
 use super::canonical_wire::{
     domain_digest, validate_null_bitmap, CanonicalDecoder, CanonicalEncoder,
 };
-use super::row_schema::{DistannRowSchemaAttribute, DistannRowSchemaDescriptor};
+#[cfg(test)]
+use super::row_schema::DistannRowSchemaAttribute;
+use super::row_schema::DistannRowSchemaDescriptor;
 use crate::storage::page::ItemPointer;
 use pgrx::pg_sys;
 
@@ -29,18 +31,18 @@ pub(crate) struct DistannPayloadCoverAttributeV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DistannPayloadCoverDescriptorV1 {
+pub struct DistannPayloadCoverDescriptorV1 {
     pub(crate) entry_format_version: u16,
     pub(crate) maximum_attribute_count: u16,
     pub(crate) row_schema_fingerprint: [u8; 32],
     pub(crate) attributes: Vec<DistannPayloadCoverAttributeV1>,
 }
 
-fn fixed_binary_width(attribute: &DistannRowSchemaAttribute) -> Option<u16> {
-    if attribute.type_namespace != "pg_catalog" {
+fn fixed_binary_width(type_namespace: &str, type_name: &str) -> Option<u16> {
+    if type_namespace != "pg_catalog" {
         return None;
     }
-    match attribute.type_name.as_str() {
+    match type_name {
         "bool" => Some(1),
         "int2" => Some(2),
         "int4" | "float4" | "date" => Some(4),
@@ -51,7 +53,7 @@ fn fixed_binary_width(attribute: &DistannRowSchemaAttribute) -> Option<u16> {
 }
 
 impl DistannPayloadCoverDescriptorV1 {
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         if self.entry_format_version != DISTANN_PAYLOAD_COVER_ENTRY_VERSION
             || usize::from(self.maximum_attribute_count) != DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES
             || self.attributes.is_empty()
@@ -98,20 +100,9 @@ impl DistannPayloadCoverDescriptorV1 {
                     attribute.attnum
                 ));
             }
-            let schema_attribute = DistannRowSchemaAttribute {
-                attnum: attribute.attnum,
-                name: "covered".to_owned(),
-                type_namespace: attribute.type_namespace.clone(),
-                type_name: attribute.type_name.clone(),
-                typmod: attribute.typmod,
-                collation_namespace: attribute.collation_namespace.clone(),
-                collation_name: attribute.collation_name.clone(),
-                dropped: false,
-                generated_kind: 0,
-                send_function: attribute.send_function.clone(),
-                receive_function: attribute.receive_function.clone(),
-            };
-            if fixed_binary_width(&schema_attribute) != Some(attribute.binary_width) {
+            if fixed_binary_width(&attribute.type_namespace, &attribute.type_name)
+                != Some(attribute.binary_width)
+            {
                 return Err(format!(
                     "EC_GENERATION_DESCRIPTOR: payload cover attnum {} has unsupported type or binary width",
                     attribute.attnum
@@ -123,7 +114,7 @@ impl DistannPayloadCoverDescriptorV1 {
         Ok(())
     }
 
-    pub(crate) fn maximum_payload_bytes(&self) -> Result<usize, String> {
+    pub fn maximum_payload_bytes(&self) -> Result<usize, String> {
         let value_bytes = self.attributes.iter().try_fold(0_usize, |sum, attribute| {
             sum.checked_add(usize::from(attribute.binary_width))
                 .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: payload cover width overflow".to_owned())
@@ -143,7 +134,7 @@ impl DistannPayloadCoverDescriptorV1 {
         Ok(maximum)
     }
 
-    pub(crate) fn encode(&self) -> Result<Vec<u8>, String> {
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
         let mut encoder = CanonicalEncoder::with_capacity(256);
         encoder.put_u16(self.entry_format_version);
@@ -166,7 +157,7 @@ impl DistannPayloadCoverDescriptorV1 {
         encoder.finish()
     }
 
-    pub(crate) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         let mut decoder = CanonicalDecoder::new(input, "payload cover descriptor v1")?;
         let entry_format_version = decoder.get_u16("payload cover entry format version")?;
         let maximum_attribute_count = decoder.get_u16("payload cover maximum attribute count")?;
@@ -202,14 +193,14 @@ impl DistannPayloadCoverDescriptorV1 {
         Ok(descriptor)
     }
 
-    pub(crate) fn digest(&self) -> Result<[u8; 32], String> {
+    pub fn digest(&self) -> Result<[u8; 32], String> {
         Ok(domain_digest(
             DISTANN_PAYLOAD_COVER_DESCRIPTOR_DOMAIN,
             &self.encode()?,
         ))
     }
 
-    pub(crate) fn validate_row_schema(
+    pub fn validate_row_schema(
         &self,
         row_schema: &DistannRowSchemaDescriptor,
     ) -> Result<(), String> {
@@ -239,7 +230,8 @@ impl DistannPayloadCoverDescriptorV1 {
                 || source.collation_name != covered.collation_name
                 || source.send_function != covered.send_function
                 || source.receive_function != covered.receive_function
-                || fixed_binary_width(source) != Some(covered.binary_width)
+                || fixed_binary_width(&source.type_namespace, &source.type_name)
+                    != Some(covered.binary_width)
             {
                 return Err(format!(
                     "EC_SCHEMA_MISMATCH: payload cover attnum {} differs from the frozen row schema",
@@ -251,7 +243,9 @@ impl DistannPayloadCoverDescriptorV1 {
     }
 
     pub(crate) fn encode_payload(&self, values: &[Option<&[u8]>]) -> Result<Vec<u8>, String> {
-        self.validate()?;
+        // Descriptors reach the hot codec only through resolution or decode,
+        // both of which validate once. Avoid revalidating immutable identity
+        // strings and widths for every sidecar row.
         if values.len() != self.attributes.len() {
             return Err(format!(
                 "EC_GENERATION_CORRUPT: payload cover has {} values, expected {}",
@@ -287,7 +281,7 @@ impl DistannPayloadCoverDescriptorV1 {
         &self,
         payload: &'a [u8],
     ) -> Result<Vec<Option<&'a [u8]>>, String> {
-        self.validate()?;
+        // See encode_payload: this descriptor was validated at its boundary.
         let null_bytes = self.attributes.len().div_ceil(8);
         if payload.len() < null_bytes {
             return Err("EC_GENERATION_CORRUPT: payload cover null bitmap is truncated".to_owned());
@@ -415,12 +409,13 @@ pub(crate) fn resolve_payload_cover(
                 "EC_SCHEMA_UNSUPPORTED: covering payload attnum {attnum} lacks binary send/receive identity"
             ));
         }
-        let binary_width = fixed_binary_width(attribute).ok_or_else(|| {
+        let binary_width = fixed_binary_width(&attribute.type_namespace, &attribute.type_name)
+            .ok_or_else(|| {
             format!(
                 "EC_SCHEMA_UNSUPPORTED: covering payload attnum {attnum} type {}.{} is outside the fixed PG18 scalar allowlist",
                 attribute.type_namespace, attribute.type_name
             )
-        })?;
+            })?;
         value_bytes = value_bytes
             .checked_add(usize::from(binary_width))
             .ok_or_else(|| "EC_SCHEMA_UNSUPPORTED: covering payload width overflow".to_owned())?;
@@ -498,12 +493,10 @@ mod tests {
             ("timestamp", 8),
             ("timestamptz", 8),
         ] {
-            assert_eq!(fixed_binary_width(&attribute(1, type_name)), Some(width));
+            assert_eq!(fixed_binary_width("pg_catalog", type_name), Some(width));
         }
-        assert_eq!(fixed_binary_width(&attribute(1, "text")), None);
-        let mut domain = attribute(1, "int8");
-        domain.type_namespace = "public".to_owned();
-        assert_eq!(fixed_binary_width(&domain), None);
+        assert_eq!(fixed_binary_width("pg_catalog", "text"), None);
+        assert_eq!(fixed_binary_width("public", "int8"), None);
     }
 
     #[test]
@@ -584,6 +577,135 @@ mod tests {
         assert!(DistannPayloadCoverDescriptorV1::decode(&wrong_version).is_err());
     }
 
+    fn encode_descriptor_unchecked(descriptor: &DistannPayloadCoverDescriptorV1) -> Vec<u8> {
+        let mut encoder = CanonicalEncoder::with_capacity(256);
+        encoder.put_u16(descriptor.entry_format_version);
+        encoder.put_u16(descriptor.maximum_attribute_count);
+        encoder.put_u16(descriptor.attributes.len() as u16);
+        encoder.put_fixed(&descriptor.row_schema_fingerprint);
+        for attribute in &descriptor.attributes {
+            encoder.put_u16(attribute.attnum);
+            encoder.put_u16(attribute.binary_width);
+            encoder.put_string(&attribute.type_namespace).unwrap();
+            encoder.put_string(&attribute.type_name).unwrap();
+            encoder.put_i32(attribute.typmod);
+            encoder.put_string(&attribute.collation_namespace).unwrap();
+            encoder.put_string(&attribute.collation_name).unwrap();
+            encoder.put_string(&attribute.send_function).unwrap();
+            encoder.put_string(&attribute.receive_function).unwrap();
+        }
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn cover_descriptor_decode_rejects_every_persisted_identity_corruption_arm() {
+        let schema = DistannRowSchemaDescriptor {
+            attributes: vec![attribute(1, "int8"), attribute(2, "uuid")],
+        };
+        let cover = resolve_payload_cover(&schema, 3, Some(&[1, 2]))
+            .unwrap()
+            .unwrap();
+
+        let mut invalid = cover.clone();
+        invalid.maximum_attribute_count = 15;
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        let mut invalid = cover.clone();
+        invalid.attributes.clear();
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        let wide_schema = DistannRowSchemaDescriptor {
+            attributes: (1..=17).map(|attnum| attribute(attnum, "bool")).collect(),
+        };
+        let invalid = DistannPayloadCoverDescriptorV1 {
+            entry_format_version: DISTANN_PAYLOAD_COVER_ENTRY_VERSION,
+            maximum_attribute_count: DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES as u16,
+            row_schema_fingerprint: wide_schema.fingerprint().unwrap(),
+            attributes: wide_schema
+                .attributes
+                .iter()
+                .map(|source| DistannPayloadCoverAttributeV1 {
+                    attnum: source.attnum,
+                    binary_width: 1,
+                    type_namespace: source.type_namespace.clone(),
+                    type_name: source.type_name.clone(),
+                    typmod: source.typmod,
+                    collation_namespace: source.collation_namespace.clone(),
+                    collation_name: source.collation_name.clone(),
+                    send_function: source.send_function.clone(),
+                    receive_function: source.receive_function.clone(),
+                })
+                .collect(),
+        };
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        for attnums in [[0, 2], [1, 1], [2, 1]] {
+            let mut invalid = cover.clone();
+            invalid.attributes[0].attnum = attnums[0];
+            invalid.attributes[1].attnum = attnums[1];
+            assert!(
+                DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                    .is_err()
+            );
+        }
+
+        let mut invalid = cover.clone();
+        invalid.attributes[0].type_name.push('\0');
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        for field in ["type namespace", "type name", "send", "receive"] {
+            let mut invalid = cover.clone();
+            match field {
+                "type namespace" => invalid.attributes[0].type_namespace.clear(),
+                "type name" => invalid.attributes[0].type_name.clear(),
+                "send" => invalid.attributes[0].send_function.clear(),
+                "receive" => invalid.attributes[0].receive_function.clear(),
+                _ => unreachable!(),
+            }
+            assert!(
+                DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                    .is_err()
+            );
+        }
+
+        let mut invalid = cover.clone();
+        invalid.attributes[0].collation_namespace = "pg_catalog".to_owned();
+        invalid.attributes[0].collation_name = "default".to_owned();
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        let mut invalid = cover.clone();
+        invalid.attributes[0].binary_width += 1;
+        assert!(
+            DistannPayloadCoverDescriptorV1::decode(&encode_descriptor_unchecked(&invalid))
+                .is_err()
+        );
+
+        let encoded = cover.encode().unwrap();
+        assert!(DistannPayloadCoverDescriptorV1::decode(&encoded[..encoded.len() - 1]).is_err());
+        let identity_offset = encoded
+            .windows(b"pg_catalog".len())
+            .position(|window| window == b"pg_catalog")
+            .unwrap();
+        let mut invalid_utf8 = encoded;
+        invalid_utf8[identity_offset] = 0xff;
+        assert!(DistannPayloadCoverDescriptorV1::decode(&invalid_utf8).is_err());
+    }
+
     #[test]
     fn compact_payload_codec_enforces_null_shape_width_and_identity_echoes() {
         let schema = DistannRowSchemaDescriptor {
@@ -619,12 +741,16 @@ mod tests {
             )
             .is_err());
         assert!(cover.decode_row(tid, 42, tid, 43, &payload).is_err());
+        assert!(cover
+            .decode_row(ItemPointer::INVALID, 42, ItemPointer::INVALID, 42, &payload)
+            .is_err());
         assert!(cover.encode_payload(&[Some(&int8)]).is_err());
         assert!(cover.encode_payload(&[Some(&int8[..7]), None]).is_err());
 
         let mut noncanonical_bitmap = payload.clone();
         noncanonical_bitmap[0] |= 1 << 7;
         assert!(cover.decode_payload(&noncanonical_bitmap).is_err());
+        assert!(cover.decode_payload(&[]).is_err());
         assert!(cover.decode_payload(&payload[..payload.len() - 1]).is_err());
         let mut trailing = payload;
         trailing.push(0);

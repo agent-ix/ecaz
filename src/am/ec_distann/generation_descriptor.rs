@@ -12,10 +12,14 @@ use super::page::{
     DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
     DISTANN_NEIGHBOR_CODEC_TURBOQUANT, INDEX_FORMAT_V5_DISTANN_CONTROL,
 };
+use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::quantizer::{DISTANN_RABITQ_BITS, DISTANN_TURBOQUANT_BITS};
 use super::row_schema::DistannRowSchemaDescriptor;
 
+/// Legacy/no-cover descriptor version. Kept as the public compatibility
+/// constant because descriptors without a cover must remain byte-identical.
 pub const DISTANN_GENERATION_DESCRIPTOR_VERSION: u16 = 2;
+pub const DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION: u16 = 3;
 pub const DISTANN_CODEC_ARTIFACT_VERSION: u16 = 1;
 pub const DISTANN_BUILD_SPEC_VERSION: u16 = 1;
 pub const DISTANN_GRAPH_RECORD_VERSION: u16 = 1;
@@ -479,6 +483,7 @@ pub struct DistannGenerationDescriptor {
     pub neighbor_codec_kind: u8,
     pub codec_artifact: DistannCodecArtifact,
     pub row_schema: DistannRowSchemaDescriptor,
+    pub payload_cover: Option<DistannPayloadCoverDescriptorV1>,
 }
 
 impl DistannGenerationDescriptor {
@@ -504,7 +509,23 @@ impl DistannGenerationDescriptor {
             return Err("EC_GENERATION_DESCRIPTOR: codec kind/dimension mismatch".to_owned());
         }
         self.row_schema.validate()?;
+        if let Some(payload_cover) = &self.payload_cover {
+            payload_cover.validate()?;
+            payload_cover.validate_row_schema(&self.row_schema)?;
+        }
         Ok(())
+    }
+
+    pub fn version(&self) -> u16 {
+        if self.payload_cover.is_some() {
+            DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
+        } else {
+            DISTANN_GENERATION_DESCRIPTOR_VERSION
+        }
+    }
+
+    pub fn payload_cover(&self) -> Option<&DistannPayloadCoverDescriptorV1> {
+        self.payload_cover.as_ref()
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {
@@ -512,10 +533,18 @@ impl DistannGenerationDescriptor {
         let codec_artifact = self.codec_artifact.encode()?;
         let row_schema = self.row_schema.encode()?;
         let row_schema_fingerprint = self.row_schema.fingerprint()?;
+        let payload_cover = self
+            .payload_cover
+            .as_ref()
+            .map(DistannPayloadCoverDescriptorV1::encode)
+            .transpose()?;
         let mut encoder = CanonicalEncoder::with_capacity(
-            32 + codec_artifact.len() + row_schema.len() + self.roster.len() * 32,
+            68 + codec_artifact.len()
+                + row_schema.len()
+                + payload_cover.as_ref().map_or(0, Vec::len)
+                + self.roster.len() * 32,
         );
-        encoder.put_u16(DISTANN_GENERATION_DESCRIPTOR_VERSION);
+        encoder.put_u16(self.version());
         encoder.put_fixed(&self.coordinator_logical_index_uuid);
         encoder.put_u16(self.index_format_version);
         encoder.put_u16(self.graph_record_version);
@@ -528,13 +557,20 @@ impl DistannGenerationDescriptor {
         encoder.put_len_prefixed(&codec_artifact)?;
         encoder.put_len_prefixed(&row_schema)?;
         encoder.put_fixed(&row_schema_fingerprint);
+        if let (Some(descriptor), Some(encoded)) = (&self.payload_cover, payload_cover) {
+            encoder.put_len_prefixed(&encoded)?;
+            encoder.put_fixed(&descriptor.digest()?);
+        }
         encoder.finish()
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
         let mut decoder = CanonicalDecoder::new(input, "generation descriptor")?;
         let version = decoder.get_u16("generation descriptor version")?;
-        if version != DISTANN_GENERATION_DESCRIPTOR_VERSION {
+        if !matches!(
+            version,
+            DISTANN_GENERATION_DESCRIPTOR_VERSION | DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
+        ) {
             return Err(format!(
                 "EC_GENERATION_DESCRIPTOR: unsupported descriptor version {version}"
             ));
@@ -553,6 +589,19 @@ impl DistannGenerationDescriptor {
         let row_schema_bytes = decoder.get_len_prefixed("row schema descriptor")?;
         let row_schema = DistannRowSchemaDescriptor::decode(row_schema_bytes)?;
         let expected_schema_fingerprint: [u8; 32] = decoder.get_fixed("row schema fingerprint")?;
+        let payload_cover = if version == DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION {
+            let encoded = decoder.get_len_prefixed("payload cover descriptor")?;
+            let descriptor = DistannPayloadCoverDescriptorV1::decode(encoded)?;
+            let expected_digest: [u8; 32] = decoder.get_fixed("payload cover descriptor digest")?;
+            if descriptor.digest()? != expected_digest {
+                return Err(
+                    "EC_GENERATION_DESCRIPTOR: payload cover descriptor digest mismatch".to_owned(),
+                );
+            }
+            Some(descriptor)
+        } else {
+            None
+        };
         decoder.finish("generation descriptor")?;
         if row_schema.fingerprint()? != expected_schema_fingerprint {
             return Err("EC_GENERATION_DESCRIPTOR: row schema fingerprint mismatch".to_owned());
@@ -569,6 +618,7 @@ impl DistannGenerationDescriptor {
             neighbor_codec_kind,
             codec_artifact,
             row_schema,
+            payload_cover,
         };
         descriptor.validate()?;
         Ok(descriptor)
@@ -1020,6 +1070,7 @@ pub(crate) fn sample_generation_descriptor() -> DistannGenerationDescriptor {
             bits: DISTANN_RABITQ_BITS,
         },
         row_schema: super::row_schema::sample_row_schema(),
+        payload_cover: None,
     }
 }
 
@@ -1101,6 +1152,43 @@ mod tests {
         let mut noncanonical_endpoint = descriptor;
         noncanonical_endpoint.roster[0].endpoint_identity = " cluster-a/node-10".to_owned();
         assert!(noncanonical_endpoint.encode().is_err());
+    }
+
+    #[test]
+    fn generation_descriptor_preserves_legacy_v2_and_round_trips_covered_v3() {
+        let legacy_bytes = hex::decode(
+            include_str!("../../../fixtures/on-disk/distann_generation_descriptor_v2.hex").trim(),
+        )
+        .unwrap();
+        let legacy = DistannGenerationDescriptor::decode(&legacy_bytes).unwrap();
+        assert_eq!(legacy.version(), DISTANN_GENERATION_DESCRIPTOR_VERSION);
+        assert!(legacy.payload_cover().is_none());
+        assert_eq!(legacy.encode().unwrap(), legacy_bytes);
+        assert_eq!(
+            legacy.digest().unwrap(),
+            domain_digest(GENERATION_DESCRIPTOR_DOMAIN, &legacy_bytes)
+        );
+
+        let mut covered = sample_generation_descriptor();
+        covered.payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+            &covered.row_schema,
+            3,
+            Some(&[1]),
+        )
+        .unwrap();
+        let encoded = covered.encode().unwrap();
+        assert_eq!(
+            u16::from_le_bytes(encoded[..2].try_into().unwrap()),
+            DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
+        );
+        assert_eq!(
+            DistannGenerationDescriptor::decode(&encoded).unwrap(),
+            covered
+        );
+
+        let mut corrupt_cover_digest = encoded;
+        *corrupt_cover_digest.last_mut().unwrap() ^= 1;
+        assert!(DistannGenerationDescriptor::decode(&corrupt_cover_digest).is_err());
     }
 
     #[test]

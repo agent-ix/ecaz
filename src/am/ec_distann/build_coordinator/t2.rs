@@ -457,6 +457,9 @@ pub(super) fn build_epoch(
             neighbor_codec_kind: metadata.neighbor_codec_kind,
             codec_artifact,
             row_schema,
+            // This is the exact descriptor resolved under the registration
+            // locks above. Never re-read reloptions after replay registration.
+            payload_cover: resolved_payload_cover,
         };
         let descriptor_bytes = descriptor.encode()?;
         let descriptor_digest = descriptor.digest()?;
@@ -706,6 +709,12 @@ pub(super) fn build_epoch(
             group_size: 0,
             centroids_per_group: 0,
         };
+        let global_payload_sidecar_initial_content_digest =
+            payload_cover_descriptor_digest
+                .map(|_| {
+                    DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(&receipts)
+                })
+                .transpose()?;
         let manifest = DistannEpochManifestV2 {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
@@ -728,6 +737,8 @@ pub(super) fn build_epoch(
             global_record_count: global_count,
             global_graph_digest,
             global_row_tier_digest,
+            payload_cover_descriptor_digest,
+            global_payload_sidecar_initial_content_digest,
             participant_receipts: receipts,
         };
 

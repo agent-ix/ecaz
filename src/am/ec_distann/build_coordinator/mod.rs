@@ -1298,7 +1298,7 @@ fn ec_distann_epoch_build_status(
                         Some(i64::try_from(row.cumulative_record_count).map_err(|_| {
                             "EC_BUILD_STATE: record count exceeds bigint".to_owned()
                         })?),
-                        row.ready_receipt.map(|receipt| {
+                        row.ready_receipt.as_ref().map(|receipt| {
                             domain_digest(b"ec_distann_ready_receipt_v1\0", &receipt).to_vec()
                         }),
                     ),

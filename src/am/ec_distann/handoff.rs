@@ -29,9 +29,7 @@ use super::handoff_wire::{
 };
 use super::identity::vec_id_from_source_identity;
 use super::lifecycle_state::GenerationState;
-use super::manifest_v2::{
-    DistannReadyReceipt, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
-};
+use super::manifest_v2::{DistannReadyReceipt, DISTANN_READY_RECEIPT_STATE};
 use super::placement::owning_node;
 use super::quote_ident;
 use super::row_schema::resolve_relation_schema;
@@ -1582,12 +1580,9 @@ fn ec_distann_seal_epoch_handoff(
             generation.state,
             GenerationState::Ready | GenerationState::Published | GenerationState::Retired
         ) {
-            return generation
-                .ready_receipt
-                .map(|receipt| receipt.to_vec())
-                .ok_or_else(|| {
-                    "EC_BUILD_STATE: non-Building generation has no Ready receipt".to_owned()
-                });
+            return generation.ready_receipt.clone().ok_or_else(|| {
+                "EC_BUILD_STATE: non-Building generation has no Ready receipt".to_owned()
+            });
         }
         if generation.state != GenerationState::Building {
             return Err(format!(
@@ -1681,12 +1676,9 @@ fn ec_distann_seal_epoch_handoff(
             row_tier_bytes,
             directory_bytes,
             state: DISTANN_READY_RECEIPT_STATE,
+            payload_sidecar: None,
         };
         let encoded = receipt.encode()?;
-        let fixed: [u8; DISTANN_READY_RECEIPT_BYTES] =
-            encoded.as_slice().try_into().map_err(|_| {
-                "EC_READY_RECEIPT: encoded receipt has the wrong fixed length".to_owned()
-            })?;
         generation_catalog::mark_generation_ready(
             index_oid,
             logical_index_uuid,
@@ -1694,7 +1686,7 @@ fn ec_distann_seal_epoch_handoff(
             generation.next_batch_seq,
             generation.cumulative_record_count,
             generation.cumulative_owner_digest,
-            fixed,
+            &encoded,
         )?;
         Ok(encoded)
     })()

@@ -253,6 +253,7 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
             bits: 1,
         },
         row_schema,
+        payload_cover: None,
     };
     let mut build_id = [build_marker; 16];
     build_id[6] = (build_id[6] & 0x0f) | 0x40;
@@ -6333,6 +6334,8 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         global_record_count: row_count as u64,
         global_graph_digest: receipt.persisted_graph_digest,
         global_row_tier_digest: receipt.persisted_row_tier_digest,
+        payload_cover_descriptor_digest: None,
+        global_payload_sidecar_initial_content_digest: None,
         participant_receipts: vec![receipt],
     };
     let manifest_bytes = manifest.encode().unwrap();

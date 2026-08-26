@@ -9,7 +9,7 @@ use pgrx::{pg_extern, pg_sys, Spi};
 
 use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
 use super::lifecycle_state::{require_exact_transition_classified, GenerationState};
-use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
+use super::manifest_v2::{DistannReadyReceipt, DISTANN_READY_RECEIPT_MAX_BYTES};
 use super::quote_ident;
 
 const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
@@ -128,7 +128,7 @@ pub(crate) struct GenerationCatalogRow {
     pub(crate) cumulative_owner_digest: [u8; 32],
     pub(crate) last_vec_id_le: Option<[u8; 8]>,
     pub(crate) owner_stream_sha256_state: [u8; DISTANN_OWNER_STREAM_HASH_STATE_BYTES],
-    pub(crate) ready_receipt: Option<[u8; DISTANN_READY_RECEIPT_BYTES]>,
+    pub(crate) ready_receipt: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,10 +261,18 @@ fn decode_generation_row(
             required_bytes(&row, "owner_stream_sha256_state")?,
             "owner_stream_sha256_state",
         )?,
-        ready_receipt: optional_fixed_bytes(
-            optional_bytes(&row, "ready_receipt")?,
-            "ready_receipt",
-        )?,
+        ready_receipt: optional_bytes(&row, "ready_receipt")?
+            .map(|bytes| {
+                if bytes.len() > DISTANN_READY_RECEIPT_MAX_BYTES {
+                    return Err(format!(
+                        "ready_receipt is {} bytes, exceeds {DISTANN_READY_RECEIPT_MAX_BYTES}",
+                        bytes.len()
+                    ));
+                }
+                DistannReadyReceipt::decode(&bytes)?;
+                Ok(bytes)
+            })
+            .transpose()?,
     })
 }
 
@@ -431,7 +439,7 @@ pub(crate) fn insert_generation(
                     row.cumulative_owner_digest.to_vec().into(),
                     row.last_vec_id_le.map(|bytes| bytes.to_vec()).into(),
                     row.owner_stream_sha256_state.to_vec().into(),
-                    row.ready_receipt.map(|bytes| bytes.to_vec()).into(),
+                    row.ready_receipt.clone().into(),
                 ],
             )
             .map_err(|error| format!("ec_distann generation catalog insert failed: {error}"))?;
@@ -700,8 +708,15 @@ pub(crate) fn mark_generation_ready(
     next_batch_seq: u64,
     cumulative_record_count: u64,
     cumulative_owner_digest: [u8; 32],
-    ready_receipt: [u8; DISTANN_READY_RECEIPT_BYTES],
+    ready_receipt: &[u8],
 ) -> Result<(), String> {
+    if ready_receipt.len() > DISTANN_READY_RECEIPT_MAX_BYTES {
+        return Err(format!(
+            "EC_READY_RECEIPT: receipt is {} bytes, exceeds {DISTANN_READY_RECEIPT_MAX_BYTES}",
+            ready_receipt.len()
+        ));
+    }
+    DistannReadyReceipt::decode(ready_receipt)?;
     let next_batch_seq = i64::try_from(next_batch_seq)
         .map_err(|_| "EC_BATCH_SEQUENCE: next batch sequence exceeds bigint".to_owned())?;
     let cumulative_record_count = i64::try_from(cumulative_record_count)
