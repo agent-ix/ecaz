@@ -2,10 +2,14 @@
 
 - Task/packet: `task-239/002-diagnosis-and-correction`
 - Harness code checkpoint: `8d8c181b889c8e0b5fb154b639cbfb9bd2ce34a9`
-- Exact code/config build checkpoint:
+- Exact corrected CLI/config build checkpoint:
   `d03997c7aef2ff217d0535b47d0b8af765b8500f`
-- Detached build/run checkout:
+- Exact extension build checkpoint:
+  `41392c011106cb040095fd6004c4d5c0f136f1a0`
+- Detached corrected CLI/run checkout:
   `/home/peter/dev/ecaz/.worktrees/task239-corrected-run-build`
+- Detached extension checkout:
+  `/home/peter/dev/ecaz/.worktrees/task239-main-run-build`
 - Host/lane: Intel local, PG18 attribution release
 - Fixture: fresh three-node local multinode, one index per table
 - Corpus: `ec_real_10k`; staged manifest SHA-256
@@ -97,7 +101,8 @@ storage, or semantic decision weight.
 
 ## Live command prohibited pending review
 
-After explicit outside authorization, install the exact checkpoint extension:
+After explicit outside authorization, run the following from the clean detached
+extension checkout at exact `41392c011...`:
 
 ```text
 PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config \
@@ -106,8 +111,10 @@ PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config \
   --no-default-features --features pg18,distann-head-attribution-benchmark
 ```
 
-Then invoke the checked-in suite once, from the detached checkout, without
-`--dry-run`, using absolute packet-local artifact/log paths. No continuation,
-resume, selected step, or replacement run. Inspect the emitted SHA/features,
+Then invoke the checked-in suite once, from the corrected detached checkout,
+without `--dry-run`, using the exact `d03997c7a...` release CLI and absolute
+packet-local artifact/log paths. No continuation, resume, selected step, or
+replacement run. Inspect unanimous extension SHA `41392c011...` and exact
+features, verify the live suite manifest records runner SHA `d03997c7a...`,
 apply request.md's fixed gate, capture compact evidence, and remove the stopped
 run directory afterward.

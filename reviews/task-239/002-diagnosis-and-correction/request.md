@@ -54,10 +54,13 @@ Config checkpoint `d03997c7aef2ff217d0535b47d0b8af765b8500f` adds
 
 ## Preregistered corrected matrix
 
-Build and install the release extension from a clean detached checkout at
-exact `d03997c7a...` with features
-`pg18,distann-head-attribution-benchmark`. Use the exact same checkpoint's
-release CLI. The one checked-in suite step creates a fresh three-node,
+Build and install the release extension from the clean detached packet-001
+baseline checkout at exact current main `41392c011...` with features
+`pg18,distann-head-attribution-benchmark`. Run the suite with the corrected
+release CLI from the separate clean detached checkout at exact `d03997c7a...`.
+This is the same extension/CLI split packet 001 used and isolates the CLI-only
+harness correction from the six intervening extension-source commits on the
+Task 239 branch. The one checked-in suite step creates a fresh three-node,
 one-index-per-table 10k fixture at ports 44070--44072 and run directory
 `/home/peter/.ecaz/clusters/task239-corrected-semantics-10k`.
 
@@ -76,18 +79,29 @@ between-arm delta can pass or fail this packet.
 No `--continue-on-error`, resume, selected-step execution, or replacement run
 is allowed.
 
+If a semantic scenario fails, the rows completed before the failure and the
+failing `pass=false` row are durable in the step's main
+`distann-local-multinode.log`; the compact summary and `results.jsonl` are not
+written on that failure path. The main log is therefore the authoritative
+failure-path evidence.
+
 The suite passes only if all of the following hold:
 
-1. Preflight is unanimous release SHA `d03997c7a...`, exact features
-   `distann-head-attribution-benchmark,pg18`, and no `pg-test`. The operator
-   must inspect the emitted fields; exact SHA/features are not pinned by the
-   preflight implementation itself.
+1. Preflight is unanimous extension release SHA `41392c011...`, exact features
+   `distann-head-attribution-benchmark,pg18`, and no `pg-test`; the live suite
+   manifest records runner SHA `d03997c7a...` and the exact config hash. The
+   operator must inspect the emitted extension fields; exact SHA/features are
+   not pinned by the preflight implementation itself.
 2. No Task 167 `candidate_default_quality_gate_failed` skip appears. The main
    log and summary each contain exactly one row for all nine scenarios:
    `fewer_than_window`, `exactly_one_window`, `more_than_window`,
    `reject_first_window`, `reject_multiple_windows`, `null_payload`,
    `toasted_projection_qual`, `mixed_local_remote`, and
-   `post_first_batch_remote_failure`. No `pass=false` row appears.
+   `post_first_batch_remote_failure`. No
+   `physical_materialization_correctness` row reports `pass=false`. The
+   expected `physical_benchmark_insert_throughput_ab ... pass=false
+   reason=single_control_skipped` row comes from the preregistered
+   `skip_single_control` setting and does not fail this gate.
 3. Every one of the seven eager/candidate rows reports
    `control_batch_size=0 candidate_batch_size=10`, exact result identity, zero
    duplicate requests, and its existing bound. The two additional rows each
