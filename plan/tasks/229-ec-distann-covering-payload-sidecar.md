@@ -1,7 +1,9 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
-Status: **ready — operator-selected mandatory prototype; all entry conditions
-satisfied, including Task 239 review-closed ACCEPT** (updated 2026-08-26).
+Status: **implementation pending — packet 001 concrete plan review-open on exact
+current main; all entry conditions satisfied, including Task 239 review-closed
+ACCEPT** (updated 2026-08-26; packet
+`reviews/task-229/001-plan/`).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
