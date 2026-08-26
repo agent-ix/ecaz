@@ -4181,12 +4181,6 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                if step.secure_remote_transport && step.reuse_fixture {
-                    bail!(
-                        "distann-local-multinode step {:?} cannot combine secure_remote_transport with reuse_fixture",
-                        step.name
-                    )
-                }
                 if step.tls_security_matrix
                     && (!step.secure_remote_transport
                         || step.nodes.unwrap_or(3) < 3
