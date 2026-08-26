@@ -1,0 +1,300 @@
+Task 239 packet 002 — reviewer seq03 live-result verification log
+Date: 2026-08-26
+Agent: Claude (claude-opus-5), role reviewer
+Branch: task239-bounded-read-overfetch
+Read-only session. Nothing was installed, built, or executed against PostgreSQL.
+No fixture was created. No src/**, crates/**, or suite config was modified.
+
+================================================================================
+1. Branch / tree state
+================================================================================
+
+$ git rev-parse HEAD
+4bb78a507c04e5bd8d74d4344c37acf9918b69b4
+
+$ git rev-parse origin/task239-bounded-read-overfetch
+4bb78a507c04e5bd8d74d4344c37acf9918b69b4
+
+$ git status --short
+(clean — no output)
+
+Working tree therefore equals HEAD; every artifact hash below is a
+committed-byte hash.
+
+$ git log --oneline -5
+4bb78a507 Correct Task 239 live log hashes
+6c7adb391 Record Task 239 failed one-shot evidence
+646c0a028 Record Task 239 live-run authorization
+386effacd Review Task 239 packet 002 rereview: DONE, one live run authorized
+943783831 Correct Task 239 packet 002 preregistration
+
+$ git show --stat 6c7adb391
+18 files changed, 3257 insertions(+), 17 deletions(-)
+  — all live-run artifacts are ADDITIONS; no packet-001 or packet-002 artifact
+    was modified or deleted.
+
+$ git show --stat 4bb78a507
+reviews/task-239/002-diagnosis-and-correction/artifacts/manifest.md | 4 ++--
+  — corrected exactly two stale SHA-256 values:
+    extension-install-main-41392c.log
+      ff812ab6d77c3ed7d84f66aeac2e5b4859d02a86a34c1899fdab84e37aab4be5 (stale)
+      -> d1a7d961b651cd4b9566970d2ad8714946c4d20bec4e1b8e67363e966caca213
+    live-runner-build-d03997c7a.log
+      161211405571848a3021c8a7823b4bb97dda3b6b916b7f41536a81b295e754ae (stale)
+      -> 58c6103136502059eaaf756f3d75968f9394208a27086fb7f8cba81382985662
+
+================================================================================
+2. Committed-byte artifact hashes (recomputed) vs manifest.md claims
+================================================================================
+
+$ sha256sum <packet artifacts>
+efb82d10a62b638c7cde3bb8f7555fc2e3c0c85d768d10f4660ccbe61645bd97  live-suite.log
+efbe452ca6c7cb75fe507c5524fcb4fa3a7ec0d7c6907a241b005a3dbb326646  live-run/suite-manifest.json
+817be94a4e829a9756306b1e74785b6bf2fcdc480c725ac393575993fbc0a4bd  live-run/corrected/distann-local-multinode.log
+25777989f40f8393d60383461dde6ea92f8d304d08de73243e35f18c7b547efd  live-run/corrected/physical-eager-control-recall.log
+801f6a0b83237047fea6ebd92cb1b85f07aa8dd80ee6dbd5c7877153e724fb6e  live-run/corrected/physical-eager-control-predictions.json
+d1a7d961b651cd4b9566970d2ad8714946c4d20bec4e1b8e67363e966caca213  extension-install-main-41392c.log
+58c6103136502059eaaf756f3d75968f9394208a27086fb7f8cba81382985662  live-runner-build-d03997c7a.log
+
+RESULT: 7/7 match manifest.md lines 121-143 exactly at HEAD 4bb78a507.
+
+Runner binary, independently recomputed this session:
+$ sha256sum /home/peter/.cargo-target/release/ecaz
+0f48f41f37d17a12ea2ddbd018ce306d1d6fc837b903c6a6d70e56402ed350e0
+$ ls -la /home/peter/.cargo-target/release/ecaz
+-rwxr-xr-x 2 peter peter 25598032 Aug 26 02:34 ...
+RESULT: matches manifest.md line 128 ("Exact runner binary immediately before
+invocation") exactly, and its mtime (02:34) sits between the CLI build finish
+(02:34:28) and the run start (02:34:58).
+
+================================================================================
+3. Provenance — runner / config / extension
+================================================================================
+
+live-run/suite-manifest.json:
+  "config_sha256": "bd74199c5fc26d7dffc6b72582915529cbd1c7453ec4ff8fdaad82d7605e6f21"
+  "dry_run": false
+  "runner_git_commit": "d03997c7aef2ff217d0535b47d0b8af765b8500f"
+  "config": ".../task239-corrected-run-build/crates/ecaz-cli/suites/task239-corrected-semantics-10k.json"
+  steps[0].status = "failed", exit_code = 1, duration_ms = 139319
+  steps[0].selected = true   (one step, one selection)
+
+live-run/corrected/distann-local-multinode.log:4
+  release_profile_preflight status=passed nodes=3 unanimous=true
+  extension_git_sha=41392c011106cb040095fd6004c4d5c0f136f1a0
+  extension_build_profile=release
+  extension_features=distann-head-attribution-benchmark,pg18
+  debug_override=false
+
+Detached build checkouts, verified present, exact, and clean:
+$ git -C /home/peter/dev/ecaz/.worktrees/task239-main-run-build rev-parse HEAD
+41392c011106cb040095fd6004c4d5c0f136f1a0        (status --short: clean)
+$ git -C /home/peter/dev/ecaz/.worktrees/task239-corrected-run-build rev-parse HEAD
+d03997c7aef2ff217d0535b47d0b8af765b8500f        (status --short: clean)
+
+extension-install-main-41392c.log: install ran in task239-main-run-build,
+features "pg18,distann-head-attribution-benchmark pg18", exit 0,
+02:17:46 -> 02:23:32.
+live-runner-build-d03997c7a.log: release CLI built in task239-corrected-run-build,
+one pre-existing warning (LoadedDistributedPlacementConfig.path), exit 0,
+02:23:48 -> 02:34:28.
+
+RESULT: gate-1 provenance (runner SHA, config SHA, extension SHA, exact
+features, no pg-test) is exact and independently checkable.
+
+================================================================================
+4. Exactly one live invocation
+================================================================================
+
+Node startup/shutdown cycles in the captured node logs:
+$ grep -c "database system is ready to accept connections" node1-postgres.log
+1
+node1-postgres.log: start 2026-08-26 02:35:01.557 PDT,
+                    fast shutdown 02:37:25.325, shut down 02:37:25.727
+
+suite-manifest.json: generated_at_unix_ms 1787736898217,
+                     step started 1787736898238, finished 1787737046731
+                     (139,319 ms == 2m19s, consistent with 02:34:58 -> 02:37:18)
+
+live-suite.log records the manifest being rewritten three times — this is the
+suite runner re-serialising the SAME manifest during one invocation (pre-run,
+post-start, post-finish), not three runs: there is exactly one entry in
+steps[], one artifact tree, and one PostgreSQL lifecycle per node.
+
+Directory listing of the run output:
+  live-run/suite-manifest.json
+  live-run/corrected/{distann-local-multinode.log, node1..3-postgres.log,
+                      physical-eager-control-default-latency.log,
+                      physical-eager-control-default-latency.memory-series.log,
+                      physical-eager-control-predictions.json,
+                      physical-eager-control-recall.log}
+  — 8 files; no results.jsonl, no distann-multinode-summary.log,
+    no lazy10 child artifacts of any kind.
+
+RESULT: exactly one invocation. No continuation, resume, selected-step
+execution, replacement, or second attempt is present anywhere in the artifacts,
+the git history, or the filesystem.
+
+================================================================================
+5. Failure occurred before any semantic row
+================================================================================
+
+$ grep -c "physical_materialization_correctness" live-run/corrected/distann-local-multinode.log
+0
+
+Last two log lines before the error are the two eager-control bench children
+(recall, then latency). The error:
+
+  physical latency attribution expected 40 ec_distann stage rows
+  (1 concurrency groups), got 37
+  Location: crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:8434
+
+$ grep -c "distann-stage-counters" physical-eager-control-default-latency.log
+37
+$ (distinct stage labels in that file)
+37
+
+RESULT: the extension emitted 37 stage rows with 37 distinct labels; the CLI
+rejected the count before running any materialization scenario. Zero semantic
+evidence exists in this run — it neither confirms nor falsifies the corrected
+batch-state hypothesis.
+
+================================================================================
+6. Eager recall / prediction claim
+================================================================================
+
+physical-eager-control-recall.log:
+  queries 200, recall_trials 2000, recall@k 0.9990,
+  ci95 [0.9964, 0.9997], ndcg 1.0000, mean q-time 23.35 ms
+
+$ sha256sum (packet 001 prediction files)
+801f6a0b...e724fb6e  001/attribution-run/attribution/physical-eager-control-predictions.json
+801f6a0b...e724fb6e  001/attribution-run/attribution/physical-lazy10-production-predictions.json
+801f6a0b...e724fb6e  001/production-run/production/physical-eager-control-predictions.json
+801f6a0b...e724fb6e  001/production-run/production/physical-lazy10-production-predictions.json
+$ sha256sum (packet 002 live prediction file)
+801f6a0b...e724fb6e  002/live-run/corrected/physical-eager-control-predictions.json
+
+RESULT: the eager recall/prediction claim is exact. The predictions file is
+byte-identical to all four packet-001 prediction files. There is no lazy-10
+recall child in this run, and the packet does not claim one.
+
+================================================================================
+7. 40-vs-37 causal derivation
+================================================================================
+
+Extension side, exact main 41392c011:
+$ git show 41392c011:src/am/ec_distann/stage_counters.rs | grep -n "pub(crate) const ALL"
+52:    pub(crate) const ALL: [Self; 37] = [
+Runner side, d03997c7a:
+$ git show d03997c7a:src/am/ec_distann/stage_counters.rs | grep -n "pub(crate) const ALL"
+55:    pub(crate) const ALL: [Self; 40] = [
+
+The three additional variants at d03997c7a, in order, are exactly:
+  Self::MaterializeOwnerPayloadSpiWork
+  Self::MaterializeOwnerBinarySendWork
+  Self::MaterializeOwnerResponseConstructWork
+matching live-run-decision.md's named derivation exactly.
+
+CLI assertion at d03997c7a (numbered from the blob):
+  8433:            if stage_rows.len() != 40 * expected_counter_groups {
+  8434:                bail!(
+  8435:                    "physical latency attribution expected {} ec_distann stage rows ..."
+CLI assertion at exact main 41392c011:
+  ...            if stage_rows.len() != 37 * expected_counter_groups {
+  8299:                    "physical latency attribution expected {} ..."
+
+The assertion is unconditional under `arm == "physical" && args.distann_stage_counters`
+and executes on the FIRST latency child, i.e. strictly before
+run_materialization_correctness.
+
+Provenance of the three extra stages: they were added by the Task 224 stack
+(ab39e8b81, 7cafbd202), which is present on the Task 239 branch but NOT in main:
+$ git merge-base --is-ancestor 44fc27821 41392c011
+  -> PR87-merge NOT in main
+$ git log --oneline -1 41392c011
+  41392c011 Merge pull request #82 from agent-ix/fix/task236-closeout-index-dedup
+
+RESULT: the causal derivation in live-run-decision.md is confirmed exactly,
+including the three stage names and the mechanism. This is a runner/extension
+counter-schema incompatibility, not evidence about bounded reads.
+
+================================================================================
+8. Packet 001 pairing (bears on the next permitted action)
+================================================================================
+
+$ grep -n "runner_git_commit" 001/artifacts/*run/suite-manifest.json
+001/production-run/suite-manifest.json:8:  "runner_git_commit": "41392c011106cb040095fd6004c4d5c0f136f1a0"
+001/attribution-run/suite-manifest.json:8:  "runner_git_commit": "41392c011106cb040095fd6004c4d5c0f136f1a0"
+
+Packet 001 ran runner == extension == 41392c011 (37 == 37). Its attribution
+lane REACHED the semantic matrix on that pairing and failed at
+`exactly_one_window` with payload_reads=12/10 — the accepted packet-001 finding.
+Packet 002 introduced the runner/extension SHA split as a NEW variable, and that
+split is what aborted the run.
+
+Neither packet-001 lane passed --skip-routed-delete-vacuum-drill (that flag does
+not exist at 41392c011):
+$ grep -o '"--skip[a-z-]*"' 001/attribution-run/suite-manifest.json | sort -u
+"--skip-concurrency-drill" "--skip-fault-drills" "--skip-single-control"
+The routed drill ran and passed on the featureless production lane:
+  physical_routed_delete_vacuum pass=true ... delete_ok=true vacuum_ok=true
+
+Portability of the Task 239 harness fix (8d8c181b8) onto main's CLI —
+hunk-overlap analysis, no files modified:
+  8d8c181b8 hunks (fix-parent coords):
+    2935, 2947, 2957, 5912, 5976, 5998, 6264, 6284, 6306, 6389,
+    9163, 9185, 9221, 9568, 10569, 14438
+  main(41392c011) vs fix-parent hunks:
+    188, 341, 663, 1947, 2015, 2310, 7610, 8059, 8105, 8154, 8214, 8268,
+    8294, 8343, 8352, 9040, 9055, 9073, 10497, 10518, 10604, 14364
+  Overlap: NONE in the semantic region (2935-3002 and 5912-6450 have identical
+  context on main — main and the fix-parent do not differ anywhere between
+  offsets 2352 and 7670). The only main-incompatible construct in the whole
+  fix is the `task224_arm_provenance(...)` prefix inside the 9163/9185 hunks;
+  main builds the same suffix at 9057-9060 WITHOUT that prefix, so the port is
+  a single deletion. `materialization_line_was_emitted_incrementally`, the two
+  stdout-suppression hunks (9568, 10569) and the new unit test (14438) all sit
+  in context identical to main.
+
+================================================================================
+9. Cleanup and tracking
+================================================================================
+
+$ ls /home/peter/.ecaz/clusters/
+  ... (no task239-corrected-semantics-10k entry)
+RESULT: the disclosed removal of the stopped 1.2 GB run directory is confirmed;
+manifest.md lines 149-151 disclose it accurately, including that it is
+recoverable only by regeneration.
+
+Tracking surfaces, all three consistent and current at HEAD:
+  plan/tasks/239-ec-distann-bounded-read-overfetch.md — Status header names the
+    consumed one shot, the 40-vs-37 pre-semantic failure, "no rerun authorized,
+    outside failure review pending", and cites live-run-decision.md.
+  plan/tasks/README.md:280 — same disposition, same citations.
+  plan/design/ec-distann-recall-latency-roadmap.md:144 — same disposition.
+
+================================================================================
+10. Scope claim check
+================================================================================
+
+$ git show 8d8c181b8 --stat
+ crates/ecaz-cli/src/commands/dev/distann_multicluster.rs | 163 +++++----
+ 1 file changed, 119 insertions(+), 44 deletions(-)
+RESULT: request.md line 130's claim that the 10k/50k/100k production-behavior
+A/B closeout rule is not triggered is correct — the correction touches only
+ecaz-cli harness code, no extension runtime.
+
+================================================================================
+11. Precision discrepancies found (non-blocking)
+================================================================================
+
+a) live-run-decision.md line 33 cites
+   `distann_multicluster.rs:8433`; the emitted Location in
+   live-run/corrected/distann-local-multinode.log:25 is `:8434`. 8433 is the
+   `if` guard, 8434 is the `bail!`. Same block; cite the emitted line or both.
+
+b) 6c7adb391 committed two SHA-256 values that did not match the committed
+   bytes; 4bb78a507 corrected them one minute later. Hash after the final write.
+
+No other discrepancy between claims and artifacts was found.
