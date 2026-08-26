@@ -120,10 +120,10 @@ replacement. That authorization is now exhausted.
 
 - `extension-install-main-41392c.log` — exact-main attribution install passed;
   SHA-256
-  `ff812ab6d77c3ed7d84f66aeac2e5b4859d02a86a34c1899fdab84e37aab4be5`
+  `d1a7d961b651cd4b9566970d2ad8714946c4d20bec4e1b8e67363e966caca213`
 - `live-runner-build-d03997c7a.log` — exact corrected release CLI rebuild
   passed with the one existing warning; SHA-256
-  `161211405571848a3021c8a7823b4bb97dda3b6b916b7f41536a81b295e754ae`
+  `58c6103136502059eaaf756f3d75968f9394208a27086fb7f8cba81382985662`
 - Exact runner binary immediately before invocation: SHA-256
   `0f48f41f37d17a12ea2ddbd018ce306d1d6fc837b903c6a6d70e56402ed350e0`
 - `live-suite.log` — suite driver output, step exit 1; SHA-256
