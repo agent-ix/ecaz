@@ -2508,6 +2508,7 @@ impl RetainedGenerationScan {
                 telemetry: OwnerMaterializationTelemetry {
                     validate_ns,
                     node_lookup_ns,
+                    fast_real_array_ineligible_requests,
                     ..OwnerMaterializationTelemetry::default()
                 },
             });
@@ -3259,20 +3260,14 @@ unsafe fn fast_real_array_binary(datum: pg_sys::Datum) -> Option<Vec<u8>> {
                 .unwrap_or_else(|error| pgrx::error!("ec_distann Task 224 sender: {error}")),
         );
     }
-    let data_offset = if header.dataoffset != 0 {
-        usize::try_from(header.dataoffset).unwrap_or_else(|_| {
-            pgrx::error!("ec_distann Task 224 sender saw negative array data offset")
-        })
-    } else {
-        let header_bytes = std::mem::size_of::<pg_sys::ArrayType>().saturating_add(
-            2_usize
-                .saturating_mul(ndim)
-                .saturating_mul(std::mem::size_of::<i32>()),
-        );
-        let alignment =
-            usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit usize");
-        (header_bytes + alignment - 1) & !(alignment - 1)
-    };
+    let header_bytes = std::mem::size_of::<pg_sys::ArrayType>().saturating_add(
+        2_usize
+            .saturating_mul(ndim)
+            .saturating_mul(std::mem::size_of::<i32>()),
+    );
+    let alignment =
+        usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit usize");
+    let data_offset = (header_bytes + alignment - 1) & !(alignment - 1);
     let values_ptr = unsafe { array_ptr.cast::<u8>().add(data_offset).cast::<f32>() };
     let values = unsafe { std::slice::from_raw_parts(values_ptr, item_count) };
     Some(

@@ -3934,6 +3934,25 @@ fn validate_nfr_021_registration(
     Ok(())
 }
 
+fn validate_reused_fixture_drills(
+    step_name: &str,
+    reuse_fixture: bool,
+    traversal_replica_enospc_drill: bool,
+    drop_extension_cleanup_drill: bool,
+    materialization_correctness: bool,
+) -> Result<()> {
+    if reuse_fixture
+        && (traversal_replica_enospc_drill
+            || drop_extension_cleanup_drill
+            || materialization_correctness)
+    {
+        bail!(
+            "distann-local-multinode step {step_name:?} reuse_fixture cannot combine with fixture-mutating drills"
+        )
+    }
+    Ok(())
+}
+
 impl SuiteStep {
     fn name(&self) -> &str {
         match self {
@@ -4962,6 +4981,13 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                validate_reused_fixture_drills(
+                    &step.name,
+                    step.reuse_fixture,
+                    step.traversal_replica_enospc_drill,
+                    step.drop_extension_cleanup_drill,
+                    step.materialization_correctness,
+                )?;
                 if step.skip_routed_delete_vacuum_drill && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} skip_routed_delete_vacuum_drill requires physical_benchmark",
@@ -8711,6 +8737,8 @@ psql header noise\n\
         assert!(candidate.skip_owner_locality_profile);
         assert!(!control.owner_fast_real_array_send);
         assert!(candidate.owner_fast_real_array_send);
+        assert!(!control.materialization_correctness);
+        assert!(!candidate.materialization_correctness);
         assert_eq!(control.benchmark_seed_variants.len(), 2);
         assert_eq!(candidate.benchmark_seed_variants.len(), 2);
         for (left, right) in control
@@ -8734,6 +8762,7 @@ psql header noise\n\
         assert!(control_repeat.stage_counter_only);
         assert!(control_repeat.skip_owner_locality_profile);
         assert!(!control_repeat.owner_fast_real_array_send);
+        assert!(!control_repeat.allow_debug_extension);
         assert!(profiled_control.reuse_fixture);
         assert!(profiled_control.stage_counter_only);
         assert!(!profiled_control.skip_owner_locality_profile);
@@ -8741,6 +8770,53 @@ psql header noise\n\
         assert!(!profiled_control.allow_debug_extension);
         assert_eq!(control_repeat.run_dir, control.run_dir);
         assert_eq!(profiled_control.run_dir, control.run_dir);
+        assert!(config.steps.iter().all(|step| {
+            let SuiteStep::DistannLocalMultinode(step) = step else {
+                return false;
+            };
+            !step.materialization_correctness
+        }));
+    }
+
+    #[test]
+    fn task224_mat26_semantics_use_two_isolated_nonreuse_fixtures() {
+        let raw = include_str!("../../../suites/task224-mat26-semantics-10k.json");
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        assert_eq!(config.steps.len(), 2);
+        let SuiteStep::DistannLocalMultinode(control) = &config.steps[0] else {
+            panic!("expected semantic control DistANN step");
+        };
+        let SuiteStep::DistannLocalMultinode(candidate) = &config.steps[1] else {
+            panic!("expected semantic candidate DistANN step");
+        };
+        for step in [control, candidate] {
+            assert!(!step.reuse_fixture);
+            assert!(step.materialization_correctness);
+            assert!(step.skip_recall);
+            assert_eq!(step.benchmark_iterations, Some(1));
+            assert!(!step.allow_debug_extension);
+        }
+        assert_ne!(control.run_dir, candidate.run_dir);
+        assert!(!control.owner_fast_real_array_send);
+        assert!(candidate.owner_fast_real_array_send);
+    }
+
+    #[test]
+    fn reused_fixture_rejects_every_fixture_mutating_drill() {
+        assert!(validate_reused_fixture_drills("ok", true, false, false, false).is_ok());
+        for (enospc, drop_cleanup, correctness) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let error =
+                validate_reused_fixture_drills("reused", true, enospc, drop_cleanup, correctness)
+                    .expect_err("reused fixtures must reject mutating drills");
+            assert!(error
+                .to_string()
+                .contains("reuse_fixture cannot combine with fixture-mutating drills"));
+        }
     }
 
     #[test]
