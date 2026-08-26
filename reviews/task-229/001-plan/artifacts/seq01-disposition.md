@@ -24,4 +24,3 @@ PG18 binary stability; deterministic naming; unchanged domains and re-bootstrap
 posture; explicitly initial DML digest; tombstone retention derived from row-
 tier retention; missing/corruption split; only `Frozen` local hits converted;
 and same-generation primary read attribution.
-
