@@ -4061,6 +4061,47 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
             .all(|row| row.get::<_, f32>(1).is_finite()),
         "every visible distance must evaluate from a shipped vector"
     );
+
+    // Task 238: the reopened-intent retry registers a fresh snapshot and hands
+    // its guard back to the expander. Holding only the raw pointer while the
+    // guard dropped left `self.snapshot` dangling, so every hop round after the
+    // retry ran visibility checks against freed memory (SIGSEGV in
+    // HeapTupleSatisfiesMVCC, CLOBBER_FREED_MEMORY bytes on the stack). The
+    // forcing GUC is the only way to reach that path deterministically, and
+    // nothing exercised it before this test.
+    // A forced retry also drives the Task 167 retry-attribution INSERT, and this
+    // branch predates the production guard that makes that relation optional.
+    // The projection-contract path creates it; create it here too so the block
+    // is self-contained in both callers rather than inheriting one's fixture.
+    client
+        .batch_execute(
+            "CREATE UNLOGGED TABLE IF NOT EXISTS public.ec_distann_retry_attribution (
+                 backend_pid int NOT NULL,
+                 node_id int NOT NULL,
+                 served_epoch bigint NOT NULL,
+                 missing_vec_id bigint NOT NULL
+             )",
+        )
+        .expect("retry attribution sink should exist before a forced retry");
+    client
+        .batch_execute("SET ec_distann.debug_force_frontier_retry = on")
+        .expect("forced frontier retry should be settable");
+    let forced_retry_results = physical_query_ids(&mut client);
+    client
+        .batch_execute("SET ec_distann.debug_force_frontier_retry = off")
+        .expect("forced frontier retry should reset");
+    assert_eq!(
+        forced_retry_results, crown_off_results,
+        "a forced reopened-intent retry must keep its registered snapshot alive and return identical rows"
+    );
+    // The retry latch is consumed once per backend, so a second query proves the
+    // expander stayed usable after the retry rather than merely surviving it.
+    assert_eq!(
+        physical_query_ids(&mut client),
+        crown_off_results,
+        "traversal after a reopened-intent retry must continue against a live snapshot"
+    );
+
     if projection_contract_only {
         client
             .batch_execute(

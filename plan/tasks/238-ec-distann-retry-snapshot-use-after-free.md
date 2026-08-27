@@ -1,10 +1,10 @@
 # Task 238: ec_distann Retry Snapshot Use-After-Free
 
-Status: **fix already present on current `main` via `15f7fcf5f` / Task 167 PR
-#77; forced-retry regression coverage is authored against exact current main on
-campaign-stack commit `3b8b872d6` but is not on `main`; both PG18 callers pass
-in packet evidence; DoD item 2 and outside closeout remain open** (updated
-2026-08-26).
+Status: **implementation complete against exact current main; packet 001 outside
+closeout review-open** (updated 2026-08-27). The production fix remains the
+equivalent `15f7fcf5f` landing through Task 167 PR #77. Current-main checkpoint
+`7d4103885` restores the deterministic forced-retry regression, and both PG18
+callers pass in packet evidence. Merge and an outside ACCEPT remain open.
 Priority: **P0 correctness closeout.**
 
 Origin: found by the Task 222 coder while root-causing eight SIGSEGV runs in

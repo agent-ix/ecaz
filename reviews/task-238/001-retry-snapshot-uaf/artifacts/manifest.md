@@ -152,3 +152,40 @@ mode allowed by Task 236. Commit `3b8b872d6` fixes both integration gaps and
 retains Task 236's fail-closed production policy: `sslmode=disable` is explicit
 and confined to the PG18 loopback fixture.
 
+## Exact merged-main verification (2026-08-27)
+
+- Base: `origin/main` `3c81319a3d29dc6699fda83055bade0c11f16e8b`
+- Head SHA: `7d4103885ac9941cb2fd34b5e4bcfa3ed4b3437b`
+- Branch: `task238-current-main`
+- Task bucket and packet: `reviews/task-238/001-retry-snapshot-uaf/`
+- Timestamp: `2026-08-27T08:18:15-07:00`
+- Lane / fixture: PG18 focused three-owner physical handoff; both callers of
+  `run_distann_three_owner_physical_handoff`
+- Storage format / rerank mode: not applicable; correctness-only tests
+- Isolation: one focused caller per serialized command. The existing integration
+  worktree was reused, `CARGO_TARGET_DIR=/home/peter/.cargo-target` was shared,
+  and no benchmark run directory, corpus, or custom build directory was created.
+
+### `pg18-merged-main-projection-contract.log`
+
+Command:
+
+`cargo pgrx test pg18 test_distann_payload_projection_contract --no-default-features --features pg18`
+
+Key result: `test tests::pg_test_distann_payload_projection_contract ... ok`;
+`test result: ok. 1 passed; 0 failed`; fixture time `129.15s`.
+
+SHA-256:
+`f65b621a0c51d883aff3db639df8c233b6353ca2ed7994b1af204cfb2dcef942`.
+
+### `pg18-merged-main-sibling-handoff.log`
+
+Command:
+
+`cargo pgrx test pg18 test_distann_three_owner_physical_handoff --no-default-features --features pg18`
+
+Key result: `test tests::pg_test_distann_three_owner_physical_handoff ... ok`;
+`test result: ok. 1 passed; 0 failed`; fixture time `67.86s`.
+
+SHA-256:
+`edcd429044a1a5c50a5f8d590c5ec98b2efcb622abdf063e8a640cfaa51a5616`.
