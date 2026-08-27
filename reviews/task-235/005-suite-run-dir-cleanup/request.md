@@ -5,13 +5,28 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-26
-seq: 01
+seq: 02
 ---
 
 # Task 235 DistANN suite run-directory cleanup
 
 Please review safety checkpoint
-`dc3ddbae5e4b4f6f49c12299670da076f20d4b6b`.
+`dc3ddbae5e4b4f6f49c12299670da076f20d4b6b` plus reviewer follow-up
+`d491fd37e3f06dfc68655c43fb478084da8c5b92`.
+
+## Follow-up to reviewer feedback seq-01
+
+The error-ordering finding is fixed. The runner now determines the primary
+step or threshold failure before cleanup. After writing the final manifest, it
+returns that primary failure first and appends any cleanup failure, rather than
+allowing cleanup to mask the cause. A cleanup-only failure is still returned
+unchanged.
+
+The follow-up passed `cargo fmt --all --check`, `git diff --check`, and one
+incremental `cargo check -p ecaz-cli` using the inherited shared
+`/home/peter/.cargo-target`. No tests were run for this narrow error-selection
+change, and no PostgreSQL node, PGDATA directory, corpus, fixture, or benchmark
+run was created.
 
 This checkpoint fixes the runner-side cause of accumulated Task 167/235
 fixtures before the remaining Task 235 candidate measurements run. It changes
