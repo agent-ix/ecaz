@@ -1421,19 +1421,23 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     let selected_steps = selected_step_names(&manifest);
     manifest.threshold_results =
         evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
-    let cleanup_result = cleanup_distann_run_dirs(&config, &mut manifest).await;
-    write_manifest_if_requested(&args, &config, &manifest).await?;
-    cleanup_result?;
-    if let Some(step_failure) = step_failure {
-        bail!("{step_failure}");
-    }
-    let failures = manifest
+    let threshold_failures = manifest
         .threshold_results
         .iter()
         .filter(|result| !result.passed)
         .count();
-    if failures > 0 {
-        bail!("suite thresholds failed: {failures}");
+    let primary_failure = step_failure.or_else(|| {
+        (threshold_failures > 0).then(|| format!("suite thresholds failed: {threshold_failures}"))
+    });
+    let cleanup_result = cleanup_distann_run_dirs(&config, &mut manifest).await;
+    write_manifest_if_requested(&args, &config, &manifest).await?;
+    match (primary_failure, cleanup_result) {
+        (Some(primary_failure), Err(cleanup_error)) => bail!(
+            "{primary_failure}; additionally, suite run-directory cleanup failed: {cleanup_error:#}"
+        ),
+        (Some(primary_failure), Ok(())) => bail!("{primary_failure}"),
+        (None, Err(cleanup_error)) => return Err(cleanup_error),
+        (None, Ok(())) => {}
     }
     Ok(())
 }
