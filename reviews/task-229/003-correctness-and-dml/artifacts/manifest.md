@@ -1,9 +1,10 @@
 # Task 229 packet 003 artifact manifest
 
-- Head SHA under validation: `6e4cb3c4a` (the seq-08 uncovered-path
-  fail-closed correction follows source head `8b4618ca5`; the focused logs
-  validate the preceding read/DML source, and the correction is the reviewed
-  one-branch restoration of the prior uncovered behavior).
+- Logs produced at source head: `8b4618ca5`.
+- Later correction: `6e4cb3c4a` restores the uncovered coordinator's
+  fail-closed missing-row-tier branch. None of these three focused tests
+  exercises that coordinator branch; the correction is reviewed statically,
+  not validated by the logs below.
 - Task bucket: `reviews/task-229/003-correctness-and-dml/`.
 - Host build output: shared `CARGO_TARGET_DIR=/home/peter/.cargo-target` only.
 - PostgreSQL target: PG18 through the repository's normal pgrx test surface.
@@ -39,3 +40,14 @@
 Each log records its command exit status. The focused checks used the shared
 Cargo target and the repository's existing pgrx PG18 test surface; they did
 not create a task-specific target, benchmark fixture, corpus, or run directory.
+
+## Unproven coordinator branch
+
+The host-local pgrx fixtures stop at the owner materialization SRF. They prove
+the covered owner reports both-store invisibility as a missing row, but do not
+drive `PhysicalGenerationScan::materialize_remote_payload_pairs` on a real
+coordinator. Therefore they do not directly prove that an uncovered remote
+missing row raises `EC_GENERATION_MISSING` while a covered same-snapshot miss
+is skipped. Commit `6e4cb3c4a` restores that distinction in source; a
+multinode remote-row disappearance assertion is the surface that would prove
+it dynamically.
