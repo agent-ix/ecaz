@@ -137,7 +137,7 @@ validity requirements.
 | 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
 | 233 | Hybrid node/columnar generation | proposed — mandatory after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
 | 234 | Read RPC deadline/cancel parity | **current-TLS gates complete; packet 004 review-open** | secure PG18 matrix passes 25/25; fresh 10k/50k/100k A/B is recall/storage neutral within measurement resolution and warm mean is -3.84%/-6.37%/-4.52%; outside ACCEPT/REJECT verdict remains the gate for Tasks 237 and 228 |
-| 235 | Write/lifecycle RPC cancellation | implementation/evidence complete; final review requested | secure 23-cell PG18 fault/recovery matrix and 19/19 focused tests pass; fixed-harness 10k/50k/100k A/B finds no write-throughput regression at the 50k decision scale or corroborating 100k scale; outside verdict remains |
+| 235 | Write/lifecycle RPC cancellation | **complete — outside-reviewed ACCEPT** (2026-08-27) | secure 23-cell PG18 fault/recovery matrix and 19/19 focused tests pass; fixed-harness 10k/50k/100k A/B finds no write-throughput regression at the 50k decision scale or corroborating 100k scale; packets 003/004/005 review-closed |
 | 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
 | 237 | Protocol errors and EXPLAIN | proposed — blocked on 234; 236 complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 | 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
@@ -170,11 +170,10 @@ matrix passes and its fresh 10k/50k/100k A/B is recall/storage neutral within
 measurement resolution with no latency regression; outside disposition is the
 remaining gate. Task 235's bounded write/lifecycle transport, full-XID
 coordinator-status recovery, secure 23-cell PG18 fault/recovery matrix, and
-fixed-harness 10k/50k/100k write-throughput matrix are now complete. The
-preregistered 50k decision scale and corroborating 100k scale show no
-write-throughput regression; final outside disposition remains open. Task 237
-owns error/EXPLAIN hardening after Task 234's verdict. Task 236 already supplies
-the accepted TLS substrate.
+fixed-harness 10k/50k/100k write-throughput matrix are outside-reviewed ACCEPT.
+The preregistered 50k decision scale and corroborating 100k scale show no
+write-throughput regression. Task 237 owns error/EXPLAIN hardening after Task
+234's verdict. Task 236 already supplies the accepted TLS substrate.
 
 Task 228 runs only after Tasks 222–237 have reported, so its transport-share
 denominator reflects the selected layout and production
