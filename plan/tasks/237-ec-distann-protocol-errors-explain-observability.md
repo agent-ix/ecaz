@@ -1,7 +1,8 @@
 # Task 237: ec_distann Protocol Error and EXPLAIN Observability
 
-Status: **proposed — Task 236 prerequisite complete; blocked on Task 234's
-outside disposition before Task 228** (updated 2026-08-25).
+Status: **ready — Tasks 234 and 236 prerequisites complete; run before Task
+228** (updated 2026-08-26). Task 234's operator ACCEPT is recorded in
+`reviews/task-234/005-50k-reuse-drift-bound/feedback/2026-08-26-03-operator.md`.
 Priority: P1 correctness/operations.
 
 ## Why
@@ -116,4 +117,3 @@ specify.
 - `src/am/ec_distann/custom_scan.rs`
 - `src/am/ec_distann/generation_read.rs`
 - `src/am/ec_distann/remote_transport.rs`
-

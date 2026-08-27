@@ -1,0 +1,30 @@
+2026-08-25 10:54:31.211 PDT [188188] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:54:31.226 PDT [188188] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:54:31.226 PDT [188188] LOG:  listening on IPv4 address "127.0.0.1", port 44441
+2026-08-25 10:54:31.230 PDT [188188] LOG:  listening on IPv4 address "127.0.0.2", port 44441
+2026-08-25 10:54:31.236 PDT [188194] LOG:  database system was shut down at 2026-08-25 10:54:30 PDT
+2026-08-25 10:54:31.248 PDT [188188] LOG:  database system is ready to accept connections
+2026-08-25 10:59:13.702 PDT [188359] LOG:  skipping analyze of "_ecdz_graph_17788_71717171717141718171717171717171" --- lock not available
+2026-08-25 10:59:31.955 PDT [188192] LOG:  checkpoint starting: time
+2026-08-25 11:00:27.574 PDT [188408] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:00:27.574 PDT [188408] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:00:34.601 PDT [188420] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:00:34.601 PDT [188420] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:36.458 PDT [188529] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:01:36.458 PDT [188529] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:39.604 PDT [188555] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:01:39.604 PDT [188555] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:42.342 PDT [188558] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:01:42.343 PDT [188558] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:46.028 PDT [188569] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:01:46.028 PDT [188569] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:46.045 PDT [188356] LOG:  SSL error: unexpected eof while reading
+2026-08-25 11:01:46.045 PDT [188356] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 11:01:46.547 PDT [188188] LOG:  received fast shutdown request
+2026-08-25 11:01:46.560 PDT [188188] LOG:  aborting any active transactions
+2026-08-25 11:01:46.562 PDT [188188] LOG:  background worker "logical replication launcher" (PID 188197) exited with exit code 1
+2026-08-25 11:01:46.728 PDT [188192] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 5 removed, 7 recycled; write=134.597 s, sync=0.100 s, total=134.774 s; sync files=293, longest=0.029 s, average=0.001 s; distance=203874 kB, estimate=203874 kB; lsn=0/2124EE60, redo lsn=0/DE6CF48
+2026-08-25 11:01:46.728 PDT [188192] LOG:  shutting down
+2026-08-25 11:01:46.733 PDT [188192] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 11:01:46.919 PDT [188192] LOG:  checkpoint complete: wrote 7769 buffers (47.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 20 recycled; write=0.067 s, sync=0.028 s, total=0.191 s; sync files=21, longest=0.023 s, average=0.002 s; distance=315271 kB, estimate=315271 kB; lsn=0/2124EED8, redo lsn=0/2124EED8
+2026-08-25 11:01:46.947 PDT [188188] LOG:  database system is shut down

@@ -7,7 +7,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::ExitStatus,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -631,6 +631,11 @@ struct DistannLocalMultinodeStep {
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     run_dir: Option<PathBuf>,
+    /// Keep the multi-GB PGDATA fixture after the suite has captured durable
+    /// artifacts. Omit to remove the run directory automatically. A reason is
+    /// required so intentional retention is visible in suite-manifest.json.
+    #[serde(default)]
+    retain_run_dir_reason: Option<String>,
     /// Reuse a stopped, provenance-matched distann fixture. Rebuild remains
     /// the default when this opt-in is absent.
     #[serde(default)]
@@ -1285,6 +1290,9 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     apply_default_artifact_logs(&mut config);
     apply_artifact_dir_templates(&mut config);
     validate_config(&config)?;
+    if !args.dry_run {
+        validate_suite_cargo_target_dir()?;
+    }
 
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
     if let Some(resume_from) = &args.resume_from {
@@ -1329,6 +1337,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     }
 
     let exe = std::env::current_exe().context("resolving current ecaz executable")?;
+    let mut step_failure = None;
     for idx in 0..manifest.steps.len() {
         if !manifest.steps[idx].selected
             || matches!(manifest.steps[idx].status, Some(StepStatus::Skipped))
@@ -1388,11 +1397,12 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
         if !status.success() && !args.continue_on_error {
-            bail!(
+            step_failure = Some(format!(
                 "suite step {:?} failed with {}; rerun with --continue-on-error to keep going",
                 manifest.steps[idx].name,
                 format_exit_status(status)
-            );
+            ));
+            break;
         }
     }
 
@@ -1411,14 +1421,272 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     let selected_steps = selected_step_names(&manifest);
     manifest.threshold_results =
         evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
-    write_manifest_if_requested(&args, &config, &manifest).await?;
-    let failures = manifest
+    let threshold_failures = manifest
         .threshold_results
         .iter()
         .filter(|result| !result.passed)
         .count();
-    if failures > 0 {
-        bail!("suite thresholds failed: {failures}");
+    let primary_failure = step_failure.or_else(|| {
+        (threshold_failures > 0).then(|| format!("suite thresholds failed: {threshold_failures}"))
+    });
+    let cleanup_result = cleanup_distann_run_dirs(&config, &mut manifest).await;
+    write_manifest_if_requested(&args, &config, &manifest).await?;
+    match (primary_failure, cleanup_result) {
+        (Some(primary_failure), Err(cleanup_error)) => bail!(
+            "{primary_failure}; additionally, suite run-directory cleanup failed: {cleanup_error:#}"
+        ),
+        (Some(primary_failure), Ok(())) => bail!("{primary_failure}"),
+        (None, Err(cleanup_error)) => return Err(cleanup_error),
+        (None, Ok(())) => {}
+    }
+    Ok(())
+}
+
+fn validate_suite_cargo_target_dir() -> Result<()> {
+    let Some(_) = std::env::var_os("CARGO_TARGET_DIR") else {
+        return Ok(());
+    };
+    let repo_root = crate::commands::dev::repo_root()?;
+    let target_dir = normalize_runtime_path(
+        &crate::commands::dev::cargo_target_dir(&repo_root),
+        &repo_root,
+    )?;
+    if target_dir.starts_with(&repo_root) {
+        bail!(
+            "benchmark suites reject repository-local CARGO_TARGET_DIR {}; use the host's shared target directory",
+            target_dir.display()
+        )
+    }
+    Ok(())
+}
+
+fn distann_suite_run_dir(step: &DistannLocalMultinodeStep) -> PathBuf {
+    step.run_dir.clone().unwrap_or_else(|| {
+        crate::commands::dev::default_cluster_root().join("distann-local-multinode")
+    })
+}
+
+fn normalize_runtime_path(path: &Path, relative_to: &Path) -> Result<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        relative_to.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new("/")),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                bail!(
+                    "runtime path {} must not contain parent-directory components",
+                    path.display()
+                )
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_distann_suite_run_dir(path: &Path) -> Result<PathBuf> {
+    let cwd = std::env::current_dir().wrap_err("resolving current working directory")?;
+    let repo_root = crate::commands::dev::repo_root()?;
+    let cluster_root = normalize_runtime_path(&crate::commands::dev::default_cluster_root(), &cwd)?;
+    let run_dir = normalize_runtime_path(path, &cwd)?;
+    if run_dir == cluster_root || !run_dir.starts_with(&cluster_root) {
+        bail!(
+            "distann suite run_dir {} must be a child of ECAZ_CLUSTER_ROOT {}",
+            run_dir.display(),
+            cluster_root.display()
+        )
+    }
+    let canonical_cluster_root =
+        std::fs::canonicalize(&cluster_root).unwrap_or_else(|_| cluster_root.clone());
+    let canonical_run_dir = if run_dir.exists() {
+        std::fs::canonicalize(&run_dir)
+            .wrap_err_with(|| format!("canonicalizing run_dir {}", run_dir.display()))?
+    } else {
+        canonical_cluster_root.join(
+            run_dir
+                .strip_prefix(&cluster_root)
+                .expect("run_dir child relationship checked above"),
+        )
+    };
+    if canonical_run_dir == canonical_cluster_root
+        || !canonical_run_dir.starts_with(&canonical_cluster_root)
+    {
+        bail!(
+            "distann suite run_dir {} resolves outside ECAZ_CLUSTER_ROOT {}",
+            canonical_run_dir.display(),
+            canonical_cluster_root.display()
+        )
+    }
+    if canonical_cluster_root.starts_with(&repo_root) || canonical_run_dir.starts_with(&repo_root) {
+        bail!(
+            "distann suite run_dir {} must be outside repository {}",
+            canonical_run_dir.display(),
+            repo_root.display()
+        )
+    }
+    let cargo_target_dir = normalize_runtime_path(
+        &crate::commands::dev::cargo_target_dir(&repo_root),
+        &repo_root,
+    )?;
+    let canonical_cargo_target_dir =
+        std::fs::canonicalize(&cargo_target_dir).unwrap_or(cargo_target_dir);
+    if canonical_run_dir.starts_with(&canonical_cargo_target_dir) {
+        bail!(
+            "distann suite run_dir {} must not be inside Cargo target directory {}",
+            canonical_run_dir.display(),
+            canonical_cargo_target_dir.display()
+        )
+    }
+    Ok(canonical_run_dir)
+}
+
+async fn run_dir_has_postmaster_pid(run_dir: &Path) -> Result<bool> {
+    let mut entries = tokio::fs::read_dir(run_dir)
+        .await
+        .wrap_err_with(|| format!("reading run directory {}", run_dir.display()))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .wrap_err_with(|| format!("reading run directory {}", run_dir.display()))?
+    {
+        if entry
+            .file_type()
+            .await
+            .wrap_err_with(|| format!("reading type for {}", entry.path().display()))?
+            .is_dir()
+            && tokio::fs::metadata(entry.path().join("postmaster.pid"))
+                .await
+                .is_ok()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn cleanup_distann_run_dirs(
+    config: &SuiteConfig,
+    manifest: &mut SuiteManifest,
+) -> Result<()> {
+    let mut groups: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
+    let mut retention_reasons: BTreeMap<PathBuf, String> = BTreeMap::new();
+    for (idx, step) in config.steps.iter().enumerate() {
+        let SuiteStep::DistannLocalMultinode(step) = step else {
+            continue;
+        };
+        let record = &manifest.steps[idx];
+        if !record.selected
+            || !matches!(
+                record.status,
+                Some(StepStatus::Succeeded | StepStatus::Failed)
+            )
+        {
+            continue;
+        }
+        let run_dir = validate_distann_suite_run_dir(&distann_suite_run_dir(step))?;
+        groups.entry(run_dir.clone()).or_default().push(idx);
+        if let Some(reason) = step.retain_run_dir_reason.as_ref() {
+            retention_reasons.insert(run_dir, reason.trim().to_owned());
+        }
+    }
+
+    let mut failures = Vec::new();
+    for (run_dir, indexes) in groups {
+        if let Some(reason) = retention_reasons.get(&run_dir) {
+            for idx in indexes {
+                manifest.steps[idx]
+                    .tags
+                    .push("run_dir_cleanup=retained".to_owned());
+            }
+            crate::ecaz_eprintln!(
+                "[suite:{}] retained run_dir {}: {}",
+                config.name,
+                run_dir.display(),
+                reason
+            );
+            continue;
+        }
+
+        let mut missing_artifacts = Vec::new();
+        for idx in &indexes {
+            if has_missing_artifact(&manifest.steps[*idx]).await {
+                missing_artifacts.push(manifest.steps[*idx].name.clone());
+            }
+        }
+        if !missing_artifacts.is_empty() {
+            for idx in indexes {
+                manifest.steps[idx]
+                    .tags
+                    .push("run_dir_cleanup=blocked_missing_artifacts".to_owned());
+            }
+            failures.push(format!(
+                "refusing to remove run_dir {} before durable artifacts exist for steps {}",
+                run_dir.display(),
+                missing_artifacts.join(", ")
+            ));
+            continue;
+        }
+
+        if tokio::fs::metadata(&run_dir).await.is_err() {
+            for idx in indexes {
+                manifest.steps[idx]
+                    .tags
+                    .push("run_dir_cleanup=already_absent".to_owned());
+            }
+            continue;
+        }
+        if run_dir_has_postmaster_pid(&run_dir).await? {
+            for idx in indexes {
+                manifest.steps[idx]
+                    .tags
+                    .push("run_dir_cleanup=blocked_live_postmaster".to_owned());
+            }
+            failures.push(format!(
+                "refusing to remove run_dir {} while a postmaster.pid remains",
+                run_dir.display()
+            ));
+            continue;
+        }
+
+        match tokio::fs::remove_dir_all(&run_dir).await {
+            Ok(()) => {
+                for idx in indexes {
+                    manifest.steps[idx]
+                        .tags
+                        .push("run_dir_cleanup=removed".to_owned());
+                }
+                crate::ecaz_eprintln!(
+                    "[suite:{}] removed run_dir {} after durable artifact capture",
+                    config.name,
+                    run_dir.display()
+                );
+            }
+            Err(error) => {
+                for idx in indexes {
+                    manifest.steps[idx]
+                        .tags
+                        .push("run_dir_cleanup=failed".to_owned());
+                }
+                failures.push(format!(
+                    "removing run_dir {} after durable artifact capture: {}",
+                    run_dir.display(),
+                    error
+                ));
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        bail!(
+            "suite run-directory cleanup failed: {}",
+            failures.join("; ")
+        )
     }
     Ok(())
 }
@@ -1827,6 +2095,13 @@ fn build_manifest(
                 "metrics_mode={}",
                 distann.effective_metrics_mode().label()
             ));
+            tags.push(format!(
+                "run_dir={}",
+                validate_distann_suite_run_dir(&distann_suite_run_dir(distann))?.display()
+            ));
+            if let Some(reason) = distann.retain_run_dir_reason.as_ref() {
+                tags.push(format!("run_dir_retention_reason={}", reason.trim()));
+            }
         }
         let command = if runnable {
             child_command_args(conn, step.expand(&config.defaults, conn)?)
@@ -4175,15 +4450,18 @@ impl SuiteStep {
                         step.pg.unwrap_or(18)
                     )
                 }
+                validate_distann_suite_run_dir(&distann_suite_run_dir(step))?;
+                if let Some(reason) = step.retain_run_dir_reason.as_deref() {
+                    if reason.trim().is_empty() || reason.contains('\n') || reason.contains('\r') {
+                        bail!(
+                            "distann-local-multinode step {:?} retain_run_dir_reason must be a non-empty single-line explanation",
+                            step.name
+                        )
+                    }
+                }
                 if step.nodes == Some(0) {
                     bail!(
                         "distann-local-multinode step {:?} must set nodes >= 1",
-                        step.name
-                    )
-                }
-                if step.secure_remote_transport && step.reuse_fixture {
-                    bail!(
-                        "distann-local-multinode step {:?} cannot combine secure_remote_transport with reuse_fixture",
                         step.name
                     )
                 }
@@ -7125,6 +7403,25 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn runtime_paths_reject_parent_directory_components() {
+        let error = normalize_runtime_path(Path::new("../target/task"), Path::new("/repo"))
+            .expect_err("parent-directory runtime path must fail closed");
+        assert!(error.to_string().contains("parent-directory components"));
+    }
+
+    #[test]
+    fn runtime_paths_reject_repo_local_distann_run_dir() {
+        let repo_root = crate::commands::dev::repo_root().expect("repository root");
+        let run_dir = repo_root.join("target/task-suite-fixture");
+        let error = validate_distann_suite_run_dir(&run_dir)
+            .expect_err("repo-local PGDATA must fail closed");
+        assert!(
+            error.to_string().contains("ECAZ_CLUSTER_ROOT")
+                || error.to_string().contains("outside repository")
+        );
     }
 
     #[test]
