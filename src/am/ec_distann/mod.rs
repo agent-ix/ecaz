@@ -64,6 +64,10 @@ mod payload_sidecar;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::payload_sidecar::resolve_payload_cover as resolve_payload_cover_for_test;
 mod physical_dml;
+#[cfg(feature = "pg_test")]
+pub(crate) use self::physical_dml::{
+    insert_from_owner_payload_for_test, tombstone_owner_record as tombstone_owner_record_for_test,
+};
 pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;

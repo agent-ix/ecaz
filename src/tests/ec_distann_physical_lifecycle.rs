@@ -7441,6 +7441,245 @@ fn test_distann_cover_sidecar_retire_reclaim_rollback() {
     );
 }
 
+fn distann_covered_owner_payload(
+    identity: [u8; 16],
+    payload: &str,
+    source_vector: &[f32],
+) -> (Vec<bool>, Vec<i64>, Vec<u8>) {
+    let (payload_bytes, embedding_bytes, generated_bytes) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT pg_catalog.textsend($1::text) AS payload_bytes,
+                        ecvector_send(encode_to_ecvector($2::real[], 4, 42))
+                            AS embedding_bytes,
+                        pg_catalog.textsend($3::text) AS generated_bytes",
+                None,
+                &[
+                    payload.to_owned().into(),
+                    source_vector.to_vec().into(),
+                    format!("{payload}:generated").into(),
+                ],
+            )
+            .expect("covered owner payload should encode")
+            .map(|row| {
+                (
+                    row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["embedding_bytes"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                    row["generated_bytes"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("covered owner payload encoding should return one row")
+    });
+    let mut packed = identity.to_vec();
+    let mut offsets = vec![packed.len() as i64];
+    for bytes in [payload_bytes, embedding_bytes, generated_bytes] {
+        packed.extend_from_slice(&bytes);
+        offsets.push(packed.len() as i64);
+    }
+    (vec![false; 4], offsets, packed)
+}
+
+fn apply_distann_covered_owner_insert(
+    fixture: &DistannParticipantLifecycleFixture,
+    identity: [u8; 16],
+    payload: &str,
+    source_vector: Vec<f32>,
+    allow_replacement: bool,
+) {
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let (nulls, offsets, packed) =
+        distann_covered_owner_payload(identity, payload, &source_vector);
+    let mut planned_forward = b"EPI1".to_vec();
+    planned_forward.extend_from_slice(&0_u32.to_le_bytes());
+    planned_forward.extend_from_slice(&4_u32.to_le_bytes());
+    unsafe {
+        crate::am::ec_distann::insert_from_owner_payload_for_test(
+            fixture.generation.index_oid,
+            fixture
+                .fingerprint
+                .clone()
+                .try_into()
+                .expect("covered fingerprint should be 34 bytes"),
+            vec_id,
+            source_vector,
+            &identity,
+            &nulls,
+            &offsets,
+            &packed,
+            &planned_forward,
+            allow_replacement,
+        )
+        .expect("covered owner insert should succeed");
+    }
+}
+
+#[pg_test]
+fn test_distann_cover_sidecar_dml_atomicity() {
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("covered DML fixture should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("covered DML fixture should identify its sole immutable owner");
+    let fixture = create_covered_distann_participant_lifecycle_fixture(
+        "ec_distann_cover_dml",
+        0x7a,
+    );
+    publish_distann_participant(&fixture);
+    let (row_oid, graph_oid, _) = fixture.relations;
+    let sidecar_oid = fixture
+        .payload_sidecar_relations
+        .expect("covered DML fixture must own a sidecar")
+        .0;
+    let row_name = canonical_index_locator(row_oid);
+    let graph_name = canonical_index_locator(graph_oid);
+    let sidecar_name = canonical_index_locator(sidecar_oid);
+    let counts = || {
+        Spi::get_three::<i64, i64, i64>(&format!(
+            "SELECT (SELECT count(*) FROM {row_name}),
+                    (SELECT count(*) FROM {graph_name}),
+                    (SELECT count(*) FROM {sidecar_name})"
+        ))
+        .unwrap()
+    };
+    assert_eq!(counts(), (Some(1), Some(1), Some(1)));
+
+    let identity = distann_test_v4_uuid(0x8a);
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let signed_vec_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    apply_distann_covered_owner_insert(
+        &fixture,
+        identity,
+        "inserted payload",
+        vec![0.0, 1.0, 0.0, 0.0],
+        false,
+    );
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(2), Some(2), Some(2)));
+    let mut expected_sidecar_payload = vec![0_u8];
+    expected_sidecar_payload.extend_from_slice(&identity);
+    assert_eq!(
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT count(*) = 1
+                                AND bool_and(g.is_current)
+                                AND bool_and(s.row_tid = g.row_tid)
+                                AND bool_and(s.payload = $2::bytea)
+                           FROM {graph_name} g
+                           JOIN {sidecar_name} s USING (row_tid, vec_id)
+                          WHERE g.vec_id = $1"
+                    ),
+                    None,
+                    &[signed_vec_id.into(), expected_sidecar_payload.clone().into()],
+                )
+                .unwrap()
+                .map(|row| row[1].value::<bool>().unwrap().unwrap())
+                .next()
+                .unwrap()
+        }),
+        true,
+        "insert must append one matching sidecar before graph publication"
+    );
+
+    let replacement_snapshot =
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
+            .expect("replacement must emulate a fresh production statement snapshot");
+    apply_distann_covered_owner_insert(
+        &fixture,
+        identity,
+        "replacement payload",
+        vec![0.0, 0.0, 1.0, 0.0],
+        true,
+    );
+    drop(replacement_snapshot);
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT count(*) = 2
+                    AND count(*) FILTER (WHERE g.is_current) = 1
+                    AND count(DISTINCT g.row_tid) = 2
+                    AND count(s.row_tid) = 2
+               FROM {graph_name} g
+               JOIN {sidecar_name} s USING (row_tid, vec_id)
+              WHERE g.vec_id = {signed_vec_id}"
+        ))
+        .unwrap(),
+        Some(true),
+        "replacement must retain the old sidecar and append a new TID-keyed row"
+    );
+
+    assert!(unsafe {
+        crate::am::ec_distann::tombstone_owner_record_for_test(
+            fixture.generation.index_oid,
+            vec_id,
+            Some(
+                fixture
+                    .fingerprint
+                    .clone()
+                    .try_into()
+                    .expect("covered fingerprint should be 34 bytes"),
+            ),
+        )
+        .expect("covered owner tombstone should succeed")
+    });
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    let graph_record = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT graph_record FROM {graph_name}
+          WHERE vec_id = {signed_vec_id} AND is_current"
+    ))
+    .unwrap()
+    .unwrap();
+    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
+        &fixture.generation.descriptor,
+    )
+    .unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let node = crate::am::ec_distann::tuple::DistannNodeTuple::decode_physical_v1(
+        &graph_record,
+        descriptor.graph_degree,
+        binding.code_len(usize::from(descriptor.dimensions)).unwrap(),
+    )
+    .unwrap();
+    assert!(node.tombstoned, "delete must change only the graph tombstone");
+
+    let failed_identity = distann_test_v4_uuid(0x9a);
+    let failed_vec_id = crate::am::ec_distann::vec_id_from_source_identity(&failed_identity);
+    let rollback = expect_pg_error_rolled_back(|| {
+        Spi::run("SET LOCAL ec_distann.debug_fail_insert = true").unwrap();
+        apply_distann_covered_owner_insert(
+            &fixture,
+            failed_identity,
+            "rolled back payload",
+            vec![0.0, 0.0, 0.0, 1.0],
+            false,
+        );
+    });
+    assert!(rollback.contains("EC_FAULT_INJECTED"), "{rollback}");
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {sidecar_name}
+              WHERE vec_id = {}",
+            i64::from_le_bytes(failed_vec_id.to_le_bytes())
+        ))
+        .unwrap(),
+        Some(0),
+        "fault rollback must remove the row tier, sidecar, and graph append"
+    );
+}
+
 #[pg_test]
 fn test_distann_generation_topology_reports_ready_and_building() {
     use sha2::Digest;

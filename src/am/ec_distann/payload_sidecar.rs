@@ -321,6 +321,114 @@ impl DistannPayloadCoverDescriptorV1 {
         Ok(values)
     }
 
+    pub(crate) fn covers_projection(&self, requested_attnums: &[u16]) -> Result<bool, String> {
+        if requested_attnums.is_empty() {
+            return Ok(false);
+        }
+        let mut previous = 0_u16;
+        for &attnum in requested_attnums {
+            if attnum == 0 || attnum <= previous {
+                return Err(
+                    "EC_SCHEMA_MISMATCH: exact payload projection attnums are not canonical"
+                        .to_owned(),
+                );
+            }
+            if self
+                .attributes
+                .binary_search_by_key(&attnum, |attribute| attribute.attnum)
+                .is_err()
+            {
+                return Ok(false);
+            }
+            previous = attnum;
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn project_payload(
+        &self,
+        payload: &[u8],
+        requested_attnums: &[u16],
+    ) -> Result<(Vec<bool>, Vec<i64>, Vec<u8>), String> {
+        if !self.covers_projection(requested_attnums)? {
+            return Err(
+                "EC_SCHEMA_MISMATCH: requested payload projection is not covered".to_owned(),
+            );
+        }
+        let decoded = self.decode_payload(payload)?;
+        let mut nulls = Vec::with_capacity(requested_attnums.len());
+        let mut offsets = Vec::with_capacity(requested_attnums.len());
+        let mut packed = Vec::new();
+        for &attnum in requested_attnums {
+            let position = self
+                .attributes
+                .binary_search_by_key(&attnum, |attribute| attribute.attnum)
+                .expect("covers_projection established every requested attnum");
+            match decoded[position] {
+                Some(value) => {
+                    nulls.push(false);
+                    packed.extend_from_slice(value);
+                }
+                None => nulls.push(true),
+            }
+            offsets.push(i64::try_from(packed.len()).map_err(|_| {
+                "EC_GENERATION_CORRUPT: projected payload exceeds bigint offsets".to_owned()
+            })?);
+        }
+        Ok((nulls, offsets, packed))
+    }
+
+    pub(crate) fn encode_packed_row(
+        &self,
+        row_schema: &DistannRowSchemaDescriptor,
+        nulls: &[bool],
+        offsets: &[i64],
+        packed: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        self.validate_row_schema(row_schema)?;
+        let non_dropped = row_schema
+            .attributes
+            .iter()
+            .filter(|attribute| !attribute.dropped)
+            .count();
+        if nulls.len() != non_dropped || offsets.len() != non_dropped {
+            return Err("EC_HANDOFF_FORMAT: packed source row attribute count mismatch".to_owned());
+        }
+
+        let mut decoded = Vec::with_capacity(non_dropped);
+        let mut previous_end = 0_usize;
+        for (position, is_null) in nulls.iter().copied().enumerate() {
+            let end = usize::try_from(offsets[position]).map_err(|_| {
+                "EC_HANDOFF_FORMAT: packed source row offset is negative".to_owned()
+            })?;
+            if end < previous_end || end > packed.len() || (is_null && end != previous_end) {
+                return Err("EC_HANDOFF_FORMAT: packed source row offsets are invalid".to_owned());
+            }
+            decoded.push((!is_null).then_some(&packed[previous_end..end]));
+            previous_end = end;
+        }
+        if previous_end != packed.len() {
+            return Err("EC_HANDOFF_FORMAT: packed source row has trailing bytes".to_owned());
+        }
+
+        let mut covered_values = Vec::with_capacity(self.attributes.len());
+        for covered in &self.attributes {
+            let position = row_schema
+                .attributes
+                .iter()
+                .filter(|attribute| !attribute.dropped)
+                .position(|attribute| attribute.attnum == covered.attnum)
+                .ok_or_else(|| {
+                    format!(
+                        "EC_SCHEMA_MISMATCH: payload cover attnum {} is absent from packed row",
+                        covered.attnum
+                    )
+                })?;
+            covered_values.push(decoded[position]);
+        }
+        self.encode_payload(&covered_values)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn decode_row<'a>(
         &self,
@@ -755,5 +863,49 @@ mod tests {
         let mut trailing = payload;
         trailing.push(0);
         assert!(cover.decode_payload(&trailing).is_err());
+    }
+
+    #[test]
+    fn packed_row_encoding_and_projection_preserve_attnum_order_and_nulls() {
+        let mut dropped = attribute(2, "int4");
+        dropped.name.clear();
+        dropped.type_namespace.clear();
+        dropped.type_name.clear();
+        dropped.dropped = true;
+        dropped.send_function.clear();
+        dropped.receive_function.clear();
+        let schema = DistannRowSchemaDescriptor {
+            attributes: vec![
+                attribute(1, "int8"),
+                dropped,
+                attribute(3, "uuid"),
+                attribute(4, "float4"),
+            ],
+        };
+        let cover = resolve_payload_cover(&schema, 4, Some(&[1, 3]))
+            .unwrap()
+            .unwrap();
+        let int8 = [0x11_u8; 8];
+        let vector = [0x22_u8; 4];
+        let packed = [&int8[..], &vector[..]].concat();
+        let payload = cover
+            .encode_packed_row(&schema, &[false, true, false], &[8, 8, 12], &packed)
+            .unwrap();
+        assert_eq!(payload, [&[0b0000_0010][..], &int8[..]].concat());
+        assert!(cover.covers_projection(&[1]).unwrap());
+        assert!(cover.covers_projection(&[1, 3]).unwrap());
+        assert!(!cover.covers_projection(&[4]).unwrap());
+        assert!(cover.covers_projection(&[3, 1]).is_err());
+        assert_eq!(
+            cover.project_payload(&payload, &[1, 3]).unwrap(),
+            (vec![false, true], vec![8, 8], int8.to_vec())
+        );
+        assert!(cover.project_payload(&payload, &[4]).is_err());
+        assert!(cover
+            .encode_packed_row(&schema, &[false, true], &[8, 8], &int8)
+            .is_err());
+        assert!(cover
+            .encode_packed_row(&schema, &[false, true, false], &[8, 9, 12], &packed)
+            .is_err());
     }
 }

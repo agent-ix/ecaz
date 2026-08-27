@@ -100,6 +100,7 @@ pub(crate) unsafe fn insert_from_callback(
         source_tid,
         None,
         None,
+        true,
     )
 }
 
@@ -114,6 +115,7 @@ unsafe fn insert_from_prepared_slot(
     source_tid: ItemPointer,
     scan_fingerprint: Option<[u8; 34]>,
     planned_forward_payload: Option<&[u8]>,
+    record_intent: bool,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
         return Err(
@@ -167,14 +169,16 @@ unsafe fn insert_from_prepared_slot(
         })?
     };
     let coordinator_conninfo = routes[local_owner].intent_conninfo();
-    super::remote_transport::record_physical_insert_intent(
-        owner_intent_conninfo,
-        coordinator_conninfo,
-        index_oid,
-        owner_route.node_id,
-        generation.epoch,
-        vec_id,
-    )?;
+    if record_intent {
+        super::remote_transport::record_physical_insert_intent(
+            owner_intent_conninfo,
+            coordinator_conninfo,
+            index_oid,
+            owner_route.node_id,
+            generation.epoch,
+            vec_id,
+        )?;
+    }
 
     // Plan while the read-side generation guard is alive. The physical scan
     // gives us the bounded FR-081 frontier. Remote candidates are materialized
@@ -221,6 +225,38 @@ unsafe fn insert_from_prepared_slot(
     .ok_or_else(|| {
         "EC_GENERATION_MISSING: owner graph store could not be opened for write".to_owned()
     })?;
+    let (payload_sidecar_relation, _payload_sidecar_directory) = match (
+        descriptor.payload_cover(),
+        generation.payload_sidecar_relid,
+        generation.payload_sidecar_directory_relid,
+    ) {
+        (None, None, None) => (None, None),
+        (Some(_), Some(sidecar_relid), Some(directory_relid)) => {
+            let sidecar = HeapRelationGuard::try_open(
+                sidecar_relid,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            )
+            .ok_or_else(|| {
+                "EC_GENERATION_MISSING: owner payload sidecar could not be opened for write"
+                    .to_owned()
+            })?;
+            let directory = IndexRelationGuard::try_open(
+                directory_relid,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            )
+            .ok_or_else(|| {
+                "EC_GENERATION_MISSING: owner payload sidecar directory could not be opened for write"
+                    .to_owned()
+            })?;
+            (Some(sidecar), Some(directory))
+        }
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: payload cover descriptor and sidecar relations disagree"
+                    .to_owned(),
+            )
+        }
+    };
 
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
@@ -486,6 +522,14 @@ unsafe fn insert_from_prepared_slot(
     // transaction and the row tuple is not visible to a published scan.
     let row_tid = append_row_tuple(&row_relation, source_slot)?;
     stage_counters::record_insert_work(DistannInsertWork::OwnerWrites, 1);
+    if let (Some(cover), Some(sidecar_relation)) = (
+        descriptor.payload_cover(),
+        payload_sidecar_relation.as_ref(),
+    ) {
+        let (nulls, offsets, packed) = ambuild::freeze_source_slot_packed(source_slot)?;
+        let payload = cover.encode_packed_row(&descriptor.row_schema, &nulls, &offsets, &packed)?;
+        append_payload_sidecar(sidecar_relation, row_tid, vec_id, &payload)?;
+    }
     let mut neighbor_vec_ids = vec![0_u64; usize::from(descriptor.graph_degree)];
     let mut neighbor_codes = vec![0_u8; usize::from(descriptor.graph_degree) * code_len];
     for (slot, candidate) in forward.iter().enumerate() {
@@ -1170,6 +1214,62 @@ pub(crate) unsafe fn insert_from_owner_payload(
     planned_forward_payload: &[u8],
     allow_replacement: bool,
 ) -> Result<(), String> {
+    insert_from_owner_payload_internal(
+        index_oid,
+        epoch_fingerprint,
+        expected_vec_id,
+        source_vector,
+        source_identity,
+        payload_nulls,
+        payload_offsets,
+        payload_values,
+        planned_forward_payload,
+        allow_replacement,
+        true,
+    )
+}
+
+#[cfg(feature = "pg_test")]
+pub(crate) unsafe fn insert_from_owner_payload_for_test(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: [u8; 34],
+    expected_vec_id: u64,
+    source_vector: Vec<f32>,
+    source_identity: &[u8],
+    payload_nulls: &[bool],
+    payload_offsets: &[i64],
+    payload_values: &[u8],
+    planned_forward_payload: &[u8],
+    allow_replacement: bool,
+) -> Result<(), String> {
+    insert_from_owner_payload_internal(
+        index_oid,
+        epoch_fingerprint,
+        expected_vec_id,
+        source_vector,
+        source_identity,
+        payload_nulls,
+        payload_offsets,
+        payload_values,
+        planned_forward_payload,
+        allow_replacement,
+        false,
+    )
+}
+
+unsafe fn insert_from_owner_payload_internal(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: [u8; 34],
+    expected_vec_id: u64,
+    source_vector: Vec<f32>,
+    source_identity: &[u8],
+    payload_nulls: &[bool],
+    payload_offsets: &[i64],
+    payload_values: &[u8],
+    planned_forward_payload: &[u8],
+    allow_replacement: bool,
+    record_intent: bool,
+) -> Result<(), String> {
     let identity: [u8; 16] = source_identity
         .try_into()
         .map_err(|_| "EC_SOURCE_IDENTITY: owner payload identity must be 16 bytes".to_owned())?;
@@ -1237,6 +1337,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         ItemPointer::INVALID,
         Some(epoch_fingerprint),
         Some(planned_forward_payload),
+        record_intent,
     )
 }
 
@@ -1672,6 +1773,47 @@ fn insert_graph_record(
     if inserted != 1 {
         return Err(format!(
             "EC_INSERT_PUBLISH: graph record append affected {inserted} rows"
+        ));
+    }
+    Ok(())
+}
+
+fn append_payload_sidecar(
+    sidecar_relation: &HeapRelationGuard,
+    row_tid: ItemPointer,
+    vec_id: u64,
+    payload: &[u8],
+) -> Result<(), String> {
+    if row_tid == ItemPointer::INVALID {
+        return Err("EC_INSERT_PUBLISH: payload sidecar row TID is invalid".to_owned());
+    }
+    let sidecar_name = qualified_relation_name(unsafe { (*sidecar_relation.as_ptr()).rd_id })?;
+    let mut row_tid_data = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut row_tid_data,
+        row_tid.block_number,
+        row_tid.offset_number,
+    );
+    let inserted = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {sidecar_name} (row_tid, vec_id, payload) \
+                     VALUES ($1::tid, $2::bigint, $3::bytea) RETURNING 1"
+                ),
+                None,
+                &[
+                    row_tid_data.into(),
+                    i64::from_le_bytes(vec_id.to_le_bytes()).into(),
+                    payload.to_vec().into(),
+                ],
+            )
+            .map(|rows| rows.len())
+            .map_err(|error| format!("EC_INSERT_PUBLISH: payload sidecar append failed: {error}"))
+    })?;
+    if inserted != 1 {
+        return Err(format!(
+            "EC_INSERT_PUBLISH: payload sidecar append affected {inserted} rows"
         ));
     }
     Ok(())
