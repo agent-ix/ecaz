@@ -4,98 +4,108 @@ packet: 002-format-and-lifecycle
 agent: Codex
 role: coder
 model: gpt-5
-date: 2026-08-26
-seq: 03
+date: 2026-08-27
+seq: 04
 ---
 
-# Task 229 format/lifecycle — checkpoint 3 review
+# Task 229 format/lifecycle — checkpoint 4 review
 
-Review source commit `56a1b37fc632cee8a12dd3e0c32b138afdea3466`
-against exact main `3419c9c758bea7d9940b27d9afbcf9e627e84879`.
-Checkpoints 1 and 2 are review-closed DONE in
-`feedback/2026-08-26-{01,02}-reviewer.md`; checkpoint 2's carried items are
-dispositioned in `artifacts/seq02-disposition.md`.
+Review source head `c14c796b86e0c59877cc377548c36989a1a02ff3`
+against exact current-main merge parent
+`71004a18ce770f0c17501bd3d9942742d700a6ba`.
 
-This is the third narrow checkpoint of packet 002, not a claim that the complete
-format/lifecycle packet is finished. It implements the accepted versioned
-generation/receipt/manifest/fingerprint identity chain and every variable-width
-receipt consumer. Physical sidecar relations and their five-relation lifecycle
-ownership remain checkpoint 4; until then a declared cover cannot produce V2
-Ready receipts and therefore fails closed before candidate publication.
+Checkpoint 3 remains review-closed DONE in
+`feedback/2026-08-26-04-reviewer.md`. The seq-05/06 packet-provenance finding
+was corrected by `f801b94b8`: the coder-created artifact falsely attributed to
+the reviewer and its manifest block were deleted. The three V2-only fingerprint
+gates identified in seq-05 route through `DistannEpochFingerprint::decode` in
+this checkpoint. No reviewer authorship is claimed for any checkpoint-4
+artifact.
+
+This is the fourth and final format/lifecycle checkpoint, not a Task 229
+closeout. It implements the one cataloged owner-local sidecar heap/index pair
+and proves the covered generation's five-relation physical lifecycle. Read
+selection, DML/recovery behavior, and the required 10k/50k/100k A/B remain for
+packets 003 and 004.
 
 ## Implemented
 
-- `DistannGenerationDescriptor` remains byte-identical V2 with no cover. A
-  covered descriptor is V3 and appends the exact canonical V1 cover descriptor
-  plus its digest. Decode accepts V2/V3, validates the embedded digest and exact
-  frozen row schema, and re-encodes either version canonically. T2 moves the
-  already-resolved, registration-bound descriptor forward; it does not re-read
-  reloptions after registration replay.
-- `DistannReadyReceipt` remains V1/303 bytes with no cover. Covered V2 receipts
-  are exactly 359 bytes and add sidecar row count, explicitly named
-  `initial_content_digest`, heap bytes, and index bytes. Row count must equal
-  the owner's initial record count. Generation-catalog storage is bounded
-  variable length and decodes before use or persistence; bootstrap SQL accepts
-  only the exact V1/303 or V2/359 version/length pairs.
-- `DistannEpochManifestV2` remains byte-identical V2 with no cover. Covered
-  manifests use V3 and add the cover-descriptor digest plus a domain-separated,
-  roster-ordered global initial-content digest over each owner's node id, row
-  count, and owner initial-content digest. Validation rejects mixed legacy and
-  covered receipts, unpaired fields, or any recomputed global-digest mismatch.
-- Epoch fingerprints accept V2 and V3. Manifest construction emits the matching
-  fingerprint version, build-candidate validation requires the fingerprint and
-  manifest versions to agree, and either version is accepted as a parent.
-- Ready-receipt-set framing remains under its unchanged V1 domain, uses bounded
-  variable-length entries, and decodes both 303-byte V1 and 359-byte V2
-  receipts. Every former fixed-303 Rust, SQL, export, and lifecycle-fixture
-  consumer is updated. This research-stage bootstrap catalog change requires
-  re-bootstrap; future control and candidate A/B arms will both use the
-  post-change bootstrap and the same extension binary.
-- The descriptor, receipt, manifest, and receipt-set digest domain strings are
-  unchanged. New sidecar-only descriptor/global-content domains are separate.
-  Frozen V2 descriptor, V1 receipt, V2 manifest, V2 fingerprint, and build
-  candidate/receipt-set fixtures all decode and re-encode byte-for-byte.
-- Seq-02's persisted-byte rejection matrix is fully exercised, including count,
-  attnum order, identity, UTF-8, width, descriptor truncation, invalid requested
-  TID, and genuine bitmap truncation. The fixed-width helper no longer allocates
-  temporary schema attributes, and hot payload encode/decode no longer repeat
-  immutable descriptor validation per row.
+- A covered generation owns exactly one bounded heap plus one unique directory
+  index in addition to row tier, graph store, and graph directory. The
+  generation catalog stores both sidecar OIDs. Creation uses the control
+  owner's namespace/owner, the row tier's tablespace, permanent persistence,
+  `fillfactor=100`, plain payload storage, and internal dependencies on the
+  control index. Exact begin replay preserves the same five relation OIDs.
+- Each handoff entry derives one compact sidecar payload from the already
+  decoded canonical row values and inserts it in the same batch transaction as
+  graph/row-tier state. The sidecar key is the requested row TID and stores the
+  same `vec_id`; seal scans in canonical TID order, rejects row-count or
+  row/graph identity divergence, computes the initial-content digest, and
+  records heap/index bytes.
+- The covered Ready receipt is now 351 bytes. Reviewer X14 was resolved by
+  removing the redundant sidecar row-count field: a covered generation has
+  exactly one initial sidecar row per owned record, so
+  `owned_record_count` is the single receipt count. The physical scan still
+  verifies the count, topology still reports it, and the global digest binds
+  each owner's `owned_record_count` plus initial-content digest.
+- The global sidecar initial-content digest is a manifest
+  identity/consistency check against the immutable Ready receipts. It is not a
+  later integrity check over the mutable sidecar heap and is never recomputed
+  from live relation contents after DML.
+- Publication accepts the covered V3 manifest/fingerprint and verifies the
+  exact stored V2 Ready receipt. Generation read, handoff identity, and
+  traversal-replica identity all use the canonical dual-version fingerprint
+  decoder instead of hand-written V2-only prefix checks.
+- Abort, cancelled-generation reclaim, and retired-generation reclaim pass all
+  five OIDs to the shared relation-drop path. Publication and retirement retain
+  all five relations; a forced transaction rollback restores all five; final
+  reclaim drops all five transactionally and leaves the durable reclaim
+  tombstone. Exact reclaim replay remains idempotent.
+- No-cover generations retain their existing three-relation topology and
+  frozen V2 descriptor / V1 receipt / V2 manifest and fingerprint bytes.
 
 ## Validation
 
 - `cargo fmt --all -- --check` — pass.
 - `cargo check --lib --no-default-features --features pg18` — pass.
-- Focused payload-sidecar tests — 6 passed, including every seq-02 decode
-  rejection carry-in.
-- Legacy identity tests — the V2 descriptor and V2 manifest preserve frozen
-  bytes and digests; covered V3 forms round-trip; cross-version parents pass.
-- Ready receipt V1/V2 test, receipt-set V1/V2 framing test, and covered
-  descriptor/receipt/manifest/fingerprint build-candidate test — all pass.
-- Frozen on-disk DistANN fixture suite — 21 passed, including byte-identical
-  V2 descriptor, V1 receipt, V2 manifest/fingerprint, and V1 build candidate
-  with its Ready-receipt-set framing.
-- Full strict clippy reports only the four pre-existing main failures in
-  `ambuild.rs`, `generation_descriptor.rs`, `head_sample.rs`, and
-  `remote_endpoint.rs`. Three files are byte-identical to main; blame proves the
-  `generation_descriptor.rs` lint remains the untouched 2026-08-01 line despite
-  Task 229 additions elsewhere in that file. Re-running with only those four
-  lint names allowed passes all targets under `-D warnings`.
-- No PostgreSQL, `cargo pgrx test`, live fixture, corpus, or benchmark command
-  was run. The frozen byte fixtures above are ordinary Rust tests.
+- Focused payload-sidecar codec tests — 6/6 pass.
+- Covered identity/receipt filters — 4/4 and 1/1 pass.
+- Frozen on-disk DistANN fixtures — 21/21 pass.
+- `cargo pgrx test pg18 test_distann_cover_sidecar_lifecycle` — 1/1 pass;
+  proves creation shape/dependencies, begin replay, canonical sidecar handoff,
+  seal evidence/topology, and five-relation abort.
+- `cargo pgrx test pg18 test_distann_cover_sidecar_retire_reclaim_rollback` —
+  1/1 pass; proves covered V3 publish, retention through publish/retire,
+  five-relation rollback, final reclaim, tombstone state, and replay.
+- Strict all-target clippy reports exactly the four inherited main failures:
+  `collapsible_if`, `unnecessary_unwrap`, `needless_range_loop`, and
+  `items_after_test_module`. After allowing only those four lint names, all
+  targets pass under `-D warnings`; the task-local dead-code warning found on
+  the first checkpoint-4 run was fixed in `c14c796b8` before this request.
 
-Durable output and command provenance are in `artifacts/manifest.md`.
+All commands used the host's shared `CARGO_TARGET_DIR=/home/peter/.cargo-target`.
+No custom target, new worktree, corpus, benchmark fixture, or benchmark cluster
+was created. Durable command output is listed in `artifacts/manifest.md`.
+
+## Deliberately remaining for Task 229
+
+- Packet 003: fail-closed Task-222 projection selection; byte-identical
+  fallback for uncovered/whole-row/unsupported queries; covered reads; Task-167
+  insert/replacement/delete atomicity; restart/outage and the full correctness
+  matrix.
+- Packet 004: checked-in `ecaz bench suite` config and matched-position or
+  counterbalanced cover-off/on evidence at 10k/50k/100k for recall, latency,
+  storage, build, DML, owner stages, reads, and bytes; explicit PROMOTE or STOP.
 
 ## Review questions
 
-1. Are legacy no-cover V2/V1/V2 bytes, digests, V2 fingerprint, and receipt-set
-   framing genuinely preserved under unchanged existing domains?
-2. Does the covered V3/V2/V3 chain bind the exact cover descriptor, per-owner
-   initial content, roster-ordered global content, and matching V3 fingerprint
-   without confusing immutable initial-build identity with later DML state?
-3. Is receipt storage now safely bounded variable length across every former
-   fixed-303 Rust/SQL consumer, with dual decode and exact version/length gates?
-4. Does `artifacts/seq02-disposition.md` fully close the required corruption
-   tests and per-row allocation carry-in while threading T2's resolved
-   descriptor rather than reopening a reloption drift window?
-5. May checkpoint 4 proceed to the cataloged sidecar heap/index pair and all
-   five-relation lifecycle ownership surfaces?
+1. Does checkpoint 4 implement exactly one bounded owner-local lookup relation
+   pair and bind it to the existing generation without introducing a second
+   sidecar variant?
+2. Are build/handoff/seal/publish/retain/retire/reclaim/abort and transactional
+   rollback complete for all five generation relations, including exact replay?
+3. Is removing the redundant receipt sidecar count correct, with
+   `owned_record_count` now the sole canonical count while physical/topology
+   validation remains intact?
+4. Do the two focused PG18 tests directly prove the lifecycle claims needed to
+   close packet 002 and authorize packet 003 correctness/DML work?

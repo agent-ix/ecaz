@@ -266,3 +266,113 @@ fixture was started.
 
 No live PostgreSQL, `cargo pgrx test`, corpus, benchmark, or performance command
 was run. This checkpoint makes no runtime, storage, latency, or recall claim.
+
+## Checkpoint 4 coder evidence (2026-08-27)
+
+- Review head SHA: `c14c796b86e0c59877cc377548c36989a1a02ff3`
+- Current-main merge parent: `71004a18ce770f0c17501bd3d9942742d700a6ba`
+- Checkpoint source commits:
+  - `134b55d66` — cataloged owner-local sidecar heap/index, handoff/seal
+    population and evidence, five-OID abort/reclaim plumbing, canonical V2/V3
+    fingerprint gates
+  - `2cb26bfc8` — remove redundant receipt sidecar count; covered receipt is
+    351 bytes and the manifest-global digest uses `owned_record_count`
+  - `e4e895bff` — covered V3 publish/retain/retire/rollback/reclaim PG18 test
+  - `c14c796b8` — remove the only task-local strict-clippy warning
+- Task / packet: `reviews/task-229/002-format-and-lifecycle/`
+- Lane / fixture / storage format / rerank mode: local PG18 single-owner
+  format/lifecycle fixture; covered sidecar V1; no scan/rerank or benchmark lane
+- Isolated vs shared surfaces: each `cargo pgrx test` uses its own transaction
+  and unique relation stem. No benchmark table, corpus, or persistent cluster
+  was created.
+- Build location: the host-wide shared
+  `CARGO_TARGET_DIR=/home/peter/.cargo-target`; no task-specific build graph.
+
+### Format and compile
+
+#### `cargo-fmt-checkpoint4.log`
+
+- Command: `cargo fmt --all -- --check`
+- Source: review head `c14c796b8`
+- Result: exit 0; formatting clean, with only stable-rustfmt warnings for the
+  repository's nightly-only import-grouping options.
+
+#### `cargo-check-pg18-checkpoint4.log`
+
+- Command: `cargo check --lib --no-default-features --features pg18`
+- Source: checkpoint-4 working tree immediately before `e4e895bff`
+- Result: exit 0; PG18 library compile completed in 11.98s.
+
+### Focused Rust and frozen-format tests
+
+- `cargo-test-payload-sidecar-checkpoint4.log`: command
+  `cargo test --lib --no-default-features --features pg18
+  payload_sidecar::tests -- --nocapture`; 6 passed / 0 failed.
+- `cargo-test-ready-receipt-checkpoint4.log`: focused
+  `ready_receipt_round_trip_verifies_digest_state_and_counts`; 1 passed / 0
+  failed and validates the 351-byte covered receipt.
+- `cargo-test-covered-checkpoint4.log`: `cargo test --lib
+  --no-default-features --features pg18 covered -- --nocapture`; 4 passed / 0
+  failed, including covered descriptor/manifest/fingerprint/candidate identity
+  (and one unrelated HNSW name match).
+- `cargo-test-on-disk-distann-checkpoint4.log`: `cargo test --test
+  on_disk_fixtures --no-default-features --features pg18 distann_ --
+  --nocapture`; 21 passed / 0 failed, preserving frozen no-cover bytes.
+- Source for these four logs: `2cb26bfc8` checkpoint source; the later test-only
+  commits do not change the exercised production codecs or frozen fixtures.
+
+### Focused live PG18 lifecycle tests
+
+#### `cargo-pgrx-test-cover-sidecar-checkpoint4.log`
+
+- Command: `cargo pgrx test pg18 test_distann_cover_sidecar_lifecycle`
+- Source: `2cb26bfc8`
+- Result: exit 0; 1 passed / 0 failed in 125.89s.
+- Key proof: exact begin replay preserves the sidecar pair; the heap/index
+  physical shape and internal dependencies are correct; handoff writes one
+  canonical row tied to graph TID/vec_id; seal exposes digest and storage
+  evidence; abort drops all five generation relations.
+
+#### `cargo-pgrx-test-cover-sidecar-participant-checkpoint4.log`
+
+- Command: `cargo pgrx test pg18
+  test_distann_cover_sidecar_retire_reclaim_rollback`
+- Source: `e4e895bff`; `c14c796b8` subsequently changes only the no-cover
+  fixture helper call and leaves this covered test path byte-identical.
+- Result: exit 0; 1 passed / 0 failed in 78.24s after extension installation.
+- Key proof: covered V3 manifest/fingerprint publication succeeds; all five
+  relations remain live through publish and retirement; forced transaction
+  rollback restores all five and removes its tombstone; final reclaim drops all
+  five, persists `Reclaimed`, and exact replay succeeds.
+
+### Clippy
+
+#### `cargo-clippy-pg18-checkpoint4.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18
+  -- -D warnings`
+- Source: review head `c14c796b8`
+- Result: expected exit 101 from exactly the four inherited main/Rust-1.94
+  findings already proven by checkpoint 3: `collapsible_if`
+  (`ambuild.rs:139`), `unnecessary_unwrap`
+  (`generation_descriptor.rs:798`), `needless_range_loop`
+  (`head_sample.rs:1818`), and `items_after_test_module`
+  (`remote_endpoint.rs:1069`). The first checkpoint-4 run also found a
+  task-local dead helper; `c14c796b8` fixed it, and this retained final strict
+  log contains no Task 229-local finding.
+
+#### `cargo-clippy-pg18-checkpoint4-task-clean.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18
+  -- -D warnings -A clippy::collapsible_if -A clippy::unnecessary_unwrap
+  -A clippy::needless_range_loop -A clippy::items_after_test_module`
+- Source: review head `c14c796b8`
+- Result: exit 0; all targets warning-clean after allowing only the four exact
+  inherited lint names.
+
+## Runtime-output hygiene
+
+No custom `CARGO_TARGET_DIR`, new worktree, explicit `--run-dir`, corpus,
+truth cache, benchmark suite, PostgreSQL benchmark PGDATA, or retained cluster
+was created for checkpoint 4. The only live PostgreSQL surfaces were the
+transaction-scoped pgrx test fixtures above.
