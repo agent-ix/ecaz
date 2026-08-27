@@ -120,8 +120,11 @@ cannot resolve the exact magnitude. Direction is nevertheless consistent: the
 candidate costs +6.80% mean at the fresh-seed position and +3.19% mean on
 immediate reuse, while reuse p50/p95/p99 cost +2.03%/+0.96%/+1.89%. All eight
 position/statistic indicators are signed slower, matching the mechanism. The
-old -6.37% apparent win is retired as drift. An explicit product ruling must
-accept or reject this small measured cost before Task 234 closes.
+old -6.37% apparent win is retired as drift. The operator accepts this small
+measured cost for the mandatory safety property in
+`reviews/task-234/005-50k-reuse-drift-bound/feedback/2026-08-26-03-operator.md`
+and directs a separate success-path optimization iteration that does not block
+the Task 234 closeout.
 
 The targeted commands were:
 

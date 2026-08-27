@@ -136,10 +136,10 @@ validity requirements.
 | 231 | Fixed-stride graph/vector blocks | proposed — mandatory after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
 | 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
 | 233 | Hybrid node/columnar generation | proposed — mandatory after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
-| 234 | Read RPC deadline/cancel parity | **implementation/evidence complete; packet 005 outside-reviewed NOT DONE pending product ruling** | secure PG18 matrix passes 25/25; recall/storage neutral; matched fixture retires packet 004's apparent win and measures a small cost (+6.80% fresh, +3.19% reuse mean; reuse p50/p95/p99 +2.03%/+0.96%/+1.89%); exact magnitude is inside drift but all eight indicators point slower; explicit cost ACCEPT/REJECT gates Tasks 237 and 228 |
+| 234 | Read RPC deadline/cancel parity | **complete — outside-reviewed ACCEPT; measured cost accepted** | secure PG18 matrix passes 25/25; recall/storage neutral; matched fixture retires packet 004's apparent win and measures a small cost (+6.80% fresh, +3.19% reuse mean; reuse p50/p95/p99 +2.03%/+0.96%/+1.89%); operator accepts the cost for mandatory safety and directs a separate success-path optimization iteration; Tasks 237 and 228 are unblocked by this disposition |
 | 235 | Write/lifecycle RPC cancellation | proposed — Task 167 prerequisite complete | phase-aware deadlines and outcome-unknown recovery for DML, intent, 2PC callbacks/reaper, and lifecycle operations |
 | 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
-| 237 | Protocol errors and EXPLAIN | proposed — blocked on 234; 236 complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
+| 237 | Protocol errors and EXPLAIN | ready — 234/236 prerequisites complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 | 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
 
 ## Post-222 execution program (2026-08-25)
@@ -164,12 +164,12 @@ and DML evidence even if an earlier prototype STOPs or wins. The hybrid reruns
 the graph-layout × payload-layout factorial rather than inferring interaction
 from the isolated results.
 
-The production-transport sequence has Task 238 closeout and Task 234's
-current-TLS implementation gates review-open. Task 234's secure 25-cell PG18
-matrix passes and its fresh 10k/50k/100k A/B is recall/storage neutral within
-measurement resolution with no latency regression; outside disposition is the
-remaining gate. Task 235 then owns write/lifecycle hardening and Task 237 owns
-error/EXPLAIN hardening. Task 236 already supplies the accepted TLS substrate.
+The production-transport sequence has Task 238 closeout still open. Task 234's
+secure 25-cell PG18 matrix passes, its 10k/50k/100k A/B is recall/storage
+neutral, and the operator accepted its small measured latency cost for the
+mandatory safety property while directing a separate success-path optimization
+iteration. Task 235 owns write/lifecycle hardening and Task 237 is now ready to
+own error/EXPLAIN hardening. Task 236 already supplies the accepted TLS substrate.
 Task 228 runs only after Tasks 222–237 have reported, so its transport-share
 denominator reflects the selected layout and production
 security/cancellation semantics.
