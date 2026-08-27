@@ -6588,12 +6588,16 @@ impl PhysicalGenerationScan {
                     ));
                 }
                 if payload.tuple_payload_missing {
-                    // The exact row version disappeared between traversal and
-                    // materialization under the request snapshot. The owner
-                    // already probed the same row-tier TID; both payload
-                    // stores being invisible is the established remote skip
-                    // contract, not structural corruption.
-                    continue;
+                    if prefer_payload_sidecar {
+                        // The sidecar owner already probed the same row-tier
+                        // TID under the request snapshot. Both payload stores
+                        // being invisible is the established remote skip
+                        // contract, not structural corruption.
+                        continue;
+                    }
+                    return Err(format!(
+                        "EC_GENERATION_MISSING: physical owner {ordinal} has no row-tier payload for vec_id {requested}"
+                    ));
                 }
                 if payload.is_tombstone {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
