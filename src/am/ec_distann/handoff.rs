@@ -2128,7 +2128,6 @@ fn ec_distann_seal_epoch_handoff(
         ) {
             (Some(sidecar), Some(heap_bytes), Some(index_bytes)) => {
                 Some(DistannReadyReceiptPayloadSidecar {
-                    row_count: sidecar.row_count,
                     initial_content_digest: sidecar.content_digest,
                     heap_bytes,
                     index_bytes,

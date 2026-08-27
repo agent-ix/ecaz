@@ -5723,7 +5723,7 @@ fn test_distann_cover_sidecar_lifecycle() {
     let sidecar = receipt
         .payload_sidecar
         .expect("covered Ready receipt must carry sidecar evidence");
-    assert_eq!(sidecar.row_count, 1);
+    assert_eq!(receipt.owned_record_count, 1);
     assert_ne!(sidecar.initial_content_digest, [0; 32]);
     assert!(sidecar.heap_bytes > 0 && sidecar.index_bytes > 0);
 

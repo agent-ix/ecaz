@@ -990,7 +990,6 @@ mod tests {
             manifest.payload_cover_descriptor_digest = Some(cover.digest().unwrap());
             for (index, receipt) in manifest.participant_receipts.iter_mut().enumerate() {
                 receipt.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
-                    row_count: receipt.owned_record_count,
                     initial_content_digest: [0xD0 + index as u8; DIGEST_BYTES],
                     heap_bytes: 4096,
                     index_bytes: 8192,
@@ -1204,7 +1203,6 @@ mod tests {
         for (index, receipt) in covered.iter_mut().enumerate() {
             receipt.payload_sidecar = Some(
                 super::super::manifest_v2::DistannReadyReceiptPayloadSidecar {
-                    row_count: receipt.owned_record_count,
                     initial_content_digest: [0xC0 + index as u8; DIGEST_BYTES],
                     heap_bytes: 4096,
                     index_bytes: 8192,

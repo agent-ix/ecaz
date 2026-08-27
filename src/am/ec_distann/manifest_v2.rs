@@ -40,7 +40,7 @@ pub const DISTANN_EPOCH_MANIFEST_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
-pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = 359;
+pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = 351;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES: usize = 31;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 73;
 
@@ -422,7 +422,6 @@ impl DistannManifestBuildOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannReadyReceiptPayloadSidecar {
-    pub row_count: u64,
     pub initial_content_digest: [u8; DIGEST_BYTES],
     pub heap_bytes: u64,
     pub index_bytes: u64,
@@ -476,16 +475,6 @@ impl DistannReadyReceipt {
                 self.state
             ));
         }
-        if self
-            .payload_sidecar
-            .as_ref()
-            .is_some_and(|sidecar| sidecar.row_count != self.owned_record_count)
-        {
-            return Err(
-                "EC_READY_RECEIPT: payload sidecar row count differs from owned record count"
-                    .to_owned(),
-            );
-        }
         Ok(())
     }
 
@@ -518,7 +507,6 @@ impl DistannReadyReceipt {
         encoder.put_u64(self.directory_bytes);
         encoder.put_u8(self.state);
         if let Some(sidecar) = &self.payload_sidecar {
-            encoder.put_u64(sidecar.row_count);
             encoder.put_fixed(&sidecar.initial_content_digest);
             encoder.put_u64(sidecar.heap_bytes);
             encoder.put_u64(sidecar.index_bytes);
@@ -578,7 +566,6 @@ impl DistannReadyReceipt {
         let state = decoder.get_u8("Ready receipt state")?;
         let payload_sidecar = if version == DISTANN_READY_RECEIPT_COVER_VERSION {
             Some(DistannReadyReceiptPayloadSidecar {
-                row_count: decoder.get_u64("Ready receipt payload sidecar row count")?,
                 initial_content_digest: decoder
                     .get_fixed("Ready receipt payload sidecar initial content digest")?,
                 heap_bytes: decoder.get_u64("Ready receipt payload sidecar heap bytes")?,
@@ -727,7 +714,7 @@ impl DistannEpochManifestV2 {
                 "EC_EPOCH_MANIFEST: covered manifest has a legacy Ready receipt".to_owned()
             })?;
             encoder.put_u32(receipt.node_id);
-            encoder.put_u64(sidecar.row_count);
+            encoder.put_u64(receipt.owned_record_count);
             encoder.put_fixed(&sidecar.initial_content_digest);
         }
         Ok(domain_digest(
@@ -1148,7 +1135,6 @@ mod tests {
 
         let mut covered = sample_receipt(10, 6);
         covered.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
-            row_count: 6,
             initial_content_digest: [0xA5; DIGEST_BYTES],
             heap_bytes: 4096,
             index_bytes: 8192,
@@ -1163,14 +1149,6 @@ mod tests {
             DistannReadyReceipt::decode(&covered_bytes).unwrap(),
             covered
         );
-
-        let mut wrong_sidecar_count = covered;
-        wrong_sidecar_count
-            .payload_sidecar
-            .as_mut()
-            .unwrap()
-            .row_count += 1;
-        assert!(wrong_sidecar_count.encode().is_err());
     }
 
     #[test]
@@ -1212,7 +1190,6 @@ mod tests {
         let mut covered = sample_manifest_v2();
         for (index, receipt) in covered.participant_receipts.iter_mut().enumerate() {
             receipt.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
-                row_count: receipt.owned_record_count,
                 initial_content_digest: [0xA0 + index as u8; DIGEST_BYTES],
                 heap_bytes: 4096 + index as u64,
                 index_bytes: 8192 + index as u64,
