@@ -6479,6 +6479,7 @@ struct DistannParticipantLifecycleFixture {
     retire_decision_bytes: Vec<u8>,
     retire_decision_digest: Vec<u8>,
     relations: (pg_sys::Oid, pg_sys::Oid, pg_sys::Oid),
+    payload_sidecar_relations: Option<(pg_sys::Oid, pg_sys::Oid)>,
 }
 
 fn distann_test_v4_uuid(marker: u8) -> [u8; 16] {
@@ -6504,7 +6505,14 @@ fn create_distann_participant_lifecycle_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannParticipantLifecycleFixture {
-    create_distann_participant_lifecycle_fixture_with_rows(stem, build_marker, 1)
+    create_distann_participant_lifecycle_fixture_configured(stem, build_marker, 1, false)
+}
+
+fn create_covered_distann_participant_lifecycle_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannParticipantLifecycleFixture {
+    create_distann_participant_lifecycle_fixture_configured(stem, build_marker, 1, true)
 }
 
 fn create_distann_participant_lifecycle_fixture_with_rows(
@@ -6512,7 +6520,24 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
     build_marker: u8,
     row_count: usize,
 ) -> DistannParticipantLifecycleFixture {
-    let generation = if row_count > 1 {
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        row_count,
+        false,
+    )
+}
+
+fn create_distann_participant_lifecycle_fixture_configured(
+    stem: &str,
+    build_marker: u8,
+    row_count: usize,
+    covered: bool,
+) -> DistannParticipantLifecycleFixture {
+    let generation = if covered {
+        assert_eq!(row_count, 1, "covered lifecycle fixture is single-row");
+        create_covered_distann_physical_generation_fixture(stem, build_marker)
+    } else if row_count > 1 {
         create_distann_physical_generation_fixture_with_payload_type_and_graph_degree(
             stem,
             build_marker,
@@ -6542,6 +6567,19 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         &descriptor.codec_artifact,
     )
     .expect("participant lifecycle codec should restore");
+    let payload_cover_descriptor_digest = descriptor
+        .payload_cover()
+        .map(|cover| cover.digest())
+        .transpose()
+        .expect("participant lifecycle cover descriptor should digest");
+    let global_payload_sidecar_initial_content_digest = payload_cover_descriptor_digest
+        .map(|_| {
+            crate::am::ec_distann::DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(
+                std::slice::from_ref(&receipt),
+            )
+        })
+        .transpose()
+        .expect("participant lifecycle sidecar receipts should digest");
     let manifest = crate::am::ec_distann::DistannEpochManifestV2 {
         epoch: 7,
         build_id: *generation.build_id.as_bytes(),
@@ -6586,8 +6624,8 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         global_record_count: row_count as u64,
         global_graph_digest: receipt.persisted_graph_digest,
         global_row_tier_digest: receipt.persisted_row_tier_digest,
-        payload_cover_descriptor_digest: None,
-        global_payload_sidecar_initial_content_digest: None,
+        payload_cover_descriptor_digest,
+        global_payload_sidecar_initial_content_digest,
         participant_receipts: vec![receipt],
     };
     let manifest_bytes = manifest.encode().unwrap();
@@ -6635,6 +6673,9 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
     let retire_decision_bytes = retire_decision.encode().unwrap();
     let retire_decision_digest = retire_decision.digest().unwrap().to_vec();
     let relations = distann_generation_relation_oids(&generation);
+    let payload_sidecar_relations = descriptor
+        .payload_cover()
+        .map(|_| distann_payload_sidecar_relation_oids(&generation));
     DistannParticipantLifecycleFixture {
         generation,
         manifest,
@@ -6648,6 +6689,7 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         retire_decision_bytes,
         retire_decision_digest,
         relations,
+        payload_sidecar_relations,
     }
 }
 
@@ -7294,6 +7336,109 @@ fn test_distann_participant_retire_reclaim_and_rollback() {
         );
     });
     assert!(replay_error.contains("EC_EPOCH_STATE"));
+}
+
+#[pg_test]
+fn test_distann_cover_sidecar_retire_reclaim_rollback() {
+    let fixture = create_covered_distann_participant_lifecycle_fixture(
+        "ec_distann_cover_participant",
+        0x6a,
+    );
+    let sidecar_relations = fixture
+        .payload_sidecar_relations
+        .expect("covered participant must own its sidecar pair");
+    let generation_relations = [
+        fixture.relations.0,
+        fixture.relations.1,
+        fixture.relations.2,
+        sidecar_relations.0,
+        sidecar_relations.1,
+    ];
+
+    assert_eq!(
+        fixture.manifest.version(),
+        crate::am::ec_distann::DISTANN_EPOCH_MANIFEST_COVER_VERSION
+    );
+    assert_eq!(
+        crate::am::ec_distann::DistannEpochFingerprint::decode(&fixture.fingerprint)
+            .expect("covered participant fingerprint should decode")
+            .version(),
+        crate::am::ec_distann::DISTANN_EPOCH_MANIFEST_COVER_VERSION
+    );
+    assert_eq!(publish_distann_participant(&fixture), fixture.fingerprint);
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "publish must retain every generation relation"
+        );
+    }
+
+    mark_distann_participant_retired(&fixture);
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 '{}'::regclass, '{}'::uuid
+             )",
+            fixture.generation.index_name, fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Retired")
+    );
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "retirement mark must retain every generation relation until reclaim"
+        );
+    }
+
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &fixture.retire_decision_bytes,
+            &fixture.retire_decision_digest,
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: covered reclaim transaction rollback");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "rollback must restore every generation relation"
+        );
+    }
+
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    for relation in generation_relations {
+        assert_eq!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "reclaim must drop every generation relation"
+        );
+    }
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 '{}'::regclass, '{}'::uuid
+             )",
+            fixture.generation.index_name, fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Reclaimed")
+    );
 }
 
 #[pg_test]
