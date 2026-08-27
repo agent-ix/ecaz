@@ -3492,7 +3492,10 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
              DROP TABLE IF EXISTS ec_distann_rh_owner3 CASCADE;
              CREATE TABLE ec_distann_rh_source (
                  source_id uuid NOT NULL,
-                 embedding ecvector(4) NOT NULL
+                 embedding ecvector(4) NOT NULL,
+                 covered_rank bigint NOT NULL,
+                 covered_nullable integer,
+                 uncovered_text text
              );
              CREATE TABLE ec_distann_rh_owner2 (LIKE ec_distann_rh_source);
              CREATE TABLE ec_distann_rh_owner3 (LIKE ec_distann_rh_source);
@@ -3506,7 +3509,10 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                     )::uuid,
                     encode_to_ecvector(
                         ARRAY[g::real, (g % 7)::real, (g % 5)::real, 1.0], 4, 42
-                    )
+                    ),
+                    g::bigint,
+                    CASE WHEN g % 2 = 0 THEN NULL ELSE g::integer END,
+                    repeat(md5(g::text), 128)
                FROM generate_series(1, 30) AS g;
              CREATE INDEX ec_distann_rh_idx ON ec_distann_rh_source
                  USING ec_distann (embedding ecvector_distann_ip_ops)
@@ -3565,11 +3571,11 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
         client
             .batch_execute(
                 "ALTER INDEX ec_distann_rh_idx
-                     SET (covering_payload_attnums = '1');
+                     SET (covering_payload_attnums = '1,3,4');
                  ALTER INDEX ec_distann_rh_owner2_idx
-                     SET (covering_payload_attnums = '1');
+                     SET (covering_payload_attnums = '1,3,4');
                  ALTER INDEX ec_distann_rh_owner3_idx
-                     SET (covering_payload_attnums = '1');",
+                     SET (covering_payload_attnums = '1,3,4');",
             )
             .expect("payload projection fixture should opt every owner into the UUID cover");
     }
@@ -3838,6 +3844,114 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
             analyzed.contains("Payload Source: sidecar"),
             "exact covered projection must select the sidecar: {analyzed}"
         );
+
+        let covered_rows = client
+            .query(
+                "SELECT pg_catalog.uuid_send(source_id), covered_rank, covered_nullable
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 30",
+                &[],
+            )
+            .expect("covered multi-scalar projection should execute")
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, Vec<u8>>(0),
+                    row.get::<_, i64>(1),
+                    row.get::<_, Option<i32>>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            covered_rows.iter().any(|row| row.2.is_none()),
+            "covered multi-scalar output must exercise the compact NULL bitmap"
+        );
+        let fallback_rows = client
+            .query(
+                "SELECT pg_catalog.uuid_send(source_id), covered_rank,
+                        covered_nullable, uncovered_text
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 30",
+                &[],
+            )
+            .expect("uncovered scalar projection should fall back")
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, Vec<u8>>(0),
+                    row.get::<_, i64>(1),
+                    row.get::<_, Option<i32>>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fallback_rows, covered_rows,
+            "covered sidecar and uncovered row-tier paths must return byte-identical common columns"
+        );
+
+        for (shape, statement, expected_source) in [
+            (
+                "covered multi-scalar",
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF)
+                 SELECT source_id, covered_rank, covered_nullable
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                "Payload Source: sidecar",
+            ),
+            (
+                "covered qual-only",
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF)
+                 SELECT source_id
+                   FROM ec_distann_rh_source
+                  WHERE covered_rank > 0
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                "Payload Source: sidecar",
+            ),
+            (
+                "uncovered scalar",
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF)
+                 SELECT source_id, uncovered_text
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                "Payload Source: row_tier",
+            ),
+            (
+                "uncovered qual-only",
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF)
+                 SELECT source_id
+                   FROM ec_distann_rh_source
+                  WHERE length(uncovered_text) > 0
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                "Payload Source: row_tier",
+            ),
+            (
+                "select star",
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF)
+                 SELECT *
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                "Payload Source: row_tier",
+            ),
+        ] {
+            let shape_plan = client
+                .query(statement, &[])
+                .unwrap_or_else(|error| panic!("{shape} should execute: {error}"))
+                .into_iter()
+                .map(|row| row.get::<_, String>(0))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                shape_plan.contains(expected_source),
+                "{shape} selected the wrong payload source: {shape_plan}"
+            );
+        }
     }
 
     let literal_short_ids = client
@@ -4022,7 +4136,7 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                FROM ec_distann_rh_source
               ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
               LIMIT 30",
-            "Payload Attnums: 1,2",
+            "Payload Attnums: 1,2,3,4,5",
         ),
     ] {
         let shape_plan = client
