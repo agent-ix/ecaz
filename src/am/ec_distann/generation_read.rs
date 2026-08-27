@@ -2419,11 +2419,27 @@ impl RetainedGenerationScan {
                     validate_ns,
                     node_lookup_ns,
                     payload_sql_ns: 0,
+                    sidecar_selected: prefer_payload_sidecar,
+                    sidecar_lookup_ns: 0,
+                    requested_rows: 0,
+                    returned_rows: 0,
+                    missing_rows: 0,
+                    row_tier_visibility_probes: 0,
                 },
             });
         }
         if prefer_payload_sidecar {
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let sidecar_started = Instant::now();
             let payloads = self.materialize_sidecar_payloads(&nodes, &canonical_attnums)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let sidecar_lookup_ns = duration_ns(sidecar_started.elapsed());
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let requested_rows = nodes.len();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let missing_rows = payloads.iter().filter(|payload| payload.0).count();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let returned_rows = requested_rows.saturating_sub(missing_rows);
             let rows = nodes
                 .into_iter()
                 .zip(payloads)
@@ -2446,6 +2462,12 @@ impl RetainedGenerationScan {
                     validate_ns,
                     node_lookup_ns,
                     payload_sql_ns: 0,
+                    sidecar_selected: true,
+                    sidecar_lookup_ns,
+                    requested_rows,
+                    returned_rows,
+                    missing_rows,
+                    row_tier_visibility_probes: missing_rows,
                 },
             });
         }
@@ -2655,7 +2677,7 @@ impl RetainedGenerationScan {
                 "physical payload response count mismatch".to_owned(),
             ));
         }
-        let rows = nodes
+        let rows: Vec<PhysicalPayloadRow> = nodes
             .into_iter()
             .zip(payloads)
             .map(|(node, payload)| {
@@ -2679,6 +2701,12 @@ impl RetainedGenerationScan {
                 validate_ns,
                 node_lookup_ns,
                 payload_sql_ns,
+                sidecar_selected: false,
+                sidecar_lookup_ns: 0,
+                requested_rows: 0,
+                returned_rows: 0,
+                missing_rows: 0,
+                row_tier_visibility_probes: 0,
             },
         })
     }
@@ -2744,13 +2772,17 @@ impl RetainedGenerationScan {
                     sidecar.row_tid AS sidecar_row_tid,
                     sidecar.vec_id AS sidecar_vec_id,
                     sidecar.payload AS sidecar_payload,
-                    row_tier.ctid IS NOT NULL AS row_tier_visible
+                    CASE WHEN sidecar.row_tid IS NULL
+                         THEN EXISTS (
+                             SELECT 1 FROM {row_name} AS row_tier
+                              WHERE row_tier.ctid = request.row_tid
+                         )
+                         ELSE false
+                     END AS row_tier_visible
                FROM unnest($1::tid[], $2::bigint[]) WITH ORDINALITY
                     AS request(row_tid, vec_id, ordinality)
                LEFT JOIN {sidecar_name} AS sidecar
                  ON sidecar.row_tid = request.row_tid
-               LEFT JOIN {row_name} AS row_tier
-                 ON row_tier.ctid = request.row_tid
               ORDER BY request.ordinality"
         );
         let rows = Spi::connect(|client| {
@@ -2931,6 +2963,12 @@ struct OwnerMaterializationTelemetry {
     validate_ns: u64,
     node_lookup_ns: u64,
     payload_sql_ns: u64,
+    sidecar_selected: bool,
+    sidecar_lookup_ns: u64,
+    requested_rows: usize,
+    returned_rows: usize,
+    missing_rows: usize,
+    row_tier_visibility_probes: usize,
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -4871,6 +4909,13 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         name!(owner_node_lookup_ns, i64),
         name!(owner_payload_sql_ns, i64),
         name!(payload_bytes, i64),
+        name!(payload_source, String),
+        name!(payload_fallback_reason, String),
+        name!(owner_sidecar_lookup_ns, i64),
+        name!(sidecar_rows_requested, i64),
+        name!(sidecar_rows_returned, i64),
+        name!(sidecar_rows_missing, i64),
+        name!(row_tier_visibility_probes, i64),
     ),
 > {
     let total_started = Instant::now();
@@ -4927,6 +4972,21 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let owner_open_validate_ns = open_ns.saturating_add(batch.telemetry.validate_ns);
     let owner_node_lookup_ns = batch.telemetry.node_lookup_ns;
     let owner_payload_sql_ns = batch.telemetry.payload_sql_ns;
+    let payload_source = if batch.telemetry.sidecar_selected {
+        "sidecar".to_owned()
+    } else {
+        "row_tier".to_owned()
+    };
+    let payload_fallback_reason = if batch.telemetry.sidecar_selected {
+        "none".to_owned()
+    } else {
+        "not_selected".to_owned()
+    };
+    let owner_sidecar_lookup_ns = batch.telemetry.sidecar_lookup_ns;
+    let sidecar_rows_requested = batch.telemetry.requested_rows;
+    let sidecar_rows_returned = batch.telemetry.returned_rows;
+    let sidecar_rows_missing = batch.telemetry.missing_rows;
+    let row_tier_visibility_probes = batch.telemetry.row_tier_visibility_probes;
     let payload_bytes = batch
         .rows
         .iter()
@@ -4942,6 +5002,11 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let owner_node_lookup_ns = i64::try_from(owner_node_lookup_ns).unwrap_or(i64::MAX);
     let owner_payload_sql_ns = i64::try_from(owner_payload_sql_ns).unwrap_or(i64::MAX);
     let payload_bytes = i64::try_from(payload_bytes).unwrap_or(i64::MAX);
+    let owner_sidecar_lookup_ns = i64::try_from(owner_sidecar_lookup_ns).unwrap_or(i64::MAX);
+    let sidecar_rows_requested = i64::try_from(sidecar_rows_requested).unwrap_or(i64::MAX);
+    let sidecar_rows_returned = i64::try_from(sidecar_rows_returned).unwrap_or(i64::MAX);
+    let sidecar_rows_missing = i64::try_from(sidecar_rows_missing).unwrap_or(i64::MAX);
+    let row_tier_visibility_probes = i64::try_from(row_tier_visibility_probes).unwrap_or(i64::MAX);
     TableIterator::new(batch.rows.into_iter().map(move |row| {
         (
             row.0,
@@ -4955,6 +5020,13 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             owner_node_lookup_ns,
             owner_payload_sql_ns,
             payload_bytes,
+            payload_source.clone(),
+            payload_fallback_reason.clone(),
+            owner_sidecar_lookup_ns,
+            sidecar_rows_requested,
+            sidecar_rows_returned,
+            sidecar_rows_missing,
+            row_tier_visibility_probes,
         )
     }))
 }
@@ -6432,6 +6504,34 @@ impl PhysicalGenerationScan {
             let response = response.map_err(|error| error.to_string())?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             {
+                let expected_source = if prefer_payload_sidecar {
+                    "sidecar"
+                } else {
+                    "row_tier"
+                };
+                let expected_fallback = if prefer_payload_sidecar {
+                    "none"
+                } else {
+                    "not_selected"
+                };
+                if response.telemetry.payload_source != expected_source
+                    || response.telemetry.payload_fallback_reason != expected_fallback
+                    || response.telemetry.sidecar_rows_requested
+                        != if prefer_payload_sidecar {
+                            u64::try_from(ids.len()).unwrap_or(u64::MAX)
+                        } else {
+                            0
+                        }
+                    || response
+                        .telemetry
+                        .sidecar_rows_returned
+                        .saturating_add(response.telemetry.sidecar_rows_missing)
+                        != response.telemetry.sidecar_rows_requested
+                {
+                    return Err(format!(
+                        "EC_INTERNAL: physical owner {ordinal} returned inconsistent payload-source telemetry"
+                    ));
+                }
                 super::stage_counters::record_work(
                     super::stage_counters::DistannMaterializationWork::RemoteRowsReturned,
                     response.rows.len(),
@@ -6440,6 +6540,39 @@ impl PhysicalGenerationScan {
                     super::stage_counters::DistannMaterializationWork::PayloadBytesReturned,
                     usize::try_from(response.telemetry.payload_bytes).unwrap_or(usize::MAX),
                 );
+                if prefer_payload_sidecar {
+                    for (metric, value) in [
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarBatches,
+                            1_u64,
+                        ),
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarRowsRequested,
+                            response.telemetry.sidecar_rows_requested,
+                        ),
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarRowsReturned,
+                            response.telemetry.sidecar_rows_returned,
+                        ),
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarRowsMissing,
+                            response.telemetry.sidecar_rows_missing,
+                        ),
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarPayloadBytes,
+                            response.telemetry.payload_bytes,
+                        ),
+                        (
+                            super::stage_counters::DistannMaterializationWork::RemoteSidecarRowTierVisibilityProbes,
+                            response.telemetry.row_tier_visibility_probes,
+                        ),
+                    ] {
+                        super::stage_counters::record_work(
+                            metric,
+                            usize::try_from(value).unwrap_or(usize::MAX),
+                        );
+                    }
+                }
             }
             if response.rows.len() != ids.len() {
                 return Err(format!(
@@ -6516,7 +6649,10 @@ impl PhysicalGenerationScan {
         &self,
         local_pairs: &[(u64, ItemPointer)],
         projection_attnums: &[pg_sys::AttrNumber],
+        retry: bool,
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let _ = retry;
         let ids = local_pairs
             .iter()
             .map(|(vec_id, _)| *vec_id)
@@ -6550,6 +6686,57 @@ impl PhysicalGenerationScan {
             .map_err(|error| error.to_string())?;
         if batch.rows.len() != ids.len() {
             return Err("EC_INTERNAL: local sidecar response count mismatch".to_owned());
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let stage = if retry {
+                super::stage_counters::DistannQueryStage::MaterializeLocalSidecarRetry
+            } else {
+                super::stage_counters::DistannQueryStage::MaterializeLocalSidecarInitial
+            };
+            super::stage_counters::record(
+                stage,
+                std::time::Duration::from_nanos(batch.telemetry.sidecar_lookup_ns),
+            );
+            let payload_bytes = batch
+                .rows
+                .iter()
+                .map(|row| {
+                    row.3
+                        .len()
+                        .saturating_add(row.4.len())
+                        .saturating_add(row.5.len())
+                })
+                .sum::<usize>();
+            let metrics = if retry {
+                [
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryBatches,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryRowsRequested,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryRowsReturned,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryRowsMissing,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryPayloadBytes,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarRetryRowTierVisibilityProbes,
+                ]
+            } else {
+                [
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialBatches,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialRowsRequested,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialRowsReturned,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialRowsMissing,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialPayloadBytes,
+                    super::stage_counters::DistannMaterializationWork::LocalSidecarInitialRowTierVisibilityProbes,
+                ]
+            };
+            for (metric, value) in metrics.into_iter().zip([
+                1,
+                batch.telemetry.requested_rows,
+                batch.telemetry.returned_rows,
+                batch.telemetry.missing_rows,
+                payload_bytes,
+                batch.telemetry.row_tier_visibility_probes,
+            ]) {
+                super::stage_counters::record_work(metric, value);
+            }
         }
         let mut payloads = HashMap::with_capacity(ids.len());
         for (requested, row) in ids.into_iter().zip(batch.rows) {

@@ -1422,7 +1422,7 @@ fn materialize_pending_physical_window(
             pgrx::error!("EC_INTERNAL: local sidecar lookup lost the executor snapshot");
         }
         let mut local_payloads = context
-            .materialize_local_sidecar_pairs(&local_pairs, &state.payload_attnums)
+            .materialize_local_sidecar_pairs(&local_pairs, &state.payload_attnums, false)
             .unwrap_or_else(|error| pgrx::error!("{error}"));
         let missing = local_pairs
             .iter()
@@ -1433,7 +1433,7 @@ fn materialize_pending_physical_window(
             if let Some(latest) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() {
                 local_payloads.extend(
                     context
-                        .materialize_local_sidecar_pairs(&missing, &state.payload_attnums)
+                        .materialize_local_sidecar_pairs(&missing, &state.payload_attnums, true)
                         .unwrap_or_else(|error| pgrx::error!("{error}")),
                 );
                 drop(latest);
@@ -1764,9 +1764,12 @@ unsafe fn run_physical_generation_search(
         .as_ref()
         .expect("physical generation initialized");
     state.payload_sidecar_selected = match &state.payload_mask {
-        PayloadAttributeMask::Exact(attnums) => context
-            .payload_sidecar_covers(attnums)
-            .unwrap_or_else(|error| pgrx::error!("{error}")),
+        PayloadAttributeMask::Exact(attnums) => {
+            super::options::covering_sidecar_enabled()
+                && context
+                    .payload_sidecar_covers(attnums)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"))
+        }
         PayloadAttributeMask::AllColumns(_) => false,
     };
     #[cfg(feature = "distann-head-attribution-benchmark")]

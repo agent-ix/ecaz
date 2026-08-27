@@ -529,6 +529,11 @@ unsafe fn insert_from_prepared_slot(
         let (nulls, offsets, packed) = ambuild::freeze_source_slot_packed(source_slot)?;
         let payload = cover.encode_packed_row(&descriptor.row_schema, &nulls, &offsets, &packed)?;
         append_payload_sidecar(sidecar_relation, row_tid, vec_id, &payload)?;
+        stage_counters::record_insert_work(DistannInsertWork::PayloadSidecarRowsAppended, 1);
+        stage_counters::record_insert_work(
+            DistannInsertWork::PayloadSidecarBytesAppended,
+            payload.len(),
+        );
     }
     let mut neighbor_vec_ids = vec![0_u64; usize::from(descriptor.graph_degree)];
     let mut neighbor_codes = vec![0_u8; usize::from(descriptor.graph_degree) * code_len];

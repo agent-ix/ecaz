@@ -46,10 +46,13 @@ pub(crate) enum DistannQueryStage {
     ReplicaOpenValidate,
     ReplicaGraphVectorRead,
     ReplicaScore,
+    MaterializeOwnerSidecarLookupWork,
+    MaterializeLocalSidecarInitial,
+    MaterializeLocalSidecarRetry,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 37] = [
+    pub(crate) const ALL: [Self; 40] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -87,6 +90,9 @@ impl DistannQueryStage {
         Self::ReplicaOpenValidate,
         Self::ReplicaGraphVectorRead,
         Self::ReplicaScore,
+        Self::MaterializeOwnerSidecarLookupWork,
+        Self::MaterializeLocalSidecarInitial,
+        Self::MaterializeLocalSidecarRetry,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -128,6 +134,9 @@ impl DistannQueryStage {
             Self::ReplicaOpenValidate => "replica_open_validate",
             Self::ReplicaGraphVectorRead => "replica_graph_vector_read",
             Self::ReplicaScore => "replica_score",
+            Self::MaterializeOwnerSidecarLookupWork => "materialize_owner_sidecar_lookup_work",
+            Self::MaterializeLocalSidecarInitial => "materialize_local_sidecar_initial",
+            Self::MaterializeLocalSidecarRetry => "materialize_local_sidecar_retry",
         }
     }
 
@@ -170,6 +179,9 @@ impl DistannQueryStage {
             Self::ReplicaOpenValidate => 34,
             Self::ReplicaGraphVectorRead => 35,
             Self::ReplicaScore => 36,
+            Self::MaterializeOwnerSidecarLookupWork => 37,
+            Self::MaterializeLocalSidecarInitial => 38,
+            Self::MaterializeLocalSidecarRetry => 39,
         }
     }
 }
@@ -214,10 +226,28 @@ pub(crate) enum DistannMaterializationWork {
     GatewayCopiesServed,
     HeadReplicaFallbacks,
     HeadReplicaShardsServed,
+    RemoteSidecarBatches,
+    RemoteSidecarRowsRequested,
+    RemoteSidecarRowsReturned,
+    RemoteSidecarRowsMissing,
+    RemoteSidecarPayloadBytes,
+    RemoteSidecarRowTierVisibilityProbes,
+    LocalSidecarInitialBatches,
+    LocalSidecarInitialRowsRequested,
+    LocalSidecarInitialRowsReturned,
+    LocalSidecarInitialRowsMissing,
+    LocalSidecarInitialPayloadBytes,
+    LocalSidecarInitialRowTierVisibilityProbes,
+    LocalSidecarRetryBatches,
+    LocalSidecarRetryRowsRequested,
+    LocalSidecarRetryRowsReturned,
+    LocalSidecarRetryRowsMissing,
+    LocalSidecarRetryPayloadBytes,
+    LocalSidecarRetryRowTierVisibilityProbes,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 33] = [
+    pub(crate) const ALL: [Self; 51] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -251,6 +281,24 @@ impl DistannMaterializationWork {
         Self::GatewayCopiesServed,
         Self::HeadReplicaFallbacks,
         Self::HeadReplicaShardsServed,
+        Self::RemoteSidecarBatches,
+        Self::RemoteSidecarRowsRequested,
+        Self::RemoteSidecarRowsReturned,
+        Self::RemoteSidecarRowsMissing,
+        Self::RemoteSidecarPayloadBytes,
+        Self::RemoteSidecarRowTierVisibilityProbes,
+        Self::LocalSidecarInitialBatches,
+        Self::LocalSidecarInitialRowsRequested,
+        Self::LocalSidecarInitialRowsReturned,
+        Self::LocalSidecarInitialRowsMissing,
+        Self::LocalSidecarInitialPayloadBytes,
+        Self::LocalSidecarInitialRowTierVisibilityProbes,
+        Self::LocalSidecarRetryBatches,
+        Self::LocalSidecarRetryRowsRequested,
+        Self::LocalSidecarRetryRowsReturned,
+        Self::LocalSidecarRetryRowsMissing,
+        Self::LocalSidecarRetryPayloadBytes,
+        Self::LocalSidecarRetryRowTierVisibilityProbes,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -288,6 +336,30 @@ impl DistannMaterializationWork {
             Self::GatewayCopiesServed => "gateway_copies_served",
             Self::HeadReplicaFallbacks => "head_replica_fallbacks",
             Self::HeadReplicaShardsServed => "head_replica_shards_served",
+            Self::RemoteSidecarBatches => "remote_sidecar_batches",
+            Self::RemoteSidecarRowsRequested => "remote_sidecar_rows_requested",
+            Self::RemoteSidecarRowsReturned => "remote_sidecar_rows_returned",
+            Self::RemoteSidecarRowsMissing => "remote_sidecar_rows_missing",
+            Self::RemoteSidecarPayloadBytes => "remote_sidecar_payload_bytes",
+            Self::RemoteSidecarRowTierVisibilityProbes => {
+                "remote_sidecar_row_tier_visibility_probes"
+            }
+            Self::LocalSidecarInitialBatches => "local_sidecar_initial_batches",
+            Self::LocalSidecarInitialRowsRequested => "local_sidecar_initial_rows_requested",
+            Self::LocalSidecarInitialRowsReturned => "local_sidecar_initial_rows_returned",
+            Self::LocalSidecarInitialRowsMissing => "local_sidecar_initial_rows_missing",
+            Self::LocalSidecarInitialPayloadBytes => "local_sidecar_initial_payload_bytes",
+            Self::LocalSidecarInitialRowTierVisibilityProbes => {
+                "local_sidecar_initial_row_tier_visibility_probes"
+            }
+            Self::LocalSidecarRetryBatches => "local_sidecar_retry_batches",
+            Self::LocalSidecarRetryRowsRequested => "local_sidecar_retry_rows_requested",
+            Self::LocalSidecarRetryRowsReturned => "local_sidecar_retry_rows_returned",
+            Self::LocalSidecarRetryRowsMissing => "local_sidecar_retry_rows_missing",
+            Self::LocalSidecarRetryPayloadBytes => "local_sidecar_retry_payload_bytes",
+            Self::LocalSidecarRetryRowTierVisibilityProbes => {
+                "local_sidecar_retry_row_tier_visibility_probes"
+            }
         }
     }
 
@@ -326,6 +398,24 @@ impl DistannMaterializationWork {
             Self::GatewayCopiesServed => 30,
             Self::HeadReplicaFallbacks => 31,
             Self::HeadReplicaShardsServed => 32,
+            Self::RemoteSidecarBatches => 33,
+            Self::RemoteSidecarRowsRequested => 34,
+            Self::RemoteSidecarRowsReturned => 35,
+            Self::RemoteSidecarRowsMissing => 36,
+            Self::RemoteSidecarPayloadBytes => 37,
+            Self::RemoteSidecarRowTierVisibilityProbes => 38,
+            Self::LocalSidecarInitialBatches => 39,
+            Self::LocalSidecarInitialRowsRequested => 40,
+            Self::LocalSidecarInitialRowsReturned => 41,
+            Self::LocalSidecarInitialRowsMissing => 42,
+            Self::LocalSidecarInitialPayloadBytes => 43,
+            Self::LocalSidecarInitialRowTierVisibilityProbes => 44,
+            Self::LocalSidecarRetryBatches => 45,
+            Self::LocalSidecarRetryRowsRequested => 46,
+            Self::LocalSidecarRetryRowsReturned => 47,
+            Self::LocalSidecarRetryRowsMissing => 48,
+            Self::LocalSidecarRetryPayloadBytes => 49,
+            Self::LocalSidecarRetryRowTierVisibilityProbes => 50,
         }
     }
 }
@@ -346,10 +436,12 @@ pub(crate) enum DistannInsertWork {
     BacklinkNoRoom,
     OwnerWrites,
     GraphRecordsAppended,
+    PayloadSidecarRowsAppended,
+    PayloadSidecarBytesAppended,
 }
 
 impl DistannInsertWork {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::InsertAttempts,
         Self::SearchCandidates,
         Self::ForwardNeighborsSelected,
@@ -358,6 +450,8 @@ impl DistannInsertWork {
         Self::BacklinkNoRoom,
         Self::OwnerWrites,
         Self::GraphRecordsAppended,
+        Self::PayloadSidecarRowsAppended,
+        Self::PayloadSidecarBytesAppended,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -370,6 +464,8 @@ impl DistannInsertWork {
             Self::BacklinkNoRoom => "backlink_no_room",
             Self::OwnerWrites => "owner_writes",
             Self::GraphRecordsAppended => "graph_records_appended",
+            Self::PayloadSidecarRowsAppended => "payload_sidecar_rows_appended",
+            Self::PayloadSidecarBytesAppended => "payload_sidecar_bytes_appended",
         }
     }
 
@@ -383,6 +479,8 @@ impl DistannInsertWork {
             Self::BacklinkNoRoom => 5,
             Self::OwnerWrites => 6,
             Self::GraphRecordsAppended => 7,
+            Self::PayloadSidecarRowsAppended => 8,
+            Self::PayloadSidecarBytesAppended => 9,
         }
     }
 }

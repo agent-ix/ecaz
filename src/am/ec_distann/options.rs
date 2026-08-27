@@ -109,6 +109,8 @@ static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> = GucSetting::
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 #[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -592,6 +594,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_covering_sidecar",
+        c"Task 229 benchmark-only covering payload sidecar arm.",
+        c"On permits exact covered projections to use the generation-owned sidecar. Off forces the row-tier read against the same covered generation. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.gateway_copy_capacity",
         c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
@@ -1018,6 +1029,15 @@ pub(super) fn payload_projection_enabled() -> bool {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         return ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    true
+}
+
+pub(super) fn covering_sidecar_enabled() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC.get();
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     true
