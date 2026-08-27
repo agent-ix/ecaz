@@ -4,7 +4,8 @@ Status: **implementation complete against exact current main; packet 001 outside
 closeout review-open** (updated 2026-08-27). The production fix remains the
 equivalent `15f7fcf5f` landing through Task 167 PR #77. Current-main checkpoint
 `7d4103885` restores the deterministic forced-retry regression, and both PG18
-callers pass in packet evidence. Merge and an outside ACCEPT remain open.
+callers pass in packet evidence. PR #91 merged the implementation and evidence
+as `bcc9b0bfa`; only the outside ACCEPT remains open.
 Priority: **P0 correctness closeout.**
 
 Origin: found by the Task 222 coder while root-causing eight SIGSEGV runs in
