@@ -69,6 +69,8 @@ pub(crate) struct GenerationRelations {
     pub(crate) row_tier_relid: pg_sys::Oid,
     pub(crate) graph_store_relid: pg_sys::Oid,
     pub(crate) directory_relid: pg_sys::Oid,
+    pub(crate) payload_sidecar_relid: Option<pg_sys::Oid>,
+    pub(crate) payload_sidecar_directory_relid: Option<pg_sys::Oid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,13 +316,18 @@ fn cstring_owned(pointer: *mut std::ffi::c_char, context: &str) -> Result<String
     Ok(value)
 }
 
-fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String, String) {
+fn generation_relation_names(
+    index_oid: pg_sys::Oid,
+    build_id: Uuid,
+) -> (String, String, String, String, String) {
     let suffix = hex::encode(build_id.as_bytes());
     let oid = u32::from(index_oid);
     (
         format!("_ecdz_row_{oid}_{suffix}"),
         format!("_ecdz_graph_{oid}_{suffix}"),
         format!("_ecdz_dir_{oid}_{suffix}"),
+        format!("_ecdz_cover_{oid}_{suffix}"),
+        format!("_ecdz_cover_dir_{oid}_{suffix}"),
     )
 }
 
@@ -427,6 +434,7 @@ fn create_generation_relations(
     index_handle: RelationHandle,
     build_id: Uuid,
     schema: &ResolvedRowSchema,
+    payload_cover: bool,
 ) -> Result<GenerationRelations, String> {
     let index_oid = relation_oid_handle(index_handle);
     let (namespace_oid, owner_oid, persistence) =
@@ -443,8 +451,13 @@ fn create_generation_relations(
         "control-index owner",
     )?;
     let tablespace = tablespace_clause(index_handle)?;
-    let (row_name, graph_name, directory_name) = generation_relation_names(index_oid, build_id);
-    for name in [&row_name, &graph_name, &directory_name] {
+    let (row_name, graph_name, directory_name, payload_sidecar_name, payload_directory_name) =
+        generation_relation_names(index_oid, build_id);
+    let mut required_names = vec![&row_name, &graph_name, &directory_name];
+    if payload_cover {
+        required_names.extend([&payload_sidecar_name, &payload_directory_name]);
+    }
+    for name in required_names {
         if relation_oid_by_name(namespace_oid, name).is_ok() {
             return Err(
                 "EC_GENERATION_MISSING: deterministic generation relation exists without matching catalog identity"
@@ -454,6 +467,11 @@ fn create_generation_relations(
     }
     let qualified_row = format!("{}.{}", quote_ident(&namespace), quote_ident(&row_name));
     let qualified_graph = format!("{}.{}", quote_ident(&namespace), quote_ident(&graph_name));
+    let qualified_payload_sidecar = format!(
+        "{}.{}",
+        quote_ident(&namespace),
+        quote_ident(&payload_sidecar_name)
+    );
     let (row_columns, dropped_columns) = row_tier_column_sql(schema, build_id)?;
 
     Spi::run(&format!(
@@ -485,6 +503,27 @@ fn create_generation_relations(
         quote_ident(&directory_name)
     ))
     .map_err(|error| format!("ec_distann directory creation failed: {error}"))?;
+    if payload_cover {
+        Spi::run(&format!(
+            "CREATE TABLE {qualified_payload_sidecar} (\
+                 row_tid tid NOT NULL, \
+                 vec_id bigint NOT NULL, \
+                 payload bytea NOT NULL\
+             ) WITH (fillfactor=100){tablespace}"
+        ))
+        .map_err(|error| format!("ec_distann payload-sidecar creation failed: {error}"))?;
+        Spi::run(&format!(
+            "ALTER TABLE {qualified_payload_sidecar} ALTER COLUMN payload SET STORAGE PLAIN"
+        ))
+        .map_err(|error| format!("ec_distann payload-sidecar storage setup failed: {error}"))?;
+        Spi::run(&format!(
+            "CREATE UNIQUE INDEX {} ON {qualified_payload_sidecar} (row_tid){tablespace}",
+            quote_ident(&payload_directory_name)
+        ))
+        .map_err(|error| {
+            format!("ec_distann payload-sidecar directory creation failed: {error}")
+        })?;
+    }
     Spi::run(&format!(
         "ALTER TABLE {qualified_row} OWNER TO {}",
         quote_ident(&owner)
@@ -495,15 +534,34 @@ fn create_generation_relations(
         quote_ident(&owner)
     ))
     .map_err(|error| format!("ec_distann graph-store ownership change failed: {error}"))?;
+    if payload_cover {
+        Spi::run(&format!(
+            "ALTER TABLE {qualified_payload_sidecar} OWNER TO {}",
+            quote_ident(&owner)
+        ))
+        .map_err(|error| format!("ec_distann payload-sidecar ownership change failed: {error}"))?;
+    }
 
     let relations = GenerationRelations {
         row_tier_relid: relation_oid_by_name(namespace_oid, &row_name)?,
         graph_store_relid: relation_oid_by_name(namespace_oid, &graph_name)?,
         directory_relid: relation_oid_by_name(namespace_oid, &directory_name)?,
+        payload_sidecar_relid: payload_cover
+            .then(|| relation_oid_by_name(namespace_oid, &payload_sidecar_name))
+            .transpose()?,
+        payload_sidecar_directory_relid: payload_cover
+            .then(|| relation_oid_by_name(namespace_oid, &payload_directory_name))
+            .transpose()?,
     };
     record_internal_dependency(relations.row_tier_relid, index_oid);
     record_internal_dependency(relations.graph_store_relid, index_oid);
     record_internal_dependency(relations.directory_relid, index_oid);
+    if let Some(payload_sidecar_relid) = relations.payload_sidecar_relid {
+        record_internal_dependency(payload_sidecar_relid, index_oid);
+    }
+    if let Some(payload_sidecar_directory_relid) = relations.payload_sidecar_directory_relid {
+        record_internal_dependency(payload_sidecar_directory_relid, index_oid);
+    }
     unsafe { pg_sys::CommandCounterIncrement() };
     Ok(relations)
 }
@@ -613,6 +671,12 @@ pub(crate) fn drop_generation_relations(
     control_oid: pg_sys::Oid,
     relations: GenerationRelations,
 ) -> Result<(), String> {
+    if let Some(payload_sidecar_directory_relid) = relations.payload_sidecar_directory_relid {
+        drop_relation_internal(payload_sidecar_directory_relid, control_oid)?;
+    }
+    if let Some(payload_sidecar_relid) = relations.payload_sidecar_relid {
+        drop_relation_internal(payload_sidecar_relid, control_oid)?;
+    }
     drop_relation_internal(relations.directory_relid, control_oid)?;
     drop_relation_internal(relations.graph_store_relid, control_oid)?;
     drop_relation_internal(relations.row_tier_relid, control_oid)?;
@@ -641,6 +705,7 @@ fn validate_replay(
     descriptor_digest: [u8; 32],
     expected_owner_count: u64,
     expected_owner_digest: [u8; 32],
+    payload_cover: bool,
 ) -> Result<(), String> {
     if row.epoch != epoch
         || row.owner_ordinal != owner_ordinal
@@ -665,11 +730,23 @@ fn validate_replay(
             row.state
         ));
     }
+    if row.payload_sidecar_relid.is_some() != payload_cover
+        || row.payload_sidecar_directory_relid.is_some() != payload_cover
+    {
+        return Err(
+            "EC_BUILD_ID_CONFLICT: cataloged payload sidecar differs from the generation descriptor"
+                .to_owned(),
+        );
+    }
     for relation_oid in [
         row.row_tier_relid,
         row.graph_store_relid,
         row.directory_relid,
-    ] {
+    ]
+    .into_iter()
+    .chain(row.payload_sidecar_relid)
+    .chain(row.payload_sidecar_directory_relid)
+    {
         if !relation_exists(relation_oid) {
             return Err(
                 "EC_GENERATION_MISSING: cataloged generation relation is missing".to_owned(),
@@ -851,6 +928,7 @@ fn ec_distann_begin_epoch_handoff(
                 descriptor_digest,
                 expected_owner_count,
                 expected_owner_digest,
+                descriptor.payload_cover.is_some(),
             )?;
             return Ok(existing);
         }
@@ -864,7 +942,12 @@ fn ec_distann_begin_epoch_handoff(
                     .to_owned(),
             );
         }
-        let relations = create_generation_relations(handle, build_id, &resolved_schema)?;
+        let relations = create_generation_relations(
+            handle,
+            build_id,
+            &resolved_schema,
+            descriptor.payload_cover.is_some(),
+        )?;
         let row = GenerationCatalogRow {
             epoch,
             owner_ordinal,
@@ -879,6 +962,8 @@ fn ec_distann_begin_epoch_handoff(
             row_tier_relid: relations.row_tier_relid,
             graph_store_relid: relations.graph_store_relid,
             directory_relid: relations.directory_relid,
+            payload_sidecar_relid: relations.payload_sidecar_relid,
+            payload_sidecar_directory_relid: relations.payload_sidecar_directory_relid,
             next_batch_seq: 0,
             cumulative_record_count: 0,
             cumulative_owner_digest: initial_owner_digest,
@@ -934,6 +1019,8 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
                 row_tier_relid: row.row_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
+                payload_sidecar_relid: row.payload_sidecar_relid,
+                payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
             },
         )?;
         generation_catalog::delete_generation_if_unpublished(
@@ -1038,8 +1125,13 @@ pub(crate) fn reset_control_index_for_rebuild(
     let index_handle = NonNull::new(index_relation)
         .ok_or_else(|| "ec_distann control rebuild got a null relation".to_owned())?;
     let index_oid = relation_oid_handle(index_handle);
-    for (row_tier_relid, graph_store_relid, directory_relid) in
-        generation_catalog::generation_relations_for_index(index_oid)?
+    for (
+        row_tier_relid,
+        graph_store_relid,
+        directory_relid,
+        payload_sidecar_relid,
+        payload_sidecar_directory_relid,
+    ) in generation_catalog::generation_relations_for_index(index_oid)?
     {
         drop_generation_relations(
             index_oid,
@@ -1047,6 +1139,8 @@ pub(crate) fn reset_control_index_for_rebuild(
                 row_tier_relid,
                 graph_store_relid,
                 directory_relid,
+                payload_sidecar_relid,
+                payload_sidecar_directory_relid,
             },
         )?;
     }

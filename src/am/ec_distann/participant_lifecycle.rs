@@ -836,6 +836,8 @@ fn ec_distann_apply_epoch_retire(
                 row_tier_relid: row.row_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
+                payload_sidecar_relid: row.payload_sidecar_relid,
+                payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
             },
         )?;
         let deleted = Spi::connect_mut(|client| {
@@ -1115,6 +1117,8 @@ fn ec_distann_reclaim_cancelled_generation(
                 row_tier_relid: row.row_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
+                payload_sidecar_relid: row.payload_sidecar_relid,
+                payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
             },
         )?;
         let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;

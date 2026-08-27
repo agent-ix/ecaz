@@ -29,6 +29,7 @@ use crate::storage::slot_guard::TupleTableSlotGuard;
 use super::canonical_wire::is_rfc4122_v4_uuid;
 use super::expand_error::DistannExpandError;
 use super::generation_descriptor::DistannGenerationDescriptor;
+use super::manifest_v2::DistannEpochFingerprint;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::scan::{
     distann_orchestrated_search, prune_and_limit_neighbors, DistannExpandedNode,
@@ -205,11 +206,8 @@ impl TraversalReplicaIdentity {
         if !is_rfc4122_v4_uuid(&self.build_id) {
             return Err("EC_REPLICA_IDENTITY: build id is not an RFC 4122 v4 UUID".to_owned());
         }
-        if self.epoch_fingerprint[..2] != 2_u16.to_le_bytes() {
-            return Err(
-                "EC_REPLICA_IDENTITY: epoch fingerprint is not canonical version 2".to_owned(),
-            );
-        }
+        DistannEpochFingerprint::decode(&self.epoch_fingerprint)
+            .map_err(|error| format!("EC_REPLICA_IDENTITY: {error}"))?;
         if self.dimensions == 0
             || self.graph_degree == 0
             || self.owner_count == 0

@@ -34,6 +34,7 @@ use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 use super::expand_error::DistannExpandError;
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
+use super::manifest_v2::DistannEpochFingerprint;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::routine::DistannHitCollection;
 use super::scan::{
@@ -632,7 +633,9 @@ unsafe extern "C-unwind" fn invalidate_generation_caches(
         cache.retain(|entry| {
             let generation_relation = entry.generation.row_tier_relid == relation_oid
                 || entry.generation.graph_store_relid == relation_oid
-                || entry.generation.directory_relid == relation_oid;
+                || entry.generation.directory_relid == relation_oid
+                || entry.generation.payload_sidecar_relid == Some(relation_oid)
+                || entry.generation.payload_sidecar_directory_relid == Some(relation_oid);
             let matches = relation_oid == pg_sys::InvalidOid
                 || entry.index_oid == relation_oid
                 || generation_relation;
@@ -1187,7 +1190,8 @@ fn physical_owner_routes_for_owner_insert(
     Ok(routes)
 }
 
-/// Exact retained participant generation selected by the coordinator's v2
+/// Exact retained participant generation selected by the coordinator's
+/// versioned
 /// manifest fingerprint.  Published and Retired are both readable; retirement
 /// only makes the generation unreachable to new coordinator scans, while
 /// reclaim waits for registered readers to drain.
@@ -1225,11 +1229,7 @@ impl RetainedGenerationScan {
                 fingerprint.len()
             ))
         })?;
-        if fingerprint[..2] != [2, 0] {
-            return Err(DistannExpandError::BadInput(
-                "physical epoch fingerprint is not canonical v2".to_owned(),
-            ));
-        }
+        DistannEpochFingerprint::decode(&fingerprint).map_err(DistannExpandError::BadInput)?;
         let cached = if let Some(cached) = cached_retained_epoch(index_oid, &fingerprint) {
             cached
         } else {

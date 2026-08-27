@@ -175,6 +175,35 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
     payload_type: &str,
     graph_degree: u32,
 ) -> DistannPhysicalGenerationFixture {
+    create_distann_physical_generation_fixture_configured(
+        stem,
+        build_marker,
+        payload_type,
+        graph_degree,
+        None,
+    )
+}
+
+fn create_covered_distann_physical_generation_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannPhysicalGenerationFixture {
+    create_distann_physical_generation_fixture_configured(
+        stem,
+        build_marker,
+        "text",
+        4,
+        Some(&[1]),
+    )
+}
+
+fn create_distann_physical_generation_fixture_configured(
+    stem: &str,
+    build_marker: u8,
+    payload_type: &str,
+    graph_degree: u32,
+    covering_payload_attnums: Option<&[u16]>,
+) -> DistannPhysicalGenerationFixture {
     assert!(
         stem.bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
@@ -202,6 +231,18 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
         "ALTER TABLE {table_name} DROP COLUMN legacy_payload"
     ))
     .expect("source shell dropped-column slot should create");
+    let covering_payload_reloption = covering_payload_attnums
+        .map(|attnums| {
+            format!(
+                ", covering_payload_attnums = '{}'",
+                attnums
+                    .iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        })
+        .unwrap_or_default();
     Spi::run(&format!(
         "CREATE INDEX {index_name} ON {table_name}
          USING ec_distann (embedding ecvector_distann_ip_ops)
@@ -211,6 +252,7 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
              source_identity = 'include',
              graph_degree = {graph_degree},
              neighbor_code_format = 'rabitq'
+             {covering_payload_reloption}
          )"
     ))
     .expect("distributed control fixture should create");
@@ -233,6 +275,12 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
     drop(index_relation);
 
     let logical_index_uuid = pgrx::datum::Uuid::from_bytes(metadata.logical_index_uuid);
+    let payload_cover = crate::am::ec_distann::resolve_payload_cover_for_test(
+        &row_schema,
+        4,
+        covering_payload_attnums,
+    )
+    .expect("payload cover should resolve");
     let descriptor = crate::am::ec_distann::DistannGenerationDescriptor {
         coordinator_logical_index_uuid: metadata.logical_index_uuid,
         index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
@@ -253,7 +301,7 @@ fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree
             bits: 1,
         },
         row_schema,
-        payload_cover: None,
+        payload_cover,
     };
     let mut build_id = [build_marker; 16];
     build_id[6] = (build_id[6] & 0x0f) | 0x40;
@@ -618,6 +666,45 @@ fn distann_generation_relation_oids(
                         .value::<pg_sys::Oid>()
                         .unwrap()
                         .unwrap(),
+                )
+            })
+            .next()
+            .expect("generation catalog row should exist")
+    })
+}
+
+fn distann_payload_sidecar_relation_oids(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> (pg_sys::Oid, pg_sys::Oid) {
+    let catalog = distann_generation_catalog_name();
+    Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT payload_sidecar_relid, payload_sidecar_directory_relid
+                       FROM {catalog}
+                      WHERE index_oid = $1::oid
+                        AND logical_index_uuid = $2::uuid
+                        AND build_id = $3::uuid"
+                ),
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.logical_index_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["payload_sidecar_relid"]
+                        .value::<pg_sys::Oid>()
+                        .unwrap()
+                        .expect("covered generation must catalog its sidecar heap"),
+                    row["payload_sidecar_directory_relid"]
+                        .value::<pg_sys::Oid>()
+                        .unwrap()
+                        .expect("covered generation must catalog its sidecar index"),
                 )
             })
             .next()
@@ -5501,6 +5588,130 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
     .unwrap()
     .unwrap();
     assert_eq!(live_relation_count, 0);
+}
+
+#[pg_test]
+fn test_distann_cover_sidecar_lifecycle() {
+    let fixture =
+        create_covered_distann_physical_generation_fixture("ec_distann_cover_lifecycle", 0x2c);
+    let (batch_digest, encoded_batch, _) = distann_stage_batch_fixture(&fixture, 0, 0x6c);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    let first = begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+    assert_eq!((first.0.as_str(), first.1, first.2), ("Building", 0, 0));
+
+    let base_relations = distann_generation_relation_oids(&fixture);
+    let sidecar_relations = distann_payload_sidecar_relation_oids(&fixture);
+    let replay = begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+    assert_eq!((replay.0.as_str(), replay.1, replay.2), ("Building", 0, 0));
+    assert_eq!(
+        distann_payload_sidecar_relation_oids(&fixture),
+        sidecar_relations,
+        "begin replay must preserve the cataloged sidecar pair"
+    );
+
+    let immutable_shape = Spi::get_one::<bool>(&format!(
+        "SELECT
+             cover.relkind = 'r'
+             AND cover.relowner = control.relowner
+             AND cover.relpersistence = 'p'
+             AND cover.relnamespace = control.relnamespace
+             AND cover.reltablespace = row_tier.reltablespace
+             AND COALESCE(cover.reloptions, ARRAY[]::text[]) @> ARRAY['fillfactor=100']
+             AND cover_dir.relkind = 'i'
+             AND cover_dir.relowner = control.relowner
+             AND cover_dir.reltablespace = row_tier.reltablespace
+             AND (SELECT count(*) = 3 AND bool_and(attnotnull)
+                    FROM pg_attribute
+                   WHERE attrelid = cover.oid AND attnum > 0 AND NOT attisdropped)
+             AND (SELECT attstorage = 'p' FROM pg_attribute
+                   WHERE attrelid = cover.oid AND attname = 'payload')
+             AND (SELECT indisunique AND indnkeyatts = 1 AND indnatts = 1
+                           AND indkey[0] = 1 AND indpred IS NULL
+                    FROM pg_index WHERE indexrelid = cover_dir.oid)
+           FROM pg_class cover
+           CROSS JOIN pg_class cover_dir
+           CROSS JOIN pg_class control
+           CROSS JOIN pg_class row_tier
+          WHERE cover.oid = {} AND cover_dir.oid = {}
+            AND control.oid = {} AND row_tier.oid = {}",
+        u32::from(sidecar_relations.0),
+        u32::from(sidecar_relations.1),
+        u32::from(fixture.index_oid),
+        u32::from(base_relations.0),
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(immutable_shape, "covered generation relation shape drifted");
+
+    let dependency_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_depend
+          WHERE classid = 'pg_class'::regclass
+            AND objid IN ({}, {})
+            AND refclassid = 'pg_class'::regclass
+            AND refobjid = {} AND deptype = 'i'",
+        u32::from(sidecar_relations.0),
+        u32::from(sidecar_relations.1),
+        u32::from(fixture.index_oid),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(dependency_count, 2);
+
+    stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch);
+    let sidecar_name = canonical_index_locator(sidecar_relations.0);
+    let graph_name = canonical_index_locator(base_relations.1);
+    let stored_shape = Spi::get_one::<bool>(&format!(
+        "SELECT count(*) = 1
+                AND bool_and(octet_length(s.payload) = 17)
+                AND bool_and(get_byte(s.payload, 0) = 0)
+                AND bool_and(s.row_tid = g.row_tid AND s.vec_id = g.vec_id)
+           FROM {sidecar_name} s
+           JOIN {graph_name} g USING (vec_id)
+          WHERE g.is_current"
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(stored_shape, "handoff did not persist one canonical sidecar row");
+
+    let encoded_receipt = seal_distann_physical_generation(&fixture, 1, &owner_digest);
+    assert_eq!(
+        encoded_receipt.len(),
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_MAX_BYTES
+    );
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(&encoded_receipt).unwrap();
+    let sidecar = receipt
+        .payload_sidecar
+        .expect("covered Ready receipt must carry sidecar evidence");
+    assert_eq!(sidecar.row_count, 1);
+    assert_ne!(sidecar.initial_content_digest, [0; 32]);
+    assert!(sidecar.heap_bytes > 0 && sidecar.index_bytes > 0);
+
+    let topology = Spi::get_one::<bool>(&format!(
+        "SELECT payload_sidecar_row_count = 1
+                AND payload_sidecar_content_digest = decode('{}', 'hex')
+                AND payload_sidecar_heap_bytes > 0
+                AND payload_sidecar_index_bytes > 0
+           FROM ec_distann_generation_topology(
+               '{}'::regclass, '{}'::uuid
+           )",
+        hex::encode(sidecar.initial_content_digest),
+        fixture.index_name,
+        fixture.build_id,
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(topology, "topology must expose the physical sidecar evidence");
+
+    abort_distann_physical_generation(&fixture);
+    for relation in [
+        base_relations.0,
+        base_relations.1,
+        base_relations.2,
+        sidecar_relations.0,
+        sidecar_relations.1,
+    ] {
+        assert_eq!(unsafe { pg_sys::get_rel_relkind(relation) }, 0);
+    }
 }
 
 #[pg_test]

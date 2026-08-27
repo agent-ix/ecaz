@@ -61,6 +61,8 @@ pub mod page;
 mod participant_lifecycle;
 mod payload_projection;
 mod payload_sidecar;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::payload_sidecar::resolve_payload_cover as resolve_payload_cover_for_test;
 mod physical_dml;
 pub(crate) mod placement;
 pub(crate) mod quantizer;

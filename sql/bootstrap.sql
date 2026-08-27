@@ -340,6 +340,13 @@ CREATE TABLE ec_distann_generation (
     row_tier_relid oid NOT NULL CHECK (row_tier_relid <> '0'::oid),
     graph_store_relid oid NOT NULL CHECK (graph_store_relid <> '0'::oid),
     directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
+    payload_sidecar_relid oid CHECK (
+        payload_sidecar_relid IS NULL OR payload_sidecar_relid <> '0'::oid
+    ),
+    payload_sidecar_directory_relid oid CHECK (
+        payload_sidecar_directory_relid IS NULL
+        OR payload_sidecar_directory_relid <> '0'::oid
+    ),
     next_batch_seq bigint NOT NULL DEFAULT 0 CHECK (next_batch_seq >= 0),
     cumulative_record_count bigint NOT NULL DEFAULT 0 CHECK (cumulative_record_count >= 0),
     cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
@@ -383,6 +390,10 @@ CREATE TABLE ec_distann_generation (
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CHECK ((cumulative_record_count = 0) = (last_vec_id_le IS NULL)),
+    CHECK (
+        (payload_sidecar_relid IS NULL) =
+        (payload_sidecar_directory_relid IS NULL)
+    ),
     CHECK (state = 'Building' OR next_batch_seq > 0),
     CHECK ((state = 'Building') = (ready_receipt IS NULL)),
     CHECK (
@@ -398,7 +409,9 @@ CREATE TABLE ec_distann_generation (
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (row_tier_relid),
     UNIQUE (graph_store_relid),
-    UNIQUE (directory_relid)
+    UNIQUE (directory_relid),
+    UNIQUE (payload_sidecar_relid),
+    UNIQUE (payload_sidecar_directory_relid)
 );
 
 CREATE UNIQUE INDEX ec_distann_generation_fingerprint_unique
