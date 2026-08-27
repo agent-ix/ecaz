@@ -137,7 +137,7 @@ validity requirements.
 | 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
 | 233 | Hybrid node/columnar generation | proposed — mandatory after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
 | 234 | Read RPC deadline/cancel parity | **complete — outside-reviewed ACCEPT; measured cost accepted** | secure PG18 matrix passes 25/25; recall/storage neutral; matched fixture retires packet 004's apparent win and measures a small cost (+6.80% fresh, +3.19% reuse mean; reuse p50/p95/p99 +2.03%/+0.96%/+1.89%); operator accepts the cost for mandatory safety and directs a separate success-path optimization iteration; Tasks 237 and 228 are unblocked by this disposition |
-| 235 | Write/lifecycle RPC cancellation | bounded transport implemented; packet 002 review-open | DML/intent/transaction-control and lifecycle calls are bounded with failed-session eviction; full-XID coordinator status now decides 2PC recovery; PG18 fault/recovery matrices remain |
+| 235 | Write/lifecycle RPC cancellation | implementation/evidence complete; final review requested | secure 23-cell PG18 fault/recovery matrix and 19/19 focused tests pass; fixed-harness 10k/50k/100k A/B finds no write-throughput regression at the 50k decision scale or corroborating 100k scale; outside verdict remains |
 | 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
 | 237 | Protocol errors and EXPLAIN | ready — 234/236 prerequisites complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 | 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
@@ -169,10 +169,12 @@ The production-transport sequence has Task 238 closeout still open. Task 234's
 secure 25-cell PG18 matrix passes, its 10k/50k/100k A/B is recall/storage
 neutral, and the operator accepted its small measured latency cost for the
 mandatory safety property while directing a separate success-path optimization
-iteration. Task 235's bounded write/lifecycle transport and full-XID
-coordinator-status recovery are now packet-002 review-open; its PG18 phase
-fault matrix and operator-recovery closeout remain. Task 237 owns error/EXPLAIN
-hardening. Task 236 already supplies the accepted TLS substrate.
+iteration. Task 235's bounded write/lifecycle transport, full-XID
+coordinator-status recovery, secure 23-cell PG18 fault/recovery matrix, and
+fixed-harness 10k/50k/100k write-throughput matrix are now complete. The
+preregistered 50k decision scale and corroborating 100k scale show no
+write-throughput regression; final outside disposition remains open. Task 237
+owns error/EXPLAIN hardening. Task 236 already supplies the accepted TLS substrate.
 Task 228 runs only after Tasks 222–237 have reported, so its transport-share
 denominator reflects the selected layout and production
 security/cancellation semantics.

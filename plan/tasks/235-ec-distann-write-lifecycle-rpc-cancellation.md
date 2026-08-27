@@ -1,13 +1,17 @@
 # Task 235: ec_distann Write and Lifecycle RPC Cancellation Hardening
 
-Status: **implementation and secure PG18 evidence complete; packets 003/004
-review-open; outside verdict pending** (updated 2026-08-25). Checkpoint
-`b871d5481` passes the release+`pg_test` verify-full mutual-TLS matrix with 23
-fault/recovery scenarios and 107 records plus 19/19 focused transport tests.
-Packets `reviews/task-235/003-2pc-lifecycle-fault-matrix/` and
-`reviews/task-235/004-operator-recovery-closeout/` contain the clean-head
-evidence and operator disposition. Task 235 is not complete until an outside
-reviewer accepts both packets. Priority: P0 distributed-write
+Status: **implementation and all required PG18 evidence complete; packets
+003/004 final-review requested; outside verdict pending** (updated
+2026-08-26). Checkpoint `b871d5481` passes the release+`pg_test` verify-full
+mutual-TLS matrix with 23 fault/recovery scenarios and 107 records plus 19/19
+focused transport tests. The fixed-harness 10k/50k/100k write-throughput A/B
+at `benchmarks/task235-write-transport-throughput-ab/` finds no regression at
+the preregistered 50k decision scale or corroborating 100k scale; required
+recall, read-latency, storage, and post-insert gates are recorded. Packets
+`reviews/task-235/003-2pc-lifecycle-fault-matrix/` and
+`reviews/task-235/004-operator-recovery-closeout/` contain the review request
+and accepted operator disposition. Task 235 is not complete until an outside
+reviewer supplies the final verdict. Priority: P0 distributed-write
 correctness/recovery.
 
 ## Why
@@ -134,9 +138,16 @@ prepared-slot saturation, and routed tombstone retry. Every case converged to
 the asserted source/owner/intent/prepared/lifecycle state and duplicate
 recovery emitted no actions. Focused transport tests passed 19/19.
 
-This is an implementation/evidence-complete review request, not a completion
-disposition. Acceptance item 4 and task closeout remain pending an outside
-reviewer's verdict on packets 003 and 004.
+The fixed-harness write-throughput matrix is now complete at 10k/50k/100k.
+Candidate physical throughput was 1.011184 / 0.580209 / 0.386153 rows/s versus
+control 0.868135 / 0.507188 / 0.353847. The 50k and 100k directions are faster,
+so no write-throughput regression was observed; no speedup is claimed across
+sequential fresh fixtures. Recall and storage remain neutral within fixture
+resolution and every post-insert exact-recall gate passes.
+
+This is an implementation/evidence-complete final review request, not a
+completion disposition. Acceptance item 4 and task closeout remain pending an
+outside reviewer's verdict on packets 003 and 004.
 
 ## References
 
