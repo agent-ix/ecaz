@@ -90,6 +90,10 @@ pub struct LocalMultinodePg18Args {
     /// pair (for example `pair-a-first` or `pair-a-second`).
     #[arg(long)]
     pub benchmark_position_label: Option<String>,
+    /// Measure single-row replacement and delete latency for Task 229's
+    /// counterbalanced covered/no-cover DML cost gate.
+    #[arg(long, default_value_t = false)]
+    pub task229_dml_benchmark: bool,
     /// Query iterations per latency arm in physical benchmark mode.
     #[arg(long, default_value_t = 5)]
     pub benchmark_iterations: u32,
@@ -3999,6 +4003,122 @@ struct Task167DefaultInsertBaseline {
     backlink_no_room: i64,
 }
 
+const TASK229_DML_SAMPLES: usize = 32;
+
+#[derive(Debug, Clone, Copy)]
+struct Task229DmlLatency {
+    mean_ms: f64,
+    p50_ms: f64,
+    p95_ms: f64,
+    p99_ms: f64,
+    max_ms: f64,
+}
+
+fn task229_dml_latency(samples: &[u128]) -> Result<Task229DmlLatency> {
+    if samples.is_empty() {
+        bail!("Task 229 DML benchmark produced no latency samples");
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let percentile = |numerator: usize| {
+        let rank = (sorted.len() * numerator).div_ceil(100).max(1);
+        sorted[rank.saturating_sub(1)] as f64 / 1_000_000.0
+    };
+    Ok(Task229DmlLatency {
+        mean_ms: sorted.iter().sum::<u128>() as f64 / sorted.len() as f64 / 1_000_000.0,
+        p50_ms: percentile(50),
+        p95_ms: percentile(95),
+        p99_ms: percentile(99),
+        max_ms: *sorted.last().expect("nonempty Task 229 DML samples") as f64 / 1_000_000.0,
+    })
+}
+
+async fn task229_replacement_delete_latency(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    benchmark_position: &str,
+    covered_generation: bool,
+) -> Result<Vec<String>> {
+    let rows = coordinator
+        .query(
+            &format!(
+                "SELECT id, source::text
+                   FROM {physical_corpus}
+                  WHERE id < 1000000
+                  ORDER BY id
+                  OFFSET 512
+                  LIMIT {}",
+                TASK229_DML_SAMPLES * 2
+            ),
+            &[],
+        )
+        .await
+        .wrap_err("selecting Task 229 replacement/delete benchmark rows")?;
+    if rows.len() != TASK229_DML_SAMPLES * 2 {
+        bail!(
+            "Task 229 DML benchmark selected {} rows, expected {}",
+            rows.len(),
+            TASK229_DML_SAMPLES * 2
+        );
+    }
+
+    let mut replacement_samples = Vec::with_capacity(TASK229_DML_SAMPLES);
+    for ordinal in 0..TASK229_DML_SAMPLES {
+        let id = rows[ordinal].get::<_, i64>(0);
+        let replacement_source = rows[ordinal + TASK229_DML_SAMPLES].get::<_, String>(1);
+        let started = Instant::now();
+        let updated = coordinator
+            .execute(
+                &format!(
+                    "UPDATE {physical_corpus}
+                        SET source = ($2::text)::real[],
+                            embedding = encode_to_ecvector(($2::text)::real[], 4, 42)
+                      WHERE id = $1"
+                ),
+                &[&id, &replacement_source],
+            )
+            .await
+            .wrap_err_with(|| format!("Task 229 replacement sample {ordinal}"))?;
+        replacement_samples.push(started.elapsed().as_nanos());
+        if updated != 1 {
+            bail!("Task 229 replacement sample {ordinal} updated {updated} rows");
+        }
+    }
+
+    let mut delete_samples = Vec::with_capacity(TASK229_DML_SAMPLES);
+    for ordinal in 0..TASK229_DML_SAMPLES {
+        let id = rows[ordinal + TASK229_DML_SAMPLES].get::<_, i64>(0);
+        let started = Instant::now();
+        let deleted = coordinator
+            .execute(
+                &format!("DELETE FROM {physical_corpus} WHERE id = $1"),
+                &[&id],
+            )
+            .await
+            .wrap_err_with(|| format!("Task 229 delete sample {ordinal}"))?;
+        delete_samples.push(started.elapsed().as_nanos());
+        if deleted != 1 {
+            bail!("Task 229 delete sample {ordinal} deleted {deleted} rows");
+        }
+    }
+
+    let replacement = task229_dml_latency(&replacement_samples)?;
+    let delete = task229_dml_latency(&delete_samples)?;
+    Ok([
+        ("replacement", replacement),
+        ("delete", delete),
+    ]
+    .into_iter()
+    .map(|(operation, stats)| {
+        format!(
+            "physical_benchmark_dml_latency scale={scale} operation={operation} statements={TASK229_DML_SAMPLES} mean_ms={:.6} p50_ms={:.6} p95_ms={:.6} p99_ms={:.6} max_ms={:.6} benchmark_position={benchmark_position} covered_generation={covered_generation} workload=single_row_routed_statement pass=true",
+            stats.mean_ms, stats.p50_ms, stats.p95_ms, stats.p99_ms, stats.max_ms,
+        )
+    })
+    .collect())
+}
+
 fn task167_insert_trial_items(
     trial: usize,
     rows_per_trial: usize,
@@ -4157,9 +4277,9 @@ async fn task167_default_insert_throughput(
     ));
     let rows = shipped_work;
     let expected_inserts = shipped.inserted_rows as i64;
-    if rows.len() != 8 {
+    if rows.len() != 10 {
         bail!(
-            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
+            "Task 167 physical insert-work snapshot returned {} rows, expected 10",
             rows.len()
         );
     }
@@ -4176,7 +4296,7 @@ async fn task167_default_insert_throughput(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} node=coordinator counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
@@ -4200,6 +4320,87 @@ async fn task167_default_insert_throughput(
             .map(|(value, _)| *value)
             .unwrap_or_default(),
     })
+}
+
+async fn task229_sidecar_insert_topology(
+    coordinator: &tokio_postgres::Client,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    before: &[PhysicalTopologyRow],
+    scale: &str,
+    inserted_rows: usize,
+    covered_generation: bool,
+    benchmark_position: &str,
+) -> Result<Vec<String>> {
+    if nodes.len() != before.len() {
+        bail!(
+            "Task 229 insert topology node mismatch: nodes={} before={}",
+            nodes.len(),
+            before.len()
+        );
+    }
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT encode(epoch_fingerprint, 'hex')
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await
+        .wrap_err("reading Task 229 post-insert epoch fingerprint")?
+        .get::<_, String>(0);
+    let selector = format!(
+        "ec_distann_epoch_topology('public.dm_idx'::regclass, decode('{fingerprint}', 'hex'))"
+    );
+    let mut lines = Vec::with_capacity(nodes.len() + 1);
+    let mut record_delta = 0_i64;
+    let mut row_delta = 0_i64;
+    let mut sidecar_row_delta = 0_i64;
+    let mut sidecar_heap_growth = 0_i64;
+    let mut sidecar_index_growth = 0_i64;
+    for (node, prior) in nodes.iter().zip(before) {
+        let after = physical_topology(psql, socket_dir, node, &selector).await?;
+        if prior.node_id != after.node_id || prior.state != after.state {
+            bail!(
+                "Task 229 insert topology identity changed on node {}: before={prior:?} after={after:?}",
+                node.node_id
+            );
+        }
+        let node_record_delta = after.records - prior.records;
+        let node_row_delta = after.rows - prior.rows;
+        let node_sidecar_row_delta = after.sidecar_rows.max(0) - prior.sidecar_rows.max(0);
+        let node_sidecar_heap_growth =
+            after.sidecar_heap_bytes.max(0) - prior.sidecar_heap_bytes.max(0);
+        let node_sidecar_index_growth =
+            after.sidecar_index_bytes.max(0) - prior.sidecar_index_bytes.max(0);
+        record_delta += node_record_delta;
+        row_delta += node_row_delta;
+        sidecar_row_delta += node_sidecar_row_delta;
+        sidecar_heap_growth += node_sidecar_heap_growth;
+        sidecar_index_growth += node_sidecar_index_growth;
+        lines.push(format!(
+            "physical_benchmark_sidecar_insert_work scale={scale} node={} covered_generation={covered_generation} statements={inserted_rows} record_rows_appended={node_record_delta} row_tier_rows_appended={node_row_delta} sidecar_rows_appended={node_sidecar_row_delta} sidecar_heap_growth_bytes={node_sidecar_heap_growth} sidecar_index_growth_bytes={node_sidecar_index_growth} benchmark_position={benchmark_position} evidence=post_minus_pre_topology pass=true",
+            node.node_id,
+        ));
+    }
+    let inserted_rows = i64::try_from(inserted_rows).unwrap_or(i64::MAX);
+    let pass = record_delta == inserted_rows
+        && row_delta == inserted_rows
+        && if covered_generation {
+            sidecar_row_delta == inserted_rows
+        } else {
+            sidecar_row_delta == 0 && sidecar_heap_growth == 0 && sidecar_index_growth == 0
+        };
+    lines.push(format!(
+        "physical_benchmark_sidecar_insert_work scale={scale} node=cluster covered_generation={covered_generation} statements={inserted_rows} record_rows_appended={record_delta} row_tier_rows_appended={row_delta} sidecar_rows_appended={sidecar_row_delta} sidecar_heap_growth_bytes={sidecar_heap_growth} sidecar_index_growth_bytes={sidecar_index_growth} benchmark_position={benchmark_position} evidence=post_minus_pre_topology remote_owner_work_included=true pass={pass}"
+    ));
+    if !pass {
+        bail!(
+            "Task 229 insert topology mismatch: covered={covered_generation} statements={inserted_rows} records={record_delta} rows={row_delta} sidecar_rows={sidecar_row_delta} sidecar_heap_growth={sidecar_heap_growth} sidecar_index_growth={sidecar_index_growth}"
+        );
+    }
+    Ok(lines)
 }
 
 async fn task167_append_when_room_diagnostic(
@@ -7102,6 +7303,7 @@ async fn run_physical_benchmarks(
     coordinator: &tokio_postgres::Client,
     coordinator_port: u16,
     pg_ctl: &Path,
+    psql: &Path,
     socket_dir: &Path,
     nodes: &[Node],
     published: &[PhysicalTopologyRow],
@@ -8767,7 +8969,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -8793,17 +8995,18 @@ async fn run_physical_benchmarks(
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
             let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
-            if stage_rows.len() != 37 * expected_counter_groups {
+            const DISTANN_STAGE_ROWS: usize = 40;
+            if stage_rows.len() != DISTANN_STAGE_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann stage rows ({} concurrency groups), got {}",
-                    37 * expected_counter_groups,
+                    DISTANN_STAGE_ROWS * expected_counter_groups,
                     expected_counter_groups,
                     stage_rows.len()
                 );
             }
             // Reconcile the first concurrency group; all groups are retained
             // in the packet output below for the latency sweep evidence.
-            let attribution_stage_rows = &stage_rows[..37];
+            let attribution_stage_rows = &stage_rows[..DISTANN_STAGE_ROWS];
             let remote_expand = attribution_stage_mean(attribution_stage_rows, "remote_expand")?;
             let remote_components = [
                 "traversal_connection_ready",
@@ -8851,30 +9054,31 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 33 server-side work metrics
+            // The extension exposes 51 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 34 * expected_counter_groups {
+            const DISTANN_WORK_ROWS: usize = 52;
+            if work_rows.len() != DISTANN_WORK_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    34 * expected_counter_groups,
+                    DISTANN_WORK_ROWS * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -9287,7 +9491,7 @@ async fn run_physical_benchmarks(
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} covering_sidecar={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -9297,6 +9501,7 @@ async fn run_physical_benchmarks(
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
+            variant.covering_sidecar,
         );
         // NFR-018/NFR-021 storage is deliberately measured inside the arm
         // loop.  The owner generation rows are immutable across variants, but
@@ -9308,7 +9513,16 @@ async fn run_physical_benchmarks(
             .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
             .sum::<i64>();
         let owner_row_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
-        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes;
+        let owner_sidecar_heap_bytes = published
+            .iter()
+            .map(|row| row.sidecar_heap_bytes.max(0))
+            .sum::<i64>();
+        let owner_sidecar_index_bytes = published
+            .iter()
+            .map(|row| row.sidecar_index_bytes.max(0))
+            .sum::<i64>();
+        let owner_sidecar_bytes = owner_sidecar_heap_bytes + owner_sidecar_index_bytes;
+        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes + owner_sidecar_bytes;
         let max_owner_graph_side_bytes = published
             .iter()
             .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
@@ -9316,7 +9530,14 @@ async fn run_physical_benchmarks(
             .unwrap_or(0);
         let physical_generation_bytes = published
             .iter()
-            .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
+            .map(|row| {
+                row.graph_bytes
+                    + row.row_bytes
+                    + row.directory_bytes
+                    + row.control_bytes
+                    + row.sidecar_heap_bytes.max(0)
+                    + row.sidecar_index_bytes.max(0)
+            })
             .sum::<i64>();
         let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
         let mut derived_relation_bytes = 0_i64;
@@ -9409,21 +9630,25 @@ async fn run_physical_benchmarks(
         ));
         for row in published {
             let graph_side_bytes = row.graph_bytes + row.directory_bytes + row.control_bytes;
+            let sidecar_heap_bytes = row.sidecar_heap_bytes.max(0);
+            let sidecar_index_bytes = row.sidecar_index_bytes.max(0);
+            let sidecar_bytes = sidecar_heap_bytes + sidecar_index_bytes;
             lines.push(format!(
-                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} total_resident_bytes={} derived_relation_bytes=0",
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
                 row.node_id,
                 row.graph_bytes,
                 row.directory_bytes,
                 row.control_bytes,
                 row.row_bytes,
-                graph_side_bytes + row.row_bytes,
+                row.sidecar_rows.max(0),
+                graph_side_bytes + row.row_bytes + sidecar_bytes,
             ));
         }
         lines.push(format!(
             "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} crown_resident_bytes={crown_resident_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
             published.len(),
         ));
         lines.push(format!(
@@ -9485,6 +9710,22 @@ async fn run_physical_benchmarks(
             &mut lines,
         )
         .await?;
+        if args.task229_dml_benchmark {
+            lines.extend(
+                task229_sidecar_insert_topology(
+                    coordinator,
+                    psql,
+                    socket_dir,
+                    nodes,
+                    published,
+                    scale,
+                    default_insert_baseline.measurement.inserted_rows,
+                    args.covering_payload_attnums.is_some(),
+                    &benchmark_position,
+                )
+                .await?,
+            );
+        }
         let roster = nodes
             .iter()
             .map(|node| {
@@ -9554,6 +9795,18 @@ async fn run_physical_benchmarks(
                 &physical_corpus,
                 &physical_queries,
                 &line_provenance_suffix,
+            )
+            .await?,
+        );
+    }
+    if args.task229_dml_benchmark {
+        lines.extend(
+            task229_replacement_delete_latency(
+                coordinator,
+                scale,
+                &physical_corpus,
+                &benchmark_position,
+                args.covering_payload_attnums.is_some(),
             )
             .await?,
         );
@@ -9918,6 +10171,7 @@ async fn drive_reused_physical_fixture(
             &coordinator,
             nodes[0].port,
             pg_ctl,
+            psql,
             socket_dir,
             owners,
             &published,
@@ -13399,6 +13653,7 @@ async fn drive_physical_fixture(
             &coordinator,
             nodes[0].port,
             pg_ctl,
+            psql,
             socket_dir,
             owners,
             &published,
@@ -17388,6 +17643,16 @@ mod tests {
         for invalid in ["", "pair a", "pair/a", "pair=a"] {
             assert!(canonical_benchmark_position_label(invalid).is_err());
         }
+    }
+
+    #[test]
+    fn task229_dml_latency_uses_nearest_rank_percentiles() {
+        let samples = (1_u128..=100).collect::<Vec<_>>();
+        let stats = task229_dml_latency(&samples).expect("latency summary");
+        assert_eq!(stats.p50_ms, 50.0 / 1_000_000.0);
+        assert_eq!(stats.p95_ms, 95.0 / 1_000_000.0);
+        assert_eq!(stats.p99_ms, 99.0 / 1_000_000.0);
+        assert_eq!(stats.max_ms, 100.0 / 1_000_000.0);
     }
 
     #[test]

@@ -682,6 +682,10 @@ struct DistannLocalMultinodeStep {
     /// Preregistered fresh-build position in a counterbalanced format pair.
     #[serde(default)]
     counterbalance_position: Option<String>,
+    /// Measure Task 229 single-row replacement/delete latency on this fresh
+    /// covered or no-cover fixture.
+    #[serde(default)]
+    task229_dml_benchmark: bool,
     #[serde(default)]
     benchmark_iterations: Option<u32>,
     /// Concurrent latency levels for the physical benchmark throughput curve.
@@ -3609,6 +3613,14 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_insert_work".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_sidecar_insert_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_sidecar_insert_work".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_dml_latency ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_dml_latency".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_paired_recall".into(), values));
@@ -5205,6 +5217,16 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.task229_dml_benchmark
+                    && (!step.physical_benchmark
+                        || step.stage_counter_only
+                        || step.skip_single_control)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} task229_dml_benchmark requires physical_benchmark with the single control enabled",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only && step.materialization_correctness {
                     bail!(
                         "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
@@ -6366,6 +6388,9 @@ fn expand_distann_local_multinode(
         "--benchmark-position-label",
         step.counterbalance_position.as_deref(),
     );
+    if step.task229_dml_benchmark {
+        args.push("--task229-dml-benchmark".into());
+    }
     if step.gateway_trace {
         args.push("--gateway-trace".into());
     }
@@ -7645,6 +7670,23 @@ psql header noise\n\
             Some("false")
         );
         assert_eq!(exact.1.get("pass").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn distann_task229_dml_metrics_are_structured() {
+        let raw = "\
+[distann-multicluster] physical_benchmark_sidecar_insert_work scale=100k node=cluster covered_generation=true statements=160 record_rows_appended=160 row_tier_rows_appended=160 sidecar_rows_appended=160 sidecar_heap_growth_bytes=8192 sidecar_index_growth_bytes=8192 pass=true\n\
+[distann-multicluster] physical_benchmark_dml_latency scale=100k operation=replacement statements=32 mean_ms=4.1 p50_ms=4.0 p95_ms=5.0 p99_ms=5.4 max_ms=5.4 pass=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        for metric in [
+            "physical_benchmark_sidecar_insert_work",
+            "physical_benchmark_dml_latency",
+        ] {
+            assert!(
+                rows.iter().any(|(candidate, _)| candidate == metric),
+                "missing Task 229 metric {metric}: {rows:?}"
+            );
+        }
     }
 
     #[test]
@@ -9329,7 +9371,7 @@ psql header noise\n\
 
         let raw = raw.replace(
             "\"physical_benchmark\": true,",
-            "\"physical_benchmark\": true,\n            \"covering_payload_attnums\": \"1\",\n            \"counterbalance_position\": \"pair-a-first\",",
+            "\"physical_benchmark\": true,\n            \"covering_payload_attnums\": \"1\",\n            \"counterbalance_position\": \"pair-a-first\",\n            \"task229_dml_benchmark\": true,",
         );
         let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
         validate_config(&config).expect("isolated covering pair validates");
@@ -9342,6 +9384,7 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--benchmark-position-label", "pair-a-first"]));
+        assert!(command.contains(&"--task229-dml-benchmark".into()));
         for expected in [
             "row-tier:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:off",
             "covered:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
