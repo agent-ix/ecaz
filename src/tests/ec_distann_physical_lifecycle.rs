@@ -3561,6 +3561,18 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                ) participant",
         )
         .expect("three physical owner controls should create and register");
+    if projection_contract_only {
+        client
+            .batch_execute(
+                "ALTER INDEX ec_distann_rh_idx
+                     SET (covering_payload_attnums = '1');
+                 ALTER INDEX ec_distann_rh_owner2_idx
+                     SET (covering_payload_attnums = '1');
+                 ALTER INDEX ec_distann_rh_owner3_idx
+                     SET (covering_payload_attnums = '1');",
+            )
+            .expect("payload projection fixture should opt every owner into the UUID cover");
+    }
 
     let build_id = "49494949-4949-4949-8949-494949494949";
     client
@@ -3718,6 +3730,25 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
     assert!(published_states
         .iter()
         .all(|row| row.get::<_, String>(0) == "Published"));
+    if projection_contract_only {
+        assert_eq!(
+            client
+                .query_one(
+                    &format!(
+                        "SELECT count(*)
+                           FROM ec_distann_generation
+                          WHERE build_id = '{published_build}'::uuid
+                            AND payload_sidecar_relid IS NOT NULL
+                            AND payload_sidecar_directory_relid IS NOT NULL"
+                    ),
+                    &[],
+                )
+                .expect("covered participant topology should be inspectable")
+                .get::<_, i64>(0),
+            3,
+            "every participant generation must publish its owner-local sidecar"
+        );
+    }
     assert_eq!(
         client
             .query_one(
@@ -3788,6 +3819,26 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
         !plan.contains("Sort"),
         "the ordering-only exclusion proof requires no upper Sort consumer: {plan}"
     );
+    if projection_contract_only {
+        let analyzed = client
+            .query(
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF, FORMAT TEXT)
+                 SELECT source_id
+                   FROM ec_distann_rh_source
+                  ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+                  LIMIT 5",
+                &[],
+            )
+            .expect("covered id-only projection should execute")
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            analyzed.contains("Payload Source: sidecar"),
+            "exact covered projection must select the sidecar: {analyzed}"
+        );
+    }
 
     let literal_short_ids = client
         .query(

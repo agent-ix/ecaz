@@ -2294,13 +2294,12 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
+        prefer_payload_sidecar: bool,
         use_cached_payload_plan: bool,
         use_typed_locator: bool,
         use_packed_payload: bool,
         owner_heap_tids: Option<&[ItemPointer]>,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
-        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-        let _ = owner_heap_tids;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
         let expected: [u8; 32] = expected_schema_fingerprint.try_into().map_err(|_| {
@@ -2330,6 +2329,7 @@ impl RetainedGenerationScan {
         let mut columns = Vec::with_capacity(projection_attnums.len());
         let mut sends = Vec::with_capacity(projection_attnums.len());
         let mut seen = std::collections::HashSet::with_capacity(projection_attnums.len());
+        let mut canonical_attnums = Vec::with_capacity(projection_attnums.len());
         for requested in projection_attnums {
             let attnum = u16::try_from(*requested).map_err(|_| {
                 DistannExpandError::BadInput(
@@ -2353,12 +2353,32 @@ impl RetainedGenerationScan {
                 })?;
             columns.push(attribute.name.clone());
             sends.push(attribute.send_function.clone());
+            canonical_attnums.push(attnum);
+        }
+        if prefer_payload_sidecar {
+            let cover = self.descriptor.payload_cover().ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "payload sidecar was selected for a generation without a cover descriptor"
+                        .to_owned(),
+                )
+            })?;
+            cover
+                .validate_row_schema(&resolved_schema.descriptor)
+                .map_err(DistannExpandError::GenerationMissing)?;
+            if !cover
+                .covers_projection(&canonical_attnums)
+                .map_err(DistannExpandError::BadInput)?
+            {
+                return Err(DistannExpandError::BadInput(
+                    "requested payload projection is not covered by the retained generation"
+                        .to_owned(),
+                ));
+            }
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_ns = duration_ns(validate_started.elapsed());
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let lookup_started = Instant::now();
-        #[cfg(feature = "distann-head-attribution-benchmark")]
         let nodes = if let Some(owner_heap_tids) = owner_heap_tids {
             if owner_heap_tids.len() != vec_ids.len() {
                 return Err(DistannExpandError::BadInput(
@@ -2385,8 +2405,6 @@ impl RetainedGenerationScan {
         } else {
             self.resolve_nodes(vec_ids)?
         };
-        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-        let nodes = self.resolve_nodes(vec_ids)?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let node_lookup_ns = if owner_heap_tids.is_some() {
             0
@@ -2396,6 +2414,33 @@ impl RetainedGenerationScan {
         if nodes.is_empty() {
             return Ok(PhysicalPayloadBatch {
                 rows: Vec::new(),
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                telemetry: OwnerMaterializationTelemetry {
+                    validate_ns,
+                    node_lookup_ns,
+                    payload_sql_ns: 0,
+                },
+            });
+        }
+        if prefer_payload_sidecar {
+            let payloads = self.materialize_sidecar_payloads(&nodes, &canonical_attnums)?;
+            let rows = nodes
+                .into_iter()
+                .zip(payloads)
+                .map(|(node, payload)| {
+                    let (missing, nulls, offsets, values) = payload;
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.tombstoned,
+                        missing,
+                        nulls,
+                        offsets,
+                        values,
+                    )
+                })
+                .collect();
+            return Ok(PhysicalPayloadBatch {
+                rows,
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 telemetry: OwnerMaterializationTelemetry {
                     validate_ns,
@@ -2637,6 +2682,200 @@ impl RetainedGenerationScan {
             },
         })
     }
+
+    fn materialize_sidecar_payloads(
+        &self,
+        nodes: &[DistannNodeTuple],
+        projection_attnums: &[u16],
+    ) -> Result<Vec<(bool, Vec<bool>, Vec<i64>, Vec<u8>)>, DistannExpandError> {
+        let cover = self.descriptor.payload_cover().ok_or_else(|| {
+            DistannExpandError::GenerationMissing(
+                "payload sidecar selection lost its cover descriptor".to_owned(),
+            )
+        })?;
+        let sidecar_relid = self.generation.payload_sidecar_relid.ok_or_else(|| {
+            DistannExpandError::GenerationMissing(
+                "covered generation is missing its payload sidecar relation".to_owned(),
+            )
+        })?;
+        let directory_relid = self
+            .generation
+            .payload_sidecar_directory_relid
+            .ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "covered generation is missing its payload sidecar directory".to_owned(),
+                )
+            })?;
+        let _sidecar_relation =
+            HeapRelationGuard::try_access_share(sidecar_relid).ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "covered generation payload sidecar relation is absent".to_owned(),
+                )
+            })?;
+        let _sidecar_directory =
+            IndexRelationGuard::try_access_share(directory_relid).ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "covered generation payload sidecar directory is absent".to_owned(),
+                )
+            })?;
+        let sidecar_name = super::handoff::qualified_relation_name(sidecar_relid)
+            .map_err(DistannExpandError::GenerationMissing)?;
+        let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
+            .map_err(DistannExpandError::GenerationMissing)?;
+        let tids = nodes
+            .iter()
+            .map(|node| {
+                let mut tid = pg_sys::ItemPointerData::default();
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut tid,
+                    node.heap_tid.block_number,
+                    node.heap_tid.offset_number,
+                );
+                tid
+            })
+            .collect::<Vec<_>>();
+        let vec_ids = nodes
+            .iter()
+            .map(|node| i64::from_le_bytes(node.vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let sql = format!(
+            "SELECT request.row_tid AS requested_row_tid,
+                    request.vec_id AS requested_vec_id,
+                    sidecar.row_tid AS sidecar_row_tid,
+                    sidecar.vec_id AS sidecar_vec_id,
+                    sidecar.payload AS sidecar_payload,
+                    row_tier.ctid IS NOT NULL AS row_tier_visible
+               FROM unnest($1::tid[], $2::bigint[]) WITH ORDINALITY
+                    AS request(row_tid, vec_id, ordinality)
+               LEFT JOIN {sidecar_name} AS sidecar
+                 ON sidecar.row_tid = request.row_tid
+               LEFT JOIN {row_name} AS row_tier
+                 ON row_tier.ctid = request.row_tid
+              ORDER BY request.ordinality"
+        );
+        let rows = Spi::connect(|client| {
+            client
+                .select(&sql, None, &[tids.clone().into(), vec_ids.clone().into()])
+                .map_err(|error| {
+                    DistannExpandError::Internal(format!(
+                        "payload sidecar batch lookup failed: {error}"
+                    ))
+                })?
+                .map(|row| {
+                    let requested_tid = row["requested_row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "payload sidecar requested TID decode failed: {error}"
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            DistannExpandError::Internal(
+                                "payload sidecar requested TID is NULL".to_owned(),
+                            )
+                        })?;
+                    let requested_vec_id = row["requested_vec_id"]
+                        .value::<i64>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "payload sidecar requested vec_id decode failed: {error}"
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            DistannExpandError::Internal(
+                                "payload sidecar requested vec_id is NULL".to_owned(),
+                            )
+                        })?;
+                    let sidecar_tid = row["sidecar_row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "payload sidecar echoed TID decode failed: {error}"
+                            ))
+                        })?;
+                    let sidecar_vec_id = row["sidecar_vec_id"].value::<i64>().map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "payload sidecar echoed vec_id decode failed: {error}"
+                        ))
+                    })?;
+                    let payload = row["sidecar_payload"].value::<Vec<u8>>().map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "payload sidecar bytes decode failed: {error}"
+                        ))
+                    })?;
+                    let row_tier_visible = row["row_tier_visible"]
+                        .value::<bool>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "payload sidecar row-tier visibility decode failed: {error}"
+                            ))
+                        })?
+                        .unwrap_or(false);
+                    Ok::<_, DistannExpandError>((
+                        requested_tid,
+                        requested_vec_id,
+                        sidecar_tid,
+                        sidecar_vec_id,
+                        payload,
+                        row_tier_visible,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        if rows.len() != nodes.len() {
+            return Err(DistannExpandError::Internal(
+                "payload sidecar response count mismatch".to_owned(),
+            ));
+        }
+        nodes
+            .iter()
+            .zip(rows)
+            .map(|(node, row)| {
+                let (
+                    requested_tid,
+                    requested_vec_id,
+                    sidecar_tid,
+                    sidecar_vec_id,
+                    payload,
+                    row_tier_visible,
+                ) = row;
+                let requested = pgrx::itemptr::item_pointer_get_both(requested_tid);
+                if requested != (node.heap_tid.block_number, node.heap_tid.offset_number)
+                    || u64::from_le_bytes(requested_vec_id.to_le_bytes()) != node.vec_id
+                {
+                    return Err(DistannExpandError::Internal(
+                        "payload sidecar request identity echo mismatch".to_owned(),
+                    ));
+                }
+                match (sidecar_tid, sidecar_vec_id, payload) {
+                    (Some(sidecar_tid), Some(sidecar_vec_id), Some(payload)) => {
+                        let echoed = pgrx::itemptr::item_pointer_get_both(sidecar_tid);
+                        if echoed != requested
+                            || u64::from_le_bytes(sidecar_vec_id.to_le_bytes()) != node.vec_id
+                        {
+                            return Err(DistannExpandError::Internal(
+                                "payload sidecar stored identity echo mismatch".to_owned(),
+                            ));
+                        }
+                        let (nulls, offsets, values) = cover
+                            .project_payload(&payload, projection_attnums)
+                            .map_err(DistannExpandError::GenerationMissing)?;
+                        Ok((false, nulls, offsets, values))
+                    }
+                    (None, None, None) if !row_tier_visible => {
+                        Ok((true, Vec::new(), Vec::new(), Vec::new()))
+                    }
+                    (None, None, None) => Err(DistannExpandError::GenerationMissing(format!(
+                        "visible row-tier tuple ({},{}) has no payload sidecar entry",
+                        node.heap_tid.block_number, node.heap_tid.offset_number
+                    ))),
+                    _ => Err(DistannExpandError::GenerationMissing(
+                        "payload sidecar row has an incomplete stored identity".to_owned(),
+                    )),
+                }
+            })
+            .collect()
+    }
 }
 
 /// PG18 lifecycle-test surface for Tasks 192/195. This takes the exact
@@ -2656,7 +2895,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false, false, None)
+        .materialize_payloads(&[], &[], &expected, false, false, false, false, None)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -4547,6 +4786,7 @@ fn ec_distann_materialize_physical_row_payloads(
     vec_ids: Vec<i64>,
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
+    prefer_payload_sidecar: bool,
 ) -> TableIterator<
     'static,
     (
@@ -4568,6 +4808,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 &ids,
                 &projection_attnums,
                 &expected_schema_fingerprint,
+                prefer_payload_sidecar,
                 false,
                 false,
                 false,
@@ -4609,6 +4850,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     vec_ids: Vec<i64>,
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
+    prefer_payload_sidecar: bool,
     use_cached_payload_plan: bool,
     use_typed_locator: bool,
     use_packed_payload: bool,
@@ -4674,6 +4916,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             &ids,
             &projection_attnums,
             &expected_schema_fingerprint,
+            prefer_payload_sidecar,
             use_cached_payload_plan,
             use_typed_locator,
             use_packed_payload,
@@ -6038,13 +6281,18 @@ impl PhysicalGenerationScan {
         &self,
         hits: &[DistannScanHit],
         projection_attnums: &[pg_sys::AttrNumber],
+        prefer_payload_sidecar: bool,
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
         let remote_pairs = hits
             .iter()
             .filter(|hit| hit.heap_tid == ItemPointer::INVALID)
             .map(|hit| (hit.vec_id, hit.owner_heap_tid))
             .collect::<Vec<_>>();
-        self.materialize_remote_payload_pairs(&remote_pairs, projection_attnums)
+        self.materialize_remote_payload_pairs(
+            &remote_pairs,
+            projection_attnums,
+            prefer_payload_sidecar,
+        )
     }
 
     /// Materialize an already-ranked subset of remote physical identities.
@@ -6061,13 +6309,14 @@ impl PhysicalGenerationScan {
             .copied()
             .map(|vec_id| (vec_id, ItemPointer::INVALID))
             .collect::<Vec<_>>();
-        self.materialize_remote_payload_pairs(&remote_pairs, projection_attnums)
+        self.materialize_remote_payload_pairs(&remote_pairs, projection_attnums, false)
     }
 
     pub(crate) fn materialize_remote_payload_pairs(
         &self,
         remote_pairs: &[(u64, ItemPointer)],
         projection_attnums: &[pg_sys::AttrNumber],
+        prefer_payload_sidecar: bool,
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
         let remote_ids = remote_pairs
             .iter()
@@ -6142,6 +6391,7 @@ impl PhysicalGenerationScan {
                     vec_ids: ids,
                     projection_attnums: &projection_attnums,
                     expected_schema_fingerprint: &schema_fingerprint,
+                    prefer_payload_sidecar,
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_cached_payload_plan:
                         super::options::benchmark_owner_payload_plan_cache(),
@@ -6205,9 +6455,12 @@ impl PhysicalGenerationScan {
                     ));
                 }
                 if payload.tuple_payload_missing {
-                    return Err(format!(
-                        "EC_GENERATION_MISSING: physical owner {ordinal} has no row-tier payload for vec_id {requested}"
-                    ));
+                    // The exact row version disappeared between traversal and
+                    // materialization under the request snapshot. The owner
+                    // already probed the same row-tier TID; both payload
+                    // stores being invisible is the established remote skip
+                    // contract, not structural corruption.
+                    continue;
                 }
                 if payload.is_tombstone {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -6237,6 +6490,85 @@ impl PhysicalGenerationScan {
             super::stage_counters::DistannQueryStage::MaterializeMapInsert,
             map_started.elapsed(),
         );
+        Ok(payloads)
+    }
+
+    pub(crate) fn payload_sidecar_covers(
+        &self,
+        projection_attnums: &[pg_sys::AttrNumber],
+    ) -> Result<bool, String> {
+        let Some(cover) = self.descriptor.payload_cover() else {
+            return Ok(false);
+        };
+        cover.validate_row_schema(&self.descriptor.row_schema)?;
+        let attnums = projection_attnums
+            .iter()
+            .map(|attnum| {
+                u16::try_from(i32::from(*attnum)).map_err(|_| {
+                    "EC_SCHEMA_MISMATCH: payload projection attnum is out of range".to_owned()
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        cover.covers_projection(&attnums)
+    }
+
+    pub(crate) fn materialize_local_sidecar_pairs(
+        &self,
+        local_pairs: &[(u64, ItemPointer)],
+        projection_attnums: &[pg_sys::AttrNumber],
+    ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        let ids = local_pairs
+            .iter()
+            .map(|(vec_id, _)| *vec_id)
+            .collect::<Vec<_>>();
+        let tids = local_pairs
+            .iter()
+            .map(|(_, row_tid)| *row_tid)
+            .collect::<Vec<_>>();
+        if tids.iter().any(|tid| *tid == ItemPointer::INVALID) {
+            return Err("EC_INTERNAL: local sidecar locator contains an invalid TID".to_owned());
+        }
+        let projection = projection_attnums
+            .iter()
+            .map(|attnum| i16::try_from(i32::from(*attnum)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "EC_SCHEMA_MISMATCH: projection attnum exceeds smallint".to_owned())?;
+        let schema_fingerprint = self.descriptor.row_schema.fingerprint()?;
+        let mut owner = RetainedGenerationScan::open(self.index_oid, &self.fingerprint)
+            .map_err(|error| error.to_string())?;
+        let batch = owner
+            .materialize_payloads(
+                &ids,
+                &projection,
+                &schema_fingerprint,
+                true,
+                false,
+                true,
+                true,
+                Some(&tids),
+            )
+            .map_err(|error| error.to_string())?;
+        if batch.rows.len() != ids.len() {
+            return Err("EC_INTERNAL: local sidecar response count mismatch".to_owned());
+        }
+        let mut payloads = HashMap::with_capacity(ids.len());
+        for (requested, row) in ids.into_iter().zip(batch.rows) {
+            let vec_id = u64::from_le_bytes(row.0.to_le_bytes());
+            if vec_id != requested {
+                return Err("EC_INTERNAL: local sidecar did not preserve request order".to_owned());
+            }
+            if row.2 || row.1 {
+                continue;
+            }
+            payloads.insert(
+                vec_id,
+                PhysicalRemotePayload {
+                    payload_nulls: row.3,
+                    payload_offsets: row.4,
+                    payload_values: row.5,
+                },
+            );
+        }
         Ok(payloads)
     }
 }

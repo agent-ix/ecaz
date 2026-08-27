@@ -1229,7 +1229,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
     )
 }
 
-#[cfg(feature = "pg_test")]
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn insert_from_owner_payload_for_test(
     index_oid: pg_sys::Oid,
     epoch_fingerprint: [u8; 34],

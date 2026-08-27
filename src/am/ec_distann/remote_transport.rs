@@ -2264,7 +2264,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         payload_nulls, payload_offsets, payload_values
    FROM ec_distann_materialize_row_payloads(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea)";
+       $4::smallint[], $5::bytea, $6::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
@@ -2273,7 +2273,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
-       $9::bigint[], $10::integer[], $11::boolean)";
+       $9::boolean, $10::bigint[], $11::integer[], $12::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -3210,6 +3210,7 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) vec_ids: &'a [u64],
     pub(crate) projection_attnums: &'a [i16],
     pub(crate) expected_schema_fingerprint: &'a [u8],
+    pub(crate) prefer_payload_sidecar: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_cached_payload_plan: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -3385,6 +3386,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_ids,
                     &request.projection_attnums,
                     &request.expected_schema_fingerprint,
+                    &request.prefer_payload_sidecar,
                 ],
             )
             .await;
@@ -3415,6 +3417,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_ids,
                     &request.projection_attnums,
                     &request.expected_schema_fingerprint,
+                    &request.prefer_payload_sidecar,
                     &request.use_cached_payload_plan,
                     &request.use_typed_locator,
                     &request.use_packed_payload,
