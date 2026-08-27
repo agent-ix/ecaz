@@ -1,20 +1,20 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **implementation/evidence complete; packet 005 outside-reviewed NOT
-DONE pending an explicit product ruling on the measured latency cost**
-(2026-08-26). The secure PG18 matrix passes 25/25 cells with no partial rows or
-leaked remote work, and the accepted 10k/50k/100k recall/storage findings are
-unchanged. Reviewer-requested matched-fixture measurements retire packet 004's
--6.37% apparent win: the candidate is slower at both positions (+6.80% fresh,
-+3.19% reuse mean), with reuse p50/p95/p99 +2.03%/+0.96%/+1.89%. The fixture
-cannot resolve the exact magnitude, but all eight indicators record a small
-cost in the mechanism-consistent direction. Coder recommendation: ACCEPT the
-cost for the P0 correctness property; product ACCEPT/REJECT remains required.
-Evidence:
+Status: **complete — outside-reviewed ACCEPT; operator accepts the measured
+latency cost for mandatory bounded/cancellable read correctness** (2026-08-26).
+The secure PG18 matrix passes 25/25 cells with no partial rows or leaked remote
+work, and the accepted 10k/50k/100k recall/storage findings are unchanged.
+Reviewer-requested matched-fixture measurements retire packet 004's -6.37%
+apparent win: the candidate is slower at both positions (+6.80% fresh, +3.19%
+reuse mean), with reuse p50/p95/p99 +2.03%/+0.96%/+1.89%. The fixture cannot
+resolve the exact magnitude, but all eight indicators record a small cost in
+the mechanism-consistent direction. The operator accepts that cost now and
+directs a separate success-path optimization iteration; that follow-up does not
+reopen or block this safety closeout. Evidence:
 `reviews/task-234/004-current-tls-reintegration/feedback/2026-08-25-01-reviewer.md`,
 `reviews/task-234/005-50k-reuse-drift-bound/`, and
 `benchmarks/task234-current-tls-read-rpc-cancellation-ab/`. Task 237 and Task
-228 stay blocked on the outside disposition.
+228 are unblocked by this disposition, subject to their remaining prerequisites.
 Priority: P0 distributed-read correctness/operations.
 
 ## Why

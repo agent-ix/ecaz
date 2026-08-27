@@ -47,8 +47,9 @@ updated `manifest.md`, the two `suite-manifest-*-drift-v2.json` files, the two
 `suite-results-*-drift-v2.jsonl` files, and the four seed/repeat summaries and
 latency logs under `artifacts/run/`.
 
-Please record an explicit product ACCEPT/REJECT ruling on the measured cost and
-then record the final Task 234 disposition. The coder recommendation is ACCEPT:
-the P0 deadline/cancellation property is worth the small cost, whose exact
-magnitude is not separable from fixture drift and is well below the historical
-+7.1% screened result. This is a cost acceptance, not a parity or speedup claim.
+The operator ACCEPT ruling is now recorded in
+`feedback/2026-08-26-03-operator.md`: the P0 deadline/cancellation property is
+required and the small measured cost is accepted for this closeout. The ruling
+also directs a separate success-path optimization iteration; that work does not
+reopen or block Task 234. This remains a cost acceptance, not a parity or
+speedup claim.
