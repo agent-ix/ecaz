@@ -1,0 +1,16 @@
+Script started on 2026-08-24 11:25:02-07:00 [<not executed on terminal>]
+206:        await_remote_read(client, client.query(sql, params)).await,
+285:        client.query_one(
+317:        client.query(sql, params),
+341:        client.query_one(sql, params),
+363:        await_remote_read(client, client.query(statement, params)).await,
+371:    match await_remote_read(client, client.prepare(sql)).await {
+535:        client.query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2]),
+1105:                client.query_one(
+1244:                client.query_one(
+1331:                client.query_one(
+1457:        .query(
+1854:            client.query(
+2040:            client.query(
+
+Script done on 2026-08-24 11:25:02-07:00 [COMMAND_EXIT_CODE="0"]

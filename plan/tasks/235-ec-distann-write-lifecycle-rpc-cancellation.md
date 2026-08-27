@@ -1,8 +1,20 @@
 # Task 235: ec_distann Write and Lifecycle RPC Cancellation Hardening
 
-Status: **proposed — Task 167 is review-closed; ready before Task 228**
-(updated 2026-08-25).
-Priority: P0 distributed-write correctness/recovery.
+Status: **complete — outside-reviewed ACCEPT** (updated 2026-08-27).
+Checkpoint `b871d5481` passes the release+`pg_test` verify-full
+mutual-TLS matrix with 23 fault/recovery scenarios and 107 records plus 19/19
+focused transport tests. The fixed-harness 10k/50k/100k write-throughput A/B
+at `benchmarks/task235-write-transport-throughput-ab/` finds no regression at
+the preregistered 50k decision scale or corroborating 100k scale; required
+recall, read-latency, storage, and post-insert gates are recorded. Packets
+`reviews/task-235/003-2pc-lifecycle-fault-matrix/` and
+`reviews/task-235/004-operator-recovery-closeout/` are review-closed, as is
+packet 005's suite cleanup. Final verdict:
+`reviews/task-235/003-2pc-lifecycle-fault-matrix/feedback/2026-08-27-01-reviewer.md`.
+Carried non-blocking follow-up: the prepared-slot readiness hint depends on an
+English message substring under SQLSTATE 53200 and may be absent under a
+non-English `lc_messages`; this is cosmetic and does not affect recovery
+correctness. Priority: P0 distributed-write correctness/recovery.
 
 ## Why
 
@@ -109,10 +121,41 @@ deterministic recovery action for every uncertain phase.
 3. `reviews/task-235/003-2pc-lifecycle-fault-matrix/`
 4. `reviews/task-235/004-operator-recovery-closeout/`
 
+## Current checkpoint (2026-08-25)
+
+Packets 003 and 004 are review-open at `b871d5481` on the Task 234 current-TLS
+substrate. All async write/lifecycle statements share the bounded deadline,
+PostgreSQL interrupt, CancelRequest, outcome taxonomy, and mandatory-eviction
+contract. Blocking commit/abort callbacks and the explicit reaper carry
+connect, statement, and TCP user timeouts. Recovery follows the coordinator's
+epoch-qualified full xid and `pg_xact_status`; unavailable status stops with
+`operator_required` and never guesses from intent state or age.
+
+The final three-node PG18 release+`pg_test` matrix uses verify-full mutual TLS,
+client certificates, and plaintext rejection. It passed exactly 23 scenarios:
+eight lifecycle replay boundaries, one status-unavailable operator STOP, and
+fourteen write/recovery cells covering mutation, prepare, commit/rollback,
+coordinator/owner death and restart, partial completion, missing intent,
+prepared-slot saturation, and routed tombstone retry. Every case converged to
+the asserted source/owner/intent/prepared/lifecycle state and duplicate
+recovery emitted no actions. Focused transport tests passed 19/19.
+
+The fixed-harness write-throughput matrix is now complete at 10k/50k/100k.
+Candidate physical throughput was 1.011184 / 0.580209 / 0.386153 rows/s versus
+control 0.868135 / 0.507188 / 0.353847. The 50k and 100k directions are faster,
+so no write-throughput regression was observed; no speedup is claimed across
+sequential fresh fixtures. Recall and storage remain neutral within fixture
+resolution and every post-insert exact-recall gate passes.
+
+The outside reviewer independently recomputed the 50k/100k trial means, CVs,
+and confidence intervals; verified that control and candidate are genuinely
+different extension source while all measurement settings match; accepted the
+non-inferiority disposition; and review-closed packets 003, 004, and 005.
+Task 235 is complete.
+
 ## References
 
 - FR-078, FR-082, FR-083, FR-087
 - NFR-014 and NFR-020
 - Tasks 167, 179, 214, 228, 234, and 236
 - `src/am/ec_distann/remote_transport.rs`
-

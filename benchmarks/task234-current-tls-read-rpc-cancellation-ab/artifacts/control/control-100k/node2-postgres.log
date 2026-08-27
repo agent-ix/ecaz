@@ -1,0 +1,38 @@
+2026-08-25 10:30:38.919 PDT [134348] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:30:38.932 PDT [134348] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:30:38.933 PDT [134348] LOG:  listening on IPv4 address "127.0.0.1", port 44451
+2026-08-25 10:30:38.937 PDT [134348] LOG:  listening on IPv4 address "127.0.0.2", port 44451
+2026-08-25 10:30:38.943 PDT [134355] LOG:  database system was shut down at 2026-08-25 10:30:37 PDT
+2026-08-25 10:30:38.956 PDT [134348] LOG:  database system is ready to accept connections
+2026-08-25 10:35:58.944 PDT [134353] LOG:  checkpoint starting: time
+2026-08-25 10:36:52.327 PDT [134353] LOG:  checkpoint complete: wrote 493 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=53.274 s, sync=0.075 s, total=53.384 s; sync files=276, longest=0.010 s, average=0.001 s; distance=4088 kB, estimate=4088 kB; lsn=0/1B52630, redo lsn=0/1B525A0
+2026-08-25 10:41:10.014 PDT [134353] LOG:  checkpoint starting: time
+2026-08-25 10:41:38.423 PDT [167461] ERROR:  canceling autovacuum task
+2026-08-25 10:41:38.423 PDT [167461] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17792_71717171717141718171717171717171"
+2026-08-25 10:41:38.425 PDT [167461] LOG:  skipping vacuum of "_ecdz_graph_17792_71717171717141718171717171717171" --- lock not available
+2026-08-25 10:42:15.847 PDT [134353] LOG:  checkpoint complete: wrote 1162 buffers (7.1%), wrote 1 SLRU buffers; 1 WAL file(s) added, 4 removed, 0 recycled; write=65.610 s, sync=0.136 s, total=65.833 s; sync files=54, longest=0.036 s, average=0.003 s; distance=55768 kB, estimate=55768 kB; lsn=0/22D51028, redo lsn=0/51C88E8
+2026-08-25 10:42:21.868 PDT [134353] LOG:  checkpoint starting: wal
+2026-08-25 10:42:41.246 PDT [168480] LOG:  skipping analyze of "_ecdz_row_17792_71717171717141718171717171717171" --- lock not available
+2026-08-25 10:42:41.262 PDT [168480] LOG:  skipping analyze of "_ecdz_graph_17792_71717171717141718171717171717171" --- lock not available
+2026-08-25 10:44:01.998 PDT [170915] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:44:01.998 PDT [170915] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:44:22.884 PDT [172399] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:44:22.884 PDT [172399] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:27.473 PDT [181339] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:46:27.473 PDT [181339] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:34.615 PDT [181739] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:46:34.615 PDT [181739] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:41.221 PDT [182029] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:46:41.221 PDT [182029] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:44.613 PDT [134353] LOG:  checkpoint complete: wrote 291 buffers (1.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=262.062 s, sync=0.219 s, total=262.746 s; sync files=41, longest=0.124 s, average=0.006 s; distance=541804 kB, estimate=541804 kB; lsn=0/40122890, redo lsn=0/262E39D0
+2026-08-25 10:46:47.858 PDT [182223] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:46:47.858 PDT [182223] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:47.875 PDT [162862] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:46:47.875 PDT [162862] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:46:48.499 PDT [134348] LOG:  received fast shutdown request
+2026-08-25 10:46:48.516 PDT [134348] LOG:  aborting any active transactions
+2026-08-25 10:46:48.518 PDT [134348] LOG:  background worker "logical replication launcher" (PID 134358) exited with exit code 1
+2026-08-25 10:46:48.521 PDT [134353] LOG:  shutting down
+2026-08-25 10:46:48.527 PDT [134353] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:46:48.650 PDT [134353] LOG:  checkpoint complete: wrote 24 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 26 recycled; write=0.004 s, sync=0.011 s, total=0.129 s; sync files=16, longest=0.006 s, average=0.001 s; distance=424187 kB, estimate=530042 kB; lsn=0/40122940, redo lsn=0/40122940
+2026-08-25 10:46:48.679 PDT [134348] LOG:  database system is shut down

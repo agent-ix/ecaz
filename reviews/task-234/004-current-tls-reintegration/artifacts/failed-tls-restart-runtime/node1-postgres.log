@@ -1,0 +1,31 @@
+2026-08-25 10:08:43.448 PDT [106404] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:08:43.461 PDT [106404] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:08:43.461 PDT [106404] LOG:  listening on IPv4 address "127.0.0.1", port 44320
+2026-08-25 10:08:43.466 PDT [106404] LOG:  listening on IPv4 address "127.0.0.2", port 44320
+2026-08-25 10:08:43.471 PDT [106410] LOG:  database system was shut down at 2026-08-25 10:08:40 PDT
+2026-08-25 10:08:43.481 PDT [106404] LOG:  database system is ready to accept connections
+2026-08-25 10:08:45.759 PDT [106516] ERROR:  [EC_REMOTE_STATEMENT_TIMEOUT] ec_distann remote physical head search failed: canceling statement due to statement timeout
+2026-08-25 10:08:45.759 PDT [106516] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:45.858 PDT [106525] ERROR:  canceling statement due to user request
+2026-08-25 10:08:45.858 PDT [106525] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:46.439 PDT [106542] ERROR:  canceling statement due to statement timeout
+2026-08-25 10:08:46.439 PDT [106542] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:46.552 PDT [106555] ERROR:  [EC_REMOTE_BACKEND_TERMINATED] ec_distann remote physical head search failed: terminating connection due to administrator command
+2026-08-25 10:08:46.552 PDT [106555] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:46.670 PDT [106567] ERROR:  [EC_REMOTE_TRANSPORT_RESET] ec_distann remote physical head search transport failed: connection closed
+2026-08-25 10:08:46.670 PDT [106567] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:47.277 PDT [106567] ERROR:  [EC_REMOTE_TRANSPORT_RESET] EC_BUILD_INCOMPLETE: secure participant transport failed
+2026-08-25 10:08:47.277 PDT [106567] STATEMENT:  SELECT tests.ec_distann_test_read_rpc_probe(
+	                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)
+2026-08-25 10:08:47.278 PDT [106404] LOG:  received fast shutdown request
+2026-08-25 10:08:47.283 PDT [106404] LOG:  aborting any active transactions
+2026-08-25 10:08:47.284 PDT [106404] LOG:  background worker "logical replication launcher" (PID 106413) exited with exit code 1
+2026-08-25 10:08:47.285 PDT [106408] LOG:  shutting down
+2026-08-25 10:08:47.289 PDT [106408] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:08:47.619 PDT [106408] LOG:  checkpoint complete: wrote 762 buffers (4.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.014 s, sync=0.301 s, total=0.335 s; sync files=282, longest=0.010 s, average=0.002 s; distance=6388 kB, estimate=6388 kB; lsn=0/1D91740, redo lsn=0/1D91740
+2026-08-25 10:08:47.632 PDT [106404] LOG:  database system is shut down

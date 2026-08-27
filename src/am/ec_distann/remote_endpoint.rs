@@ -67,6 +67,17 @@ fn immutable_local_owner(descriptor: &DistannGenerationDescriptor) -> Result<usi
             )
         })
 }
+
+fn maybe_delay_task235_write_endpoint() {
+    let Some(delay_ms) =
+        super::options::debug_write_fault_delay_ms("endpoint_mutation_after_apply_delay")
+    else {
+        return;
+    };
+    let delay_seconds = delay_ms as f64 / 1_000.0;
+    Spi::run(&format!("SELECT pg_sleep({delay_seconds})"))
+        .unwrap_or_else(|error| pgrx::error!("Task 235 endpoint mutation delay failed: {error}"));
+}
 use crate::storage::page::ItemPointer;
 use std::time::Instant;
 
@@ -404,6 +415,11 @@ fn ec_distann_apply_physical_insert(
         }
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    // pg_test-only Task 235 boundary: park after the graph/row/directory
+    // mutation but before the endpoint acknowledgement. Statement timeout,
+    // cancellation, owner termination, and restart therefore exercise a real
+    // outcome-unknown response window while PostgreSQL still owns rollback.
+    maybe_delay_task235_write_endpoint();
     true
 }
 
@@ -474,6 +490,7 @@ fn ec_distann_apply_physical_backlink(
         }
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    maybe_delay_task235_write_endpoint();
     true
 }
 
@@ -536,13 +553,14 @@ fn ec_distann_apply_physical_tombstone(
         Ok(())
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    maybe_delay_task235_write_endpoint();
     true
 }
 
 /// Reconcile abandoned Task 167 prepared transactions on one owner. This is
 /// an explicit operator/recovery surface: it never guesses while the
-/// coordinator xid is live, and its action is driven by the durable local
-/// intent row rather than by elapsed time alone.
+/// coordinator xid is live, and its action is driven by coordinator-local
+/// `pg_xact_status` rather than an ambiguously acknowledged intent row or age.
 #[pg_extern(volatile, parallel_restricted)]
 fn ec_distann_reap_orphaned_remote_prepared_xacts(
     index_regclass: pg_sys::Oid,
@@ -555,7 +573,7 @@ fn ec_distann_reap_orphaned_remote_prepared_xacts(
     if node_id <= 0 {
         pgrx::error!("EC_NODE_DESCRIPTOR: reaper node_id must be positive");
     }
-    let scan = super::generation_read::PhysicalGenerationScan::open(index_regclass)
+    let scan = super::generation_read::PhysicalGenerationScan::open_for_recovery(index_regclass)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     let (_, _, _, _, routes) = scan.traversal_replica_source();
     let route = routes
@@ -564,12 +582,11 @@ fn ec_distann_reap_orphaned_remote_prepared_xacts(
         .unwrap_or_else(|| {
             pgrx::error!("EC_NODE_DESCRIPTOR: reaper node is not in the active roster")
         });
-    if route.is_local {
-        pgrx::error!("EC_NODE_DESCRIPTOR: reaper target must be a remote owner");
-    }
-    let conninfo = route
-        .conninfo()
-        .unwrap_or_else(|| pgrx::error!("EC_NODE_DESCRIPTOR: reaper route has no conninfo"));
+    // A prepared owner transaction can itself have created pre-planning
+    // intents. PREPARE discards its process-local callbacks, so the owning
+    // node must be able to reap its self-targeted intent through a separate
+    // session as well as ordinary remote targets.
+    let conninfo = route.intent_conninfo();
     super::remote_transport::reap_orphaned_physical_prepared_xacts(
         conninfo,
         node_id as u32,

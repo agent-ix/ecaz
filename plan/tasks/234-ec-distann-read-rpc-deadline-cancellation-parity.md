@@ -1,11 +1,20 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **implementation and 25-cell PG18 fault matrix complete on the Task 234
-branches; closeout is NOT DONE and must not merge pending outside disposition**
-(2026-08-25). The original candidate regressed mean latency by 12.8% at 50k
-and 17.5% at 100k; the best screened all-success fast path still regressed
-7.1% at 50k against the reverse-order control. The code/evidence integration
-remains outside `main`; Task 237 and Task 228 stay blocked on this disposition.
+Status: **complete — outside-reviewed ACCEPT; operator accepts the measured
+latency cost for mandatory bounded/cancellable read correctness** (2026-08-26).
+The secure PG18 matrix passes 25/25 cells with no partial rows or leaked remote
+work, and the accepted 10k/50k/100k recall/storage findings are unchanged.
+Reviewer-requested matched-fixture measurements retire packet 004's -6.37%
+apparent win: the candidate is slower at both positions (+6.80% fresh, +3.19%
+reuse mean), with reuse p50/p95/p99 +2.03%/+0.96%/+1.89%. The fixture cannot
+resolve the exact magnitude, but all eight indicators record a small cost in
+the mechanism-consistent direction. The operator accepts that cost now and
+directs a separate success-path optimization iteration; that follow-up does not
+reopen or block this safety closeout. Evidence:
+`reviews/task-234/004-current-tls-reintegration/feedback/2026-08-25-01-reviewer.md`,
+`reviews/task-234/005-50k-reuse-drift-bound/`, and
+`benchmarks/task234-current-tls-read-rpc-cancellation-ab/`. Task 237 and Task
+228 are unblocked by this disposition, subject to their remaining prerequisites.
 Priority: P0 distributed-read correctness/operations.
 
 ## Why
@@ -51,7 +60,7 @@ partial or stale results.
 
 ### P1 — Unified read await contract
 
-- Replace all bare async query/query-one awaits in the four named RPCs with the
+- Replace all bare async query/query-one awaits in the five named RPCs with the
   common bounded await path or a shared typed refinement of it.
 - Apply nonzero client deadline and remote `statement_timeout` to every call,
   and retain the existing nonzero connect deadline.
@@ -115,7 +124,7 @@ partial or stale results.
 1. `reviews/task-234/001-plan/`
 2. `reviews/task-234/002-wrapper-and-callsite-parity/`
 3. `reviews/task-234/003-pg18-fault-matrix/`
-4. `reviews/task-234/004-closeout/`
+4. `reviews/task-234/004-current-tls-reintegration/`
 
 ## References
 
@@ -123,4 +132,3 @@ partial or stale results.
 - NFR-014; NFR-020
 - Tasks 209, 214, 228, 235, 236, and 237
 - `src/am/ec_distann/remote_transport.rs`
-

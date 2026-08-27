@@ -336,6 +336,16 @@ pub struct LocalMultinodePg18Args {
     /// sole post-publish validation lane.
     #[arg(long, default_value_t = false)]
     pub tls_security_matrix: bool,
+    /// Task 234 diagnostic-only matrix for the five bounded read RPCs. Requires
+    /// a pg_test extension build, four physical owners, and runs as the sole
+    /// post-publish validation lane.
+    #[arg(long, default_value_t = false)]
+    pub read_rpc_fault_matrix: bool,
+    /// Task 235 diagnostic-only matrix for remote DML, 2PC callbacks,
+    /// prepared recovery, and lifecycle RPC boundaries. Requires a pg_test
+    /// extension build and runs as the sole post-publish validation lane.
+    #[arg(long, default_value_t = false)]
+    pub write_lifecycle_fault_matrix: bool,
     /// Skip the expensive concurrent insert/query drill after the benchmark
     /// matrix. Used for large-scale measurement arms when the dedicated
     /// bounded concurrency gate is run separately.
@@ -411,6 +421,40 @@ struct Node {
     port: u16,
     data_dir: PathBuf,
     log_file: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhysicalDrillOutcome {
+    Passed,
+    Failed,
+    Skipped(&'static str),
+}
+
+impl PhysicalDrillOutcome {
+    fn from_passed(passed: bool) -> Self {
+        if passed {
+            Self::Passed
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn failed(self) -> bool {
+        self == Self::Failed
+    }
+}
+
+fn physical_drill_line(name: &str, outcome: PhysicalDrillOutcome, details: &str) -> String {
+    let pass = match outcome {
+        PhysicalDrillOutcome::Passed => "true".to_owned(),
+        PhysicalDrillOutcome::Failed => "false".to_owned(),
+        PhysicalDrillOutcome::Skipped(reason) => format!("skipped reason={reason}"),
+    };
+    if details.is_empty() {
+        format!("[distann-multicluster] {name} pass={pass}")
+    } else {
+        format!("[distann-multicluster] {name} pass={pass} {details}")
+    }
 }
 
 #[derive(Debug)]
@@ -624,9 +668,6 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.secure_remote_transport && mode != FixtureMode::Physical {
         bail!("--secure-remote-transport requires the physical fixture");
     }
-    if args.secure_remote_transport && args.reuse_fixture {
-        bail!("--secure-remote-transport cannot reuse a prior fixture");
-    }
     if args.tls_security_matrix
         && (!args.secure_remote_transport
             || args.nodes < 3
@@ -639,6 +680,46 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.tls_security_matrix && (args.physical_benchmark || args.reuse_fixture) {
         bail!("--tls-security-matrix cannot be combined with benchmark or reused-fixture mode");
+    }
+    if args.read_rpc_fault_matrix && mode != FixtureMode::Physical {
+        bail!("--read-rpc-fault-matrix requires the physical fixture");
+    }
+    if args.read_rpc_fault_matrix
+        && (args.nodes < 4 || args.coordinator_outside_roster || !args.allow_debug_extension)
+    {
+        bail!(
+            "--read-rpc-fault-matrix requires at least four owner nodes, an in-roster coordinator, and --allow-debug-extension"
+        );
+    }
+    if args.read_rpc_fault_matrix && (args.physical_benchmark || args.reuse_fixture) {
+        bail!("--read-rpc-fault-matrix cannot be combined with benchmark or reused-fixture mode");
+    }
+    if args.write_lifecycle_fault_matrix && mode != FixtureMode::Physical {
+        bail!("--write-lifecycle-fault-matrix requires the physical fixture");
+    }
+    if args.write_lifecycle_fault_matrix
+        && (args.nodes < 3 || args.coordinator_outside_roster || !args.allow_debug_extension)
+    {
+        bail!(
+            "--write-lifecycle-fault-matrix requires at least three owner nodes, an in-roster coordinator, and --allow-debug-extension"
+        );
+    }
+    if args.write_lifecycle_fault_matrix && (args.physical_benchmark || args.reuse_fixture) {
+        bail!(
+            "--write-lifecycle-fault-matrix cannot be combined with benchmark or reused-fixture mode"
+        );
+    }
+    if [
+        args.tls_security_matrix,
+        args.read_rpc_fault_matrix,
+        args.write_lifecycle_fault_matrix,
+    ]
+    .into_iter()
+    .filter(|enabled| *enabled)
+    .count()
+        > 1
+    {
+        bail!("diagnostic security/read/write matrices are mutually exclusive");
     }
     if args.remote_socket_fault.is_some() && !args.coordinator_outside_roster && args.nodes < 2 {
         bail!("--remote-socket-fault requires at least one remote owner");
@@ -1054,7 +1135,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         })
         .collect();
     let secure_transport_fixture = if args.secure_remote_transport {
-        Some(prepare_secure_remote_transport_fixture(&run_dir).await?)
+        Some(if args.reuse_fixture {
+            existing_secure_remote_transport_fixture(&run_dir)?
+        } else {
+            prepare_secure_remote_transport_fixture(&run_dir).await?
+        })
     } else {
         None
     };
@@ -1240,7 +1325,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         }
     }
 
-    if secure_transport_fixture.is_some() {
+    if secure_transport_fixture.is_some() && !args.reuse_fixture {
         for node in &nodes {
             run_psql_file(
                 &psql,
@@ -1325,6 +1410,52 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         );
     }
     result
+}
+
+fn existing_secure_remote_transport_fixture(
+    run_dir: &Path,
+) -> Result<SecureRemoteTransportFixture> {
+    let tls_dir = run_dir.join("task236-tls");
+    let fixture = SecureRemoteTransportFixture {
+        ca_cert: tls_dir.join("ca.crt"),
+        client_cert: tls_dir.join("distann-rpc-client.crt"),
+        client_key: tls_dir.join("distann-rpc-client.key"),
+        rotated_client_cert: tls_dir.join("distann-rpc-client-rotated.crt"),
+        rotated_client_key: tls_dir.join("distann-rpc-client-rotated.key"),
+        wrong_ca_cert: tls_dir.join("wrong-ca.crt"),
+        incorrect_client_cert: tls_dir.join("incorrect-client.crt"),
+        incorrect_client_key: tls_dir.join("incorrect-client.key"),
+        expired_client_cert: tls_dir.join("expired-client.crt"),
+        expired_client_key: tls_dir.join("expired-client.key"),
+        future_client_cert: tls_dir.join("future-client.crt"),
+        future_client_key: tls_dir.join("future-client.key"),
+        server_cert: tls_dir.join("server.crt"),
+        server_key: tls_dir.join("server.key"),
+    };
+    for path in [
+        &fixture.ca_cert,
+        &fixture.client_cert,
+        &fixture.client_key,
+        &fixture.rotated_client_cert,
+        &fixture.rotated_client_key,
+        &fixture.wrong_ca_cert,
+        &fixture.incorrect_client_cert,
+        &fixture.incorrect_client_key,
+        &fixture.expired_client_cert,
+        &fixture.expired_client_key,
+        &fixture.future_client_cert,
+        &fixture.future_client_key,
+        &fixture.server_cert,
+        &fixture.server_key,
+    ] {
+        if !path.is_file() {
+            bail!(
+                "--reuse-fixture secure transport artifact is absent: {}",
+                path.display()
+            );
+        }
+    }
+    Ok(fixture)
 }
 
 /// libpq conninfo for a node over the shared socket dir.
@@ -3680,13 +3811,14 @@ const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Task167InsertMeasurement {
     rows_per_second: f64,
     inserted_rows: usize,
+    trial_elapsed_ns: Vec<u128>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Task167DefaultInsertBaseline {
     measurement: Task167InsertMeasurement,
     backlink_amendments: i64,
@@ -3710,6 +3842,7 @@ async fn measure_task167_insert_arm(
     rows_per_trial: usize,
 ) -> Result<Task167InsertMeasurement> {
     let mut trial_rows_per_second = Vec::with_capacity(trials);
+    let mut trial_elapsed_ns = Vec::with_capacity(trials);
     let mut inserted_rows = 0;
     for trial in 0..trials {
         let started = Instant::now();
@@ -3739,14 +3872,36 @@ async fn measure_task167_insert_arm(
             }
             inserted_rows += usize::try_from(inserted).unwrap_or(usize::MAX);
         }
-        let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
-        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns);
+        let elapsed_ns = started.elapsed().as_nanos().max(1);
+        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns as f64);
+        trial_elapsed_ns.push(elapsed_ns);
     }
     trial_rows_per_second.sort_by(f64::total_cmp);
     Ok(Task167InsertMeasurement {
         rows_per_second: trial_rows_per_second[trials / 2],
         inserted_rows,
+        trial_elapsed_ns,
     })
+}
+
+fn task167_insert_trial_lines(
+    scale: &str,
+    arm: &str,
+    measurement: &Task167InsertMeasurement,
+    rows_per_trial: usize,
+) -> Vec<String> {
+    measurement
+        .trial_elapsed_ns
+        .iter()
+        .enumerate()
+        .map(|(trial, elapsed_ns)| {
+            let rows_per_second =
+                rows_per_trial as f64 * 1_000_000_000.0 / *elapsed_ns as f64;
+            format!(
+                "physical_benchmark_insert_throughput_trial scale={scale} arm={arm} trial={trial} rows={rows_per_trial} elapsed_ns={elapsed_ns} rows_per_second={rows_per_second:.6} pass=true"
+            )
+        })
+        .collect()
 }
 
 async fn task167_default_insert_throughput(
@@ -3808,6 +3963,18 @@ async fn task167_default_insert_throughput(
         );
     }
     let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
+    lines.extend(task167_insert_trial_lines(
+        scale,
+        "control",
+        &single,
+        TASK167_AB_ROWS_PER_TRIAL,
+    ));
+    lines.extend(task167_insert_trial_lines(
+        scale,
+        "physical",
+        &shipped,
+        TASK167_AB_ROWS_PER_TRIAL,
+    ));
     lines.push(format!(
         "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
         shipped.inserted_rows,
@@ -6687,6 +6854,16 @@ async fn run_physical_benchmarks(
     extension_preflight: &ExtensionPreflight,
     enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
+    let coordinator_node = nodes
+        .first()
+        .ok_or_else(|| eyre!("physical benchmark has no coordinator node"))?;
+    coordinator
+        .query_one(
+            "SELECT set_config('ec_distann.local_node_id', $1, false)",
+            &[&coordinator_node.node_id.to_string()],
+        )
+        .await
+        .wrap_err("configuring the physical benchmark coordinator identity")?;
     let beam_width = args.beam_width.unwrap_or(4);
     let candidate_heap_limit = args
         .candidate_heap_limit
@@ -9514,6 +9691,102 @@ struct Task236PoolSnapshot {
     pooled_connections: i64,
 }
 
+const TASK234_READ_RPCS: [&str; 5] = [
+    "physical_head_search",
+    "crown_code_export",
+    "gateway_routing_export",
+    "head_shard_export",
+    "head_shard_import",
+];
+
+#[derive(Debug)]
+struct Task234ReadSnapshot {
+    batch_total: i64,
+    batch_successes: i64,
+    batch_failures: i64,
+    pooled_connections: i64,
+    prepared_statements: i64,
+}
+
+fn task234_remote_endpoint(rpc: &str) -> &'static str {
+    match rpc {
+        "physical_head_search" => "ec_distann_head_search_physical",
+        "crown_code_export" => "ec_distann_crown_code_export",
+        "gateway_routing_export" => "ec_distann_gateway_routing_export",
+        "head_shard_export" => "ec_distann_head_shard_export",
+        "head_shard_import" => "ec_distann_head_shard_import",
+        _ => "ec_distann_task234_unknown_rpc",
+    }
+}
+
+fn task234_is_batch_rpc(rpc: &str) -> bool {
+    matches!(
+        rpc,
+        "physical_head_search" | "crown_code_export" | "gateway_routing_export"
+    )
+}
+
+async fn task234_set_remote_delay(
+    psql: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    rpc: Option<&str>,
+) -> Result<()> {
+    let sql = match rpc {
+        Some(rpc) => format!(
+            "ALTER DATABASE postgres SET ec_distann.debug_read_rpc_delay = '{rpc}';
+             ALTER DATABASE postgres SET ec_distann.debug_read_rpc_delay_ms = 5000;"
+        ),
+        None => "ALTER DATABASE postgres RESET ec_distann.debug_read_rpc_delay;
+                 ALTER DATABASE postgres RESET ec_distann.debug_read_rpc_delay_ms;"
+            .to_owned(),
+    };
+    run_psql_file(psql, socket_dir, node.port, &sql).await
+}
+
+async fn task234_fault_client(
+    socket_dir: &Path,
+    coordinator: &Node,
+    remote_timeout_ms: u64,
+    local_timeout_ms: Option<u64>,
+) -> Result<(
+    Arc<tokio_postgres::Client>,
+    tokio::task::JoinHandle<Result<(), tokio_postgres::Error>>,
+)> {
+    let (client, connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, coordinator.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let client = Arc::new(client);
+    client
+        .batch_execute(&format!(
+            "SET ec_distann.remote_statement_timeout_ms = {remote_timeout_ms};
+             SET ec_distann.gateway_copy_capacity = 0;
+             SET ec_distann.crown_capacity = 0;
+             SET statement_timeout = {};",
+            local_timeout_ms.unwrap_or(0)
+        ))
+        .await?;
+    Ok((client, connection_task))
+}
+
+async fn task234_probe(
+    client: &tokio_postgres::Client,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64, tokio_postgres::Error> {
+    client
+        .query_one(
+            "SELECT tests.ec_distann_test_read_rpc_probe(
+                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)",
+            &[&rpc, &i32::try_from(target_node_id).unwrap_or(i32::MAX)],
+        )
+        .await
+        .map(|row| row.get(0))
+}
+
 async fn task236_pool_probe(
     client: &tokio_postgres::Client,
     target_node_id: u32,
@@ -9879,6 +10152,2303 @@ async fn run_task236_tls_security_matrix(
     Ok(lines)
 }
 
+async fn task234_snapshot(client: &tokio_postgres::Client) -> Result<Task234ReadSnapshot> {
+    let row = client
+        .query_one(
+            "SELECT * FROM tests.ec_distann_test_read_rpc_snapshot()",
+            &[],
+        )
+        .await?;
+    Ok(Task234ReadSnapshot {
+        batch_total: row.get(0),
+        batch_successes: row.get(1),
+        batch_failures: row.get(2),
+        pooled_connections: row.get(3),
+        prepared_statements: row.get(4),
+    })
+}
+
+fn task234_error_text(error: &tokio_postgres::Error) -> String {
+    error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| error.to_string())
+}
+
+async fn task234_wait_remote_backend(socket_dir: &Path, node: &Node, rpc: &str) -> Result<i32> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let pattern = format!("%{}%", task234_remote_endpoint(rpc));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(row) = client
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE pid <> pg_backend_pid() AND state = 'active' AND query LIKE $1
+                  ORDER BY pid LIMIT 1",
+                &[&pattern],
+            )
+            .await?
+        {
+            connection_task.abort();
+            return Ok(row.get(0));
+        }
+        if Instant::now() >= deadline {
+            connection_task.abort();
+            bail!("Task 234 {rpc} remote endpoint did not become active");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn task234_remote_work_drained(socket_dir: &Path, node: &Node, rpc: &str) -> Result<bool> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let pattern = format!("%{}%", task234_remote_endpoint(rpc));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let active = client
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity
+                  WHERE pid <> pg_backend_pid() AND state = 'active' AND query LIKE $1",
+                &[&pattern],
+            )
+            .await?
+            .get::<_, i64>(0);
+        if active == 0 {
+            connection_task.abort();
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            connection_task.abort();
+            return Ok(false);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn task234_validate_failure(
+    rpc: &str,
+    fault: &str,
+    error: &tokio_postgres::Error,
+    elapsed: Duration,
+    snapshot: &Task234ReadSnapshot,
+    expect_safe_reuse: bool,
+) -> Result<String> {
+    let error_text = task234_error_text(error);
+    let category_ok = match fault {
+        "remote_statement_timeout" => error_text.contains("EC_REMOTE_STATEMENT_TIMEOUT"),
+        "local_query_cancel" => error_text.contains("canceling statement due to user request"),
+        "local_statement_timeout" => error_text.contains("statement timeout"),
+        "remote_backend_termination" => {
+            error_text.contains("EC_REMOTE_BACKEND_TERMINATED")
+                || error_text.contains("EC_REMOTE_TRANSPORT_RESET")
+        }
+        "connection_reset" => error_text.contains("EC_REMOTE_TRANSPORT_RESET"),
+        _ => false,
+    };
+    let upper_ms = if matches!(fault, "remote_backend_termination" | "connection_reset") {
+        5_000
+    } else {
+        2_000
+    };
+    let elapsed_ms = elapsed.as_millis();
+    if !category_ok || elapsed_ms > upper_ms {
+        bail!(
+            "Task 234 {rpc}/{fault} failed category or elapsed bound: elapsed_ms={elapsed_ms} error={error_text}"
+        );
+    }
+    if task234_is_batch_rpc(rpc)
+        && fault == "remote_statement_timeout"
+        && !(snapshot.batch_total >= 2
+            && snapshot.batch_successes >= 1
+            && snapshot.batch_failures >= 1)
+    {
+        bail!(
+            "Task 234 {rpc}/{fault} did not prove a successful sibling before fail-closed normalization: {snapshot:?}"
+        );
+    }
+    if !task234_is_batch_rpc(rpc)
+        && !(snapshot.batch_total == 1
+            && snapshot.batch_successes == 0
+            && snapshot.batch_failures == 1)
+    {
+        bail!("Task 234 {rpc}/{fault} single-call snapshot is invalid: {snapshot:?}");
+    }
+    if expect_safe_reuse && snapshot.pooled_connections == 0 {
+        bail!("Task 234 {rpc}/{fault} evicted a safely completed remote timeout session");
+    }
+    if !expect_safe_reuse
+        && matches!(fault, "local_query_cancel" | "local_statement_timeout")
+        && snapshot.pooled_connections != 0
+    {
+        bail!("Task 234 {rpc}/{fault} retained ambiguous pooled state: {snapshot:?}");
+    }
+    if matches!(fault, "remote_backend_termination" | "connection_reset")
+        && if task234_is_batch_rpc(rpc) {
+            snapshot.pooled_connections >= snapshot.batch_total
+        } else {
+            snapshot.pooled_connections != 0
+        }
+    {
+        bail!("Task 234 {rpc}/{fault} failed to evict the ambiguous owner session: {snapshot:?}");
+    }
+    Ok(format!(
+        "task234_read_rpc rpc={rpc} fault={fault} pass=true elapsed_ms={elapsed_ms} batch_total={} batch_successes={} batch_failures={} pooled_connections={} prepared_statements={} category={}",
+        snapshot.batch_total,
+        snapshot.batch_successes,
+        snapshot.batch_failures,
+        snapshot.pooled_connections,
+        snapshot.prepared_statements,
+        error_text.split_whitespace().next().unwrap_or("unknown")
+    ))
+}
+
+async fn task234_assert_retry(
+    client: &tokio_postgres::Client,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64> {
+    let started = Instant::now();
+    let rows = task234_probe(client, rpc, target_node_id)
+        .await
+        .wrap_err_with(|| format!("Task 234 {rpc} clean retry failed"))?;
+    if rows <= 0 || started.elapsed() > Duration::from_secs(5) {
+        bail!(
+            "Task 234 {rpc} clean retry violated row or elapsed bound: rows={rows} elapsed={:?}",
+            started.elapsed()
+        );
+    }
+    Ok(rows)
+}
+
+async fn run_read_rpc_fault_matrix(
+    pg_ctl: &Path,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let coordinator = &nodes[0];
+    let target = &nodes[1];
+    let mut lines = Vec::new();
+    for rpc in TASK234_READ_RPCS {
+        for fault in [
+            "remote_statement_timeout",
+            "local_query_cancel",
+            "local_statement_timeout",
+            "remote_backend_termination",
+            "connection_reset",
+        ] {
+            task234_set_remote_delay(psql, socket_dir, target, Some(rpc)).await?;
+            let (client, connection_task) = task234_fault_client(
+                socket_dir,
+                coordinator,
+                if fault == "remote_statement_timeout" {
+                    100
+                } else {
+                    5_000
+                },
+                (fault == "local_statement_timeout").then_some(500),
+            )
+            .await?;
+            let started = Instant::now();
+            let outcome = match fault {
+                "remote_statement_timeout" | "local_statement_timeout" => {
+                    task234_probe(&client, rpc, target.node_id).await
+                }
+                "local_query_cancel" => {
+                    let coordinator_pid = client
+                        .query_one("SELECT pg_backend_pid()", &[])
+                        .await?
+                        .get::<_, i32>(0);
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let _ = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let (cancel, cancel_connection) = tokio_postgres::connect(
+                        &conninfo(socket_dir, coordinator.port),
+                        tokio_postgres::NoTls,
+                    )
+                    .await?;
+                    let cancel_task = tokio::spawn(async move { cancel_connection.await });
+                    let cancelled = cancel
+                        .query_one("SELECT pg_cancel_backend($1)", &[&coordinator_pid])
+                        .await?
+                        .get::<_, bool>(0);
+                    cancel_task.abort();
+                    if !cancelled {
+                        bail!("Task 234 {rpc} coordinator backend rejected pg_cancel_backend");
+                    }
+                    probe.await?
+                }
+                "remote_backend_termination" => {
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let remote_pid = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let (killer, killer_connection) = tokio_postgres::connect(
+                        &conninfo(socket_dir, target.port),
+                        tokio_postgres::NoTls,
+                    )
+                    .await?;
+                    let killer_task = tokio::spawn(async move { killer_connection.await });
+                    let terminated = killer
+                        .query_one("SELECT pg_terminate_backend($1)", &[&remote_pid])
+                        .await?
+                        .get::<_, bool>(0);
+                    killer_task.abort();
+                    if !terminated {
+                        bail!("Task 234 {rpc} remote backend rejected termination");
+                    }
+                    probe.await?
+                }
+                "connection_reset" => {
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let _ = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let mut stop = Command::new(pg_ctl);
+                    stop.arg("-D")
+                        .arg(&target.data_dir)
+                        .arg("-m")
+                        .arg("immediate")
+                        .arg("stop")
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::inherit());
+                    run_status(stop).await?;
+                    let probe_outcome = probe.await?;
+                    restart_physical_node_with_transport(
+                        pg_ctl,
+                        socket_dir,
+                        target,
+                        nodes,
+                        secure_transport_fixture,
+                    )
+                    .await?;
+                    probe_outcome
+                }
+                _ => unreachable!(),
+            };
+            let elapsed = started.elapsed();
+            if fault == "local_statement_timeout" {
+                client.batch_execute("SET statement_timeout = 0").await?;
+            }
+            task234_set_remote_delay(psql, socket_dir, target, None).await?;
+            let error = outcome.err().ok_or_else(|| {
+                color_eyre::eyre::eyre!("Task 234 {rpc}/{fault} returned partial/success rows")
+            })?;
+            let snapshot = task234_snapshot(&client).await?;
+            let drained = task234_remote_work_drained(socket_dir, target, rpc).await?;
+            if !drained {
+                bail!("Task 234 {rpc}/{fault} leaked remote backend work");
+            }
+            let mut line = task234_validate_failure(
+                rpc,
+                fault,
+                &error,
+                elapsed,
+                &snapshot,
+                fault == "remote_statement_timeout",
+            )?;
+            if fault == "remote_statement_timeout" {
+                client
+                    .batch_execute("SET ec_distann.remote_statement_timeout_ms = 10000")
+                    .await?;
+            }
+            let retry_rows = task234_assert_retry(&client, rpc, target.node_id).await?;
+            line.push_str(&format!(
+                " remote_work_drained=true retry_rows={retry_rows}"
+            ));
+            lines.push(line);
+            connection_task.abort();
+        }
+    }
+    Ok(lines)
+}
+
+#[derive(Debug, Clone)]
+struct Task235WriteCandidate {
+    id: i64,
+    source_id: String,
+    vec_id: i64,
+    owner_ordinal: usize,
+}
+
+#[derive(Debug)]
+struct Task235WriteSnapshot {
+    source_rows: i64,
+    source_map_rows: i64,
+    owner_graph_rows: i64,
+    owner_current_rows: i64,
+    owner_row_rows: i64,
+    directory_valid: bool,
+    prepared_xacts: i64,
+    nonterminal_intents: i64,
+    prepared_gids: Vec<String>,
+    nonterminal_gids: Vec<String>,
+}
+
+fn task235_fmix64(mut value: u64) -> u64 {
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value
+}
+
+fn task235_owner_ordinal(vec_id: i64, owner_count: usize) -> usize {
+    const DISTANN_PLACEMENT_DOMAIN: u64 = 0x6469_7374_616e_6e70;
+    let unsigned = u64::from_le_bytes(vec_id.to_le_bytes());
+    (task235_fmix64(unsigned ^ DISTANN_PLACEMENT_DOMAIN) % owner_count as u64) as usize
+}
+
+fn task235_write_candidate(
+    ordinal: u32,
+    owner_count: usize,
+    target_owner: usize,
+) -> Result<Task235WriteCandidate> {
+    for suffix in (u64::from(ordinal) * 1_000)..(u64::from(ordinal) * 1_000 + 1_000) {
+        let source_id = format!("23500000-0000-4000-8000-{suffix:012x}");
+        let identity = source_identity_uuid_bytes(&source_id)?;
+        let vec_id = distann_vec_id_from_source_identity(&identity);
+        let owner_ordinal = task235_owner_ordinal(vec_id, owner_count);
+        if owner_ordinal == target_owner {
+            return Ok(Task235WriteCandidate {
+                id: 2_350_000_i64 + i64::try_from(suffix)?,
+                source_id,
+                vec_id,
+                owner_ordinal,
+            });
+        }
+    }
+    bail!("Task 235 could not derive a candidate for owner ordinal {target_owner}")
+}
+
+async fn task235_fault_client(
+    socket_dir: &Path,
+    coordinator: &Node,
+    fault_phase: Option<&str>,
+    delay_ms: u64,
+) -> Result<(
+    tokio_postgres::Client,
+    tokio::task::JoinHandle<Result<(), tokio_postgres::Error>>,
+)> {
+    let (client, connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, coordinator.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let phase_sql = fault_phase
+        .map(|phase| format!("'{}'", phase.replace('\'', "''")))
+        .unwrap_or_else(|| "DEFAULT".to_owned());
+    client
+        .batch_execute(&format!(
+            "SET ec_distann.roster = '';
+             SET ec_distann.local_node_id = 1;
+             SET ec_distann.remote_statement_timeout_ms = 2000;
+             SET statement_timeout = 10000;
+             SET ec_distann.debug_write_fault_phase = {phase_sql};
+             SET ec_distann.debug_write_fault_delay_ms = {delay_ms};"
+        ))
+        .await?;
+    Ok((client, connection_task))
+}
+
+fn task235_insert_sql(args: &LocalMultinodePg18Args, candidate: &Task235WriteCandidate) -> String {
+    let vector = insert_vector_expr(args, "dm");
+    format!(
+        "WITH row_data AS (
+             SELECT {}::bigint AS id, '{}'::uuid AS source_id, {vector}::real[] AS source
+         )
+         INSERT INTO dm (id, source_id, source, embedding)
+         SELECT id, source_id, source, encode_to_ecvector(source, 4, 42) FROM row_data",
+        candidate.id, candidate.source_id
+    )
+}
+
+async fn task235_attempt_insert(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    coordinator: &Node,
+    candidate: &Task235WriteCandidate,
+    fault_phase: Option<&str>,
+    rollback: bool,
+) -> Result<Option<String>> {
+    let (client, connection_task) =
+        task235_fault_client(socket_dir, coordinator, fault_phase, 0).await?;
+    if rollback {
+        client.batch_execute("BEGIN").await?;
+    }
+    let outcome = client
+        .execute(&task235_insert_sql(args, candidate), &[])
+        .await;
+    if rollback && outcome.is_ok() {
+        client.batch_execute("ROLLBACK").await?;
+    } else if outcome.is_err() {
+        // The statement future resolves when ErrorResponse arrives. Drain one
+        // clean command before dropping the driver so PostgreSQL has reached
+        // ReadyForQuery and completed abort callbacks. Coordinator-death cells
+        // use a separate, intentionally undrained path.
+        client
+            .batch_execute("SELECT 1")
+            .await
+            .wrap_err("draining Task 235 coordinator error state")?;
+    }
+    let error = outcome.err().map(|error| {
+        error
+            .as_db_error()
+            .map(|database_error| database_error.message().to_owned())
+            .unwrap_or_else(|| error.to_string())
+    });
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 coordinator fault client")?
+        .wrap_err("joining Task 235 coordinator fault client")?
+        .wrap_err("Task 235 coordinator fault connection failed while closing")?;
+    Ok(error)
+}
+
+async fn task235_prepared_xact_count(socket_dir: &Path, nodes: &[Node]) -> Result<i64> {
+    let mut count = 0_i64;
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        count += client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts
+                  WHERE database = current_database() AND gid LIKE 'ec_distann_insert_%'",
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
+        drop(client);
+        connection_task.abort();
+    }
+    Ok(count)
+}
+
+async fn task235_terminate_coordinator_after_prepare(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<String> {
+    let (client, connection_task) = task235_fault_client(
+        socket_dir,
+        &nodes[0],
+        Some("after_prepare_before_ack_pause"),
+        5_000,
+    )
+    .await?;
+    let client = Arc::new(client);
+    let coordinator_pid = client
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let insert_client = Arc::clone(&client);
+    let insert_sql = task235_insert_sql(args, candidate);
+    let insert = tokio::spawn(async move { insert_client.execute(&insert_sql, &[]).await });
+    let started = Instant::now();
+    loop {
+        if task235_prepared_xact_count(socket_dir, nodes).await? > 0 {
+            break;
+        }
+        if started.elapsed() > Duration::from_secs(3) {
+            insert.abort();
+            connection_task.abort();
+            bail!("Task 235 coordinator-death cell did not expose a prepared owner GID");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] task235_write_fault_boundary cell=after_prepare_before_ack prepared_observed_before_coordinator_death=true coordinator_pid={coordinator_pid}"
+    );
+    let (killer, killer_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let killer_task = tokio::spawn(async move { killer_connection.await });
+    let terminated = killer
+        .query_one("SELECT pg_terminate_backend($1)", &[&coordinator_pid])
+        .await?
+        .get::<_, bool>(0);
+    killer_task.abort();
+    if !terminated {
+        insert.abort();
+        connection_task.abort();
+        bail!("Task 235 coordinator backend rejected termination");
+    }
+    let outcome = tokio::time::timeout(Duration::from_secs(5), insert)
+        .await
+        .wrap_err("waiting for Task 235 terminated coordinator insert")?
+        .wrap_err("joining Task 235 terminated coordinator insert")?;
+    drop(client);
+    connection_task.abort();
+    match outcome {
+        Ok(_) => {
+            bail!("Task 235 coordinator-death insert reported success after backend termination")
+        }
+        Err(error) => Ok(error.to_string()),
+    }
+}
+
+async fn task235_terminate_owner_during_mutation(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<String> {
+    let (client, connection_task) = task235_fault_client(
+        socket_dir,
+        &nodes[0],
+        Some("endpoint_mutation_after_apply_delay"),
+        5_000,
+    )
+    .await?;
+    let client = Arc::new(client);
+    let insert_client = Arc::clone(&client);
+    let insert_sql = task235_insert_sql(args, candidate);
+    let insert = tokio::spawn(async move { insert_client.execute(&insert_sql, &[]).await });
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 owner-death candidate is outside the roster"))?;
+    let (killer, killer_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let killer_task = tokio::spawn(async move { killer_connection.await });
+    let started = Instant::now();
+    let owner_pid = loop {
+        let row = killer
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE datname = current_database() AND state = 'active'
+                    AND query LIKE '%ec_distann_apply_physical_insert%'
+                    AND pid <> pg_backend_pid()
+                  ORDER BY query_start LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            break row.get::<_, i32>(0);
+        }
+        if started.elapsed() >= Duration::from_secs(3) {
+            insert.abort();
+            connection_task.abort();
+            killer_task.abort();
+            bail!("Task 235 owner-death cell did not observe the delayed endpoint mutation");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let terminated = killer
+        .query_one("SELECT pg_terminate_backend($1)", &[&owner_pid])
+        .await?
+        .get::<_, bool>(0);
+    killer_task.abort();
+    if !terminated {
+        insert.abort();
+        connection_task.abort();
+        bail!("Task 235 owner endpoint backend rejected termination");
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] task235_write_fault_boundary cell=owner_backend_death_during_mutation owner_node={} owner_pid={} terminated=true",
+        owner_node.node_id,
+        owner_pid,
+    );
+    let outcome = tokio::time::timeout(Duration::from_secs(5), insert)
+        .await
+        .wrap_err("waiting for Task 235 owner-death insert")?
+        .wrap_err("joining Task 235 owner-death insert")?;
+    let error = outcome
+        .err()
+        .ok_or_else(|| eyre!("Task 235 owner-death insert unexpectedly committed"))?;
+    client
+        .batch_execute("SELECT 1")
+        .await
+        .wrap_err("draining Task 235 coordinator after owner backend death")?;
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 owner-death coordinator client")?
+        .wrap_err("joining Task 235 owner-death coordinator client")?
+        .wrap_err("Task 235 owner-death coordinator connection failed while closing")?;
+    Ok(error.to_string())
+}
+
+async fn task235_restart_owner_with_prepared(
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<()> {
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 restart candidate is outside the roster"))?;
+    let mut stop = Command::new(pg_ctl);
+    stop.arg("-w")
+        .arg("-D")
+        .arg(&owner_node.data_dir)
+        .arg("-m")
+        .arg("immediate")
+        .arg("stop")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    run_status(stop)
+        .await
+        .wrap_err("crashing Task 235 prepared owner")?;
+    restart_physical_node_with_transport(
+        pg_ctl,
+        socket_dir,
+        owner_node,
+        nodes,
+        secure_transport_fixture,
+    )
+    .await?;
+    let prepared_after_restart = task235_prepared_xact_count(socket_dir, nodes).await?;
+    if prepared_after_restart == 0 {
+        bail!("Task 235 owner restart lost the prepared transaction recovery fence");
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] task235_write_fault_boundary cell=after_prepare_before_ack owner_restart=true owner_node={} prepared_after_restart={prepared_after_restart}",
+        owner_node.node_id,
+    );
+    Ok(())
+}
+
+fn task235_safe_gid(gid: &str) -> bool {
+    gid.starts_with("ec_distann_insert_")
+        && gid
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+async fn task235_commit_one_backlink_prepared(
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<String> {
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_opt(
+                "SELECT p.gid
+                   FROM pg_prepared_xacts p
+                   JOIN ec_distann_remote_prepared_xact_intent i ON i.gid = p.gid
+                  WHERE p.database = current_database()
+                    AND p.gid LIKE 'ec_distann_insert_%'
+                    AND i.tracked_vec_id IS DISTINCT FROM $1
+                  ORDER BY p.gid LIMIT 1",
+                &[&candidate.vec_id],
+            )
+            .await?;
+        if let Some(row) = row {
+            let gid = row.get::<_, String>(0);
+            if !task235_safe_gid(&gid) {
+                connection_task.abort();
+                bail!("Task 235 partial completion selected an unsafe prepared GID");
+            }
+            client
+                .batch_execute(&format!("COMMIT PREPARED '{gid}'"))
+                .await?;
+            connection_task.abort();
+            return Ok(gid);
+        }
+        connection_task.abort();
+    }
+    bail!("Task 235 partial completion found no prepared backlink")
+}
+
+async fn task235_delete_one_prepared_intent(socket_dir: &Path, nodes: &[Node]) -> Result<String> {
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_opt(
+                "SELECT p.gid
+                   FROM pg_prepared_xacts p
+                   JOIN ec_distann_remote_prepared_xact_intent i ON i.gid = p.gid
+                  WHERE p.database = current_database()
+                    AND p.gid LIKE 'ec_distann_insert_%'
+                  ORDER BY p.gid LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            let gid = row.get::<_, String>(0);
+            let deleted = client
+                .execute(
+                    "DELETE FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+                    &[&gid],
+                )
+                .await?;
+            connection_task.abort();
+            if deleted != 1 {
+                bail!("Task 235 intent-loss cell did not delete exactly one owner intent");
+            }
+            return Ok(gid);
+        }
+        connection_task.abort();
+    }
+    bail!("Task 235 intent-loss cell found no prepared intent")
+}
+
+async fn task235_fill_prepared_slots(socket_dir: &Path, node: &Node) -> Result<Vec<String>> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let maximum = client
+        .query_one(
+            "SELECT current_setting('max_prepared_transactions')::integer",
+            &[],
+        )
+        .await?
+        .get::<_, i32>(0);
+    let occupied = client
+        .query_one("SELECT count(*)::integer FROM pg_prepared_xacts", &[])
+        .await?
+        .get::<_, i32>(0);
+    if maximum <= occupied {
+        connection_task.abort();
+        bail!("Task 235 saturation precondition has no free prepared slots");
+    }
+    let mut gids = Vec::new();
+    for slot in occupied..maximum {
+        let gid = format!("task235_saturation_node{}_slot{slot}", node.node_id);
+        client
+            .batch_execute(&format!("BEGIN; PREPARE TRANSACTION '{gid}'"))
+            .await?;
+        gids.push(gid);
+    }
+    connection_task.abort();
+    Ok(gids)
+}
+
+async fn task235_clear_prepared_slots(
+    socket_dir: &Path,
+    node: &Node,
+    gids: &[String],
+) -> Result<()> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    for gid in gids {
+        if !gid
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            connection_task.abort();
+            bail!("Task 235 saturation cleanup rejected an unsafe GID");
+        }
+        client
+            .batch_execute(&format!("ROLLBACK PREPARED '{gid}'"))
+            .await?;
+    }
+    connection_task.abort();
+    Ok(())
+}
+
+async fn task235_prepared_slot_saturation_cell(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    ordinal: u32,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let candidate = task235_write_candidate(ordinal, nodes.len(), 1)?;
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 saturation candidate is outside the roster"))?;
+    let dummy_gids = task235_fill_prepared_slots(socket_dir, owner_node).await?;
+    let attempt =
+        task235_attempt_insert(args, socket_dir, &nodes[0], &candidate, None, false).await;
+    let cleanup = task235_clear_prepared_slots(socket_dir, owner_node, &dummy_gids).await;
+    let error = attempt?
+        .ok_or_else(|| eyre!("Task 235 prepared-slot saturation unexpectedly committed"))?;
+    cleanup?;
+    if !error.contains("prepared_slots_exhausted_hint_increase_max_prepared_transactions") {
+        bail!("Task 235 saturation error lacked the stable readiness hint: {error}");
+    }
+    let before = task235_write_snapshot(socket_dir, nodes, &candidate).await?;
+    task235_assert_snapshot(
+        "prepared_slot_saturation",
+        &before,
+        false,
+        false,
+        Some(false),
+        Some(true),
+    )?;
+    let (after, recovery, recovery_attempts) = task235_recover_until_terminal(
+        "prepared_slot_saturation",
+        socket_dir,
+        nodes,
+        &candidate,
+        false,
+        false,
+        secure_transport_fixture,
+    )
+    .await?;
+    task235_assert_snapshot(
+        "prepared_slot_saturation",
+        &after,
+        false,
+        false,
+        Some(false),
+        Some(false),
+    )?;
+    let duplicate = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
+    if !duplicate.is_empty() {
+        bail!("Task 235 saturation duplicate recovery was not empty: {duplicate:?}");
+    }
+    let mut lines = vec![format!(
+        "task235_write_fault cell=prepared_slot_saturation pass=true owner_node={} filled_slots={} stable_hint=true source=0 owner=0 before_nonterminal={} recovery_attempts={} recovery_reports={} duplicate_actions=0",
+        owner_node.node_id,
+        dummy_gids.len(),
+        before.nonterminal_intents,
+        recovery_attempts,
+        recovery.len(),
+    )];
+    for report in recovery {
+        lines.push(format!(
+            "task235_write_recovery cell=prepared_slot_saturation report={report}"
+        ));
+    }
+    Ok(lines)
+}
+
+async fn task235_routed_tombstone_owner_death_cell(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let (probe, probe_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let probe_task = tokio::spawn(async move { probe_connection.await });
+    let row = probe
+        .query_one(
+            "SELECT d.id, d.source_id::text, m.vec_id
+               FROM dm d
+               JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid
+              WHERE m.index_oid = 'dm_idx'::regclass::oid
+                AND ec_distann_owning_node(m.vec_id, $1::integer, 1) = 1
+              ORDER BY d.id LIMIT 1",
+            &[&i32::try_from(nodes.len())?],
+        )
+        .await?;
+    let id = row.get::<_, i64>(0);
+    let source_id = row.get::<_, String>(1);
+    let vec_id = row.get::<_, i64>(2);
+    probe_task.abort();
+    let owner_node = &nodes[1];
+    let (client, connection_task) = task235_fault_client(
+        socket_dir,
+        &nodes[0],
+        Some("endpoint_mutation_after_apply_delay"),
+        5_000,
+    )
+    .await?;
+    client
+        .execute("DELETE FROM dm WHERE id = $1", &[&id])
+        .await?;
+    let client = Arc::new(client);
+    let vacuum_client = Arc::clone(&client);
+    let vacuum = tokio::spawn(async move { vacuum_client.batch_execute("VACUUM dm").await });
+    let (killer, killer_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let killer_task = tokio::spawn(async move { killer_connection.await });
+    let started = Instant::now();
+    let owner_pid = loop {
+        let row = killer
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE datname = current_database() AND state = 'active'
+                    AND query LIKE '%ec_distann_apply_physical_tombstone%'
+                    AND pid <> pg_backend_pid()
+                  ORDER BY query_start LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            break row.get::<_, i32>(0);
+        }
+        if started.elapsed() >= Duration::from_secs(3) {
+            vacuum.abort();
+            killer_task.abort();
+            connection_task.abort();
+            bail!("Task 235 tombstone cell did not observe the delayed owner endpoint");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let terminated = killer
+        .query_one("SELECT pg_terminate_backend($1)", &[&owner_pid])
+        .await?
+        .get::<_, bool>(0);
+    killer_task.abort();
+    if !terminated {
+        vacuum.abort();
+        connection_task.abort();
+        bail!("Task 235 tombstone owner backend rejected termination");
+    }
+    let first = tokio::time::timeout(Duration::from_secs(5), vacuum)
+        .await
+        .wrap_err("waiting for Task 235 failed tombstone VACUUM")?
+        .wrap_err("joining Task 235 failed tombstone VACUUM")?;
+    if first.is_ok() {
+        connection_task.abort();
+        bail!("Task 235 owner-death tombstone VACUUM unexpectedly succeeded");
+    }
+    client
+        .batch_execute(
+            "SELECT 1;
+             RESET ec_distann.debug_write_fault_phase;
+             SET ec_distann.debug_write_fault_delay_ms = 0;",
+        )
+        .await
+        .wrap_err("resetting Task 235 routed tombstone fault")?;
+    client
+        .batch_execute("VACUUM dm")
+        .await
+        .wrap_err("retrying Task 235 routed tombstone VACUUM")?;
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 tombstone coordinator client")?
+        .wrap_err("joining Task 235 tombstone coordinator client")?
+        .wrap_err("Task 235 tombstone coordinator connection failed while closing")?;
+
+    let (owner, owner_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let owner_task = tokio::spawn(async move { owner_connection.await });
+    let fingerprint = owner
+        .query_one(
+            "SELECT epoch_fingerprint
+               FROM ec_distann_generation
+              WHERE index_oid = 'dm_idx'::regclass::oid AND state = 'Published'
+              ORDER BY epoch DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
+    owner
+        .execute(
+            "SELECT set_config('ec_distann.roster', $1, false),
+                    set_config('ec_distann.local_node_id', $2, false)",
+            &[&roster, &owner_node.node_id.to_string()],
+        )
+        .await?;
+    let zero_query = vec![0.0_f32; usize::try_from(args.dim)?];
+    let tombstoned = owner
+        .query_one(
+            "SELECT is_tombstone
+               FROM ec_distann_expand_physical_nodes(
+                    'public.dm_idx'::regclass, $1::bytea,
+                    ARRAY[$2::real[]], ARRAY[$3::bigint], NULL, NULL)",
+            &[&fingerprint, &zero_query, &vec_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    owner_task.abort();
+    let (coordinator, coordinator_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let coordinator_task = tokio::spawn(async move { coordinator_connection.await });
+    let state = coordinator
+        .query_one(
+            "SELECT
+                 (SELECT count(*)::bigint FROM dm WHERE id = $1),
+                 (SELECT count(*)::bigint FROM ec_distann_physical_source_map
+                   WHERE index_oid = 'dm_idx'::regclass::oid AND vec_id = $2),
+                 (SELECT count(*)::bigint FROM pg_prepared_xacts
+                   WHERE gid LIKE 'ec_distann_insert_%'),
+                 (SELECT count(*)::bigint FROM ec_distann_remote_prepared_xact_intent
+                   WHERE intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended'))",
+            &[&id, &vec_id],
+        )
+        .await?;
+    coordinator_task.abort();
+    let source_rows = state.get::<_, i64>(0);
+    let source_map_rows = state.get::<_, i64>(1);
+    let prepared = state.get::<_, i64>(2);
+    let nonterminal = state.get::<_, i64>(3);
+    if source_rows != 0 || source_map_rows != 0 || !tombstoned || prepared != 0 || nonterminal != 0
+    {
+        bail!(
+            "Task 235 tombstone retry did not converge: source_rows={source_rows} source_map_rows={source_map_rows} tombstoned={tombstoned} prepared={prepared} nonterminal={nonterminal}"
+        );
+    }
+    Ok(vec![format!(
+        "task235_write_fault cell=routed_tombstone_owner_backend_death pass=true owner_node={} owner_pid={} source_id={} vec_id={} first_vacuum_error=true retry_vacuum=true source_rows=0 source_map_rows=0 owner_tombstone=1 prepared=0 nonterminal=0",
+        owner_node.node_id, owner_pid, source_id, vec_id,
+    )])
+}
+
+fn task235_safe_relation_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
+}
+
+async fn task235_write_snapshot(
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+) -> Result<Task235WriteSnapshot> {
+    let (coordinator, coordinator_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let coordinator_task = tokio::spawn(async move { coordinator_connection.await });
+    let source_rows = coordinator
+        .query_one(
+            "SELECT count(*)::bigint FROM dm WHERE source_id = $1::text::uuid",
+            &[&candidate.source_id],
+        )
+        .await?
+        .get(0);
+    let source_map_rows = coordinator
+        .query_one(
+            "SELECT count(*)::bigint
+               FROM ec_distann_physical_source_map m
+               JOIN dm d ON d.ctid = m.source_tid
+              WHERE m.index_oid = 'dm_idx'::regclass::oid
+                AND d.source_id = $1::text::uuid AND m.vec_id = $2",
+            &[&candidate.source_id, &candidate.vec_id],
+        )
+        .await?
+        .get(0);
+    coordinator_task.abort();
+
+    let owner_node = nodes
+        .get(candidate.owner_ordinal)
+        .ok_or_else(|| eyre!("Task 235 candidate owner is outside the node roster"))?;
+    let (owner, owner_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let owner_task = tokio::spawn(async move { owner_connection.await });
+    let relations = owner
+        .query_one(
+            "SELECT graph_store_relid::regclass::text,
+                    row_tier_relid::regclass::text,
+                    directory_relid::regclass::text,
+                    i.indisvalid AND i.indisready
+               FROM ec_distann_generation g
+               JOIN pg_index i ON i.indexrelid = g.directory_relid
+              WHERE g.index_oid = 'dm_idx'::regclass::oid AND g.state = 'Published'
+              ORDER BY g.epoch DESC LIMIT 1",
+            &[],
+        )
+        .await?;
+    let graph_relation: String = relations.get(0);
+    let row_relation: String = relations.get(1);
+    let directory_relation: String = relations.get(2);
+    let directory_valid: bool = relations.get(3);
+    if !task235_safe_relation_name(&graph_relation)
+        || !task235_safe_relation_name(&row_relation)
+        || !task235_safe_relation_name(&directory_relation)
+    {
+        owner_task.abort();
+        bail!("Task 235 generation catalog returned an unsafe relation name");
+    }
+    let graph = owner
+        .query_one(
+            &format!(
+                "SELECT count(*)::bigint,
+                        count(*) FILTER (WHERE is_current)::bigint
+                   FROM {graph_relation} WHERE vec_id = $1"
+            ),
+            &[&candidate.vec_id],
+        )
+        .await?;
+    let owner_graph_rows = graph.get(0);
+    let owner_current_rows = graph.get(1);
+    let owner_row_rows = owner
+        .query_one(
+            &format!(
+                "SELECT count(*)::bigint FROM {row_relation} WHERE source_id = $1::text::uuid"
+            ),
+            &[&candidate.source_id],
+        )
+        .await?
+        .get(0);
+    owner_task.abort();
+
+    let mut prepared_xacts = 0_i64;
+    let mut nonterminal_intents = 0_i64;
+    let mut prepared_gids = Vec::new();
+    let mut nonterminal_gids = Vec::new();
+    for node in nodes {
+        let (participant, participant_connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let participant_task = tokio::spawn(async move { participant_connection.await });
+        prepared_xacts += participant
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts
+                  WHERE database = current_database() AND gid LIKE 'ec_distann_insert_%'",
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
+        for row in participant
+            .query(
+                "SELECT gid FROM pg_prepared_xacts
+                  WHERE database = current_database() AND gid LIKE 'ec_distann_insert_%'
+                  ORDER BY gid",
+                &[],
+            )
+            .await?
+        {
+            prepared_gids.push(format!("node{}:{}", node.node_id, row.get::<_, String>(0)));
+        }
+        nonterminal_intents += participant
+            .query_one(
+                "SELECT count(*)::bigint FROM ec_distann_remote_prepared_xact_intent
+                  WHERE intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended')",
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
+        for row in participant
+            .query(
+                "SELECT gid, intent_state FROM ec_distann_remote_prepared_xact_intent
+                  WHERE intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended')
+                  ORDER BY gid",
+                &[],
+            )
+            .await?
+        {
+            nonterminal_gids.push(format!(
+                "node{}:{}:{}",
+                node.node_id,
+                row.get::<_, String>(0),
+                row.get::<_, String>(1)
+            ));
+        }
+        participant_task.abort();
+    }
+    Ok(Task235WriteSnapshot {
+        source_rows,
+        source_map_rows,
+        owner_graph_rows,
+        owner_current_rows,
+        owner_row_rows,
+        directory_valid,
+        prepared_xacts,
+        nonterminal_intents,
+        prepared_gids,
+        nonterminal_gids,
+    })
+}
+
+fn task235_recovery_roster(
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<String> {
+    nodes
+        .iter()
+        .map(|node| {
+            let route = match secure_transport_fixture {
+                Some(fixture) => secure_remote_conninfo(node.port, fixture)?,
+                None => conninfo(socket_dir, node.port),
+            };
+            Ok(format!("{}@{route}", node.node_id))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|routes| routes.join(";"))
+}
+
+async fn task235_reap_all(
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let mut results = Vec::new();
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
+    for coordinator_node in nodes {
+        let (coordinator, connection) = tokio_postgres::connect(
+            &conninfo(socket_dir, coordinator_node.port),
+            tokio_postgres::NoTls,
+        )
+        .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        coordinator
+            .execute(
+                "SELECT set_config('ec_distann.roster', $1, false),
+                        set_config('ec_distann.local_node_id', $2, false)",
+                &[&roster, &coordinator_node.node_id.to_string()],
+            )
+            .await?;
+        for target_node in nodes {
+            let row = coordinator
+                .query_one(
+                    "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                         'public.dm_idx'::regclass, $1::integer)",
+                    &[&i32::try_from(target_node.node_id)?],
+                )
+                .await?;
+            for result in row.get::<_, Vec<String>>(0) {
+                results.push(format!(
+                    "coordinator={} target={} {result}",
+                    coordinator_node.node_id, target_node.node_id
+                ));
+            }
+        }
+        connection_task.abort();
+    }
+    Ok(results)
+}
+
+async fn task235_recover_until_terminal(
+    cell: &str,
+    socket_dir: &Path,
+    nodes: &[Node],
+    candidate: &Task235WriteCandidate,
+    source_applied: bool,
+    owner_applied: bool,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<(Task235WriteSnapshot, Vec<String>, usize)> {
+    let started = Instant::now();
+    let mut reports = Vec::new();
+    let mut attempts = 0_usize;
+    loop {
+        attempts += 1;
+        let attempt_reports = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
+        reports.extend(attempt_reports);
+        let snapshot = task235_write_snapshot(socket_dir, nodes, candidate).await?;
+        // While the coordinator backend is still completing abort, the full
+        // xid may correctly remain fenced as in-progress. Every retry must
+        // nevertheless preserve the logical source/owner state, and recovery
+        // must converge once PostgreSQL exposes a terminal xid decision.
+        task235_assert_snapshot(cell, &snapshot, source_applied, owner_applied, None, None)?;
+        if snapshot.prepared_xacts == 0 && snapshot.nonterminal_intents == 0 {
+            return Ok((snapshot, reports, attempts));
+        }
+        if started.elapsed() >= Duration::from_secs(5) {
+            bail!(
+                "Task 235 {cell} recovery did not converge after {attempts} attempts: reports={reports:?} prepared_gids={:?} nonterminal_gids={:?} snapshot={snapshot:?}",
+                snapshot.prepared_gids,
+                snapshot.nonterminal_gids,
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn task235_assert_snapshot(
+    cell: &str,
+    snapshot: &Task235WriteSnapshot,
+    source_applied: bool,
+    owner_applied: bool,
+    prepared: Option<bool>,
+    nonterminal: Option<bool>,
+) -> Result<()> {
+    let expected_source = i64::from(source_applied);
+    let expected_owner = i64::from(owner_applied);
+    let prepared_ok = prepared
+        .map(|expected| (snapshot.prepared_xacts > 0) == expected)
+        .unwrap_or(true);
+    let nonterminal_ok = nonterminal
+        .map(|expected| (snapshot.nonterminal_intents > 0) == expected)
+        .unwrap_or(true);
+    if snapshot.source_rows != expected_source
+        || snapshot.source_map_rows != expected_source
+        || snapshot.owner_graph_rows != expected_owner
+        || snapshot.owner_current_rows != expected_owner
+        || snapshot.owner_row_rows != expected_owner
+        || !snapshot.directory_valid
+        || !prepared_ok
+        || !nonterminal_ok
+    {
+        bail!(
+            "Task 235 {cell} snapshot mismatch: expected_source={expected_source} expected_owner={expected_owner} prepared_expectation={prepared:?} prepared_ok={prepared_ok} nonterminal_expectation={nonterminal:?} nonterminal_ok={nonterminal_ok} prepared_gids={:?} nonterminal_gids={:?} actual={snapshot:?}",
+            snapshot.prepared_gids,
+            snapshot.nonterminal_gids,
+        );
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Task235GenerationStatus {
+    state: String,
+    relations_present: i64,
+}
+
+async fn task235_generation_statuses(
+    socket_dir: &Path,
+    nodes: &[Node],
+    build_id: &str,
+) -> Result<Vec<Task235GenerationStatus>> {
+    let mut statuses = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_one(
+                "WITH live AS (
+                     SELECT state, row_tier_relid, graph_store_relid, directory_relid
+                       FROM ec_distann_generation
+                      WHERE index_oid = 'dm_idx'::regclass::oid
+                        AND build_id = $1::text::uuid
+                 )
+                 SELECT COALESCE(
+                            (SELECT state FROM live),
+                            (SELECT 'Reclaimed' FROM ec_distann_generation_reclaim
+                              WHERE index_oid = 'dm_idx'::regclass::oid
+                                AND build_id = $1::text::uuid),
+                            (SELECT 'CancelledReclaimed'
+                               FROM ec_distann_cancelled_generation_reclaim
+                              WHERE index_oid = 'dm_idx'::regclass::oid
+                                AND build_id = $1::text::uuid),
+                            'Missing'),
+                        COALESCE((
+                            SELECT count(*)::bigint FROM pg_class c, live
+                             WHERE c.oid IN (
+                                 live.row_tier_relid,
+                                 live.graph_store_relid,
+                                 live.directory_relid)
+                        ), 0)",
+                &[&build_id],
+            )
+            .await?;
+        statuses.push(Task235GenerationStatus {
+            state: row.get(0),
+            relations_present: row.get(1),
+        });
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), connection_task)
+            .await
+            .wrap_err("closing Task 235 lifecycle status client")?
+            .wrap_err("joining Task 235 lifecycle status client")?
+            .wrap_err("Task 235 lifecycle status connection failed while closing")?;
+    }
+    Ok(statuses)
+}
+
+fn task235_status_labels(statuses: &[Task235GenerationStatus]) -> String {
+    statuses
+        .iter()
+        .map(|status| format!("{}:{}", status.state, status.relations_present))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn task235_assert_generation_statuses(
+    cell: &str,
+    statuses: &[Task235GenerationStatus],
+    expected_state: &str,
+    expected_relations: i64,
+) -> Result<()> {
+    if statuses.iter().any(|status| {
+        status.state != expected_state || status.relations_present != expected_relations
+    }) {
+        bail!(
+            "Task 235 {cell} generation status mismatch: expected={expected_state}:{expected_relations} actual={}",
+            task235_status_labels(statuses)
+        );
+    }
+    Ok(())
+}
+
+async fn task235_set_lifecycle_fault(
+    client: &tokio_postgres::Client,
+    fault: Option<&str>,
+) -> Result<()> {
+    if let Some(fault) = fault {
+        client
+            .execute(
+                "SELECT set_config('ec_distann.debug_write_fault_phase', $1, false)",
+                &[&fault],
+            )
+            .await?;
+    } else {
+        client
+            .batch_execute(
+                "RESET ec_distann.debug_write_fault_phase;
+                 SET ec_distann.debug_write_fault_delay_ms = 0;",
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+async fn task235_expect_lifecycle_fault(
+    client: &tokio_postgres::Client,
+    sql: &str,
+    phase: &str,
+) -> Result<String> {
+    let error = client
+        .batch_execute(sql)
+        .await
+        .expect_err("Task 235 lifecycle fault must fail the coordinator call");
+    let message = error
+        .as_db_error()
+        .map(|database_error| database_error.message().to_owned())
+        .unwrap_or_else(|| error.to_string());
+    if !message.contains(&format!("phase={phase}"))
+        || !message.contains("outcome=definitely_applied")
+        || !message.contains("injected_task235_fault")
+    {
+        bail!("Task 235 {phase} returned an unexpected fault: {message}");
+    }
+    client
+        .batch_execute("SELECT 1")
+        .await
+        .wrap_err_with(|| format!("draining Task 235 {phase} fault"))?;
+    Ok(message)
+}
+
+async fn task235_begin_build(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_begin_epoch_build(
+                 'dm_idx'::regclass, $1::bigint, $2::text::uuid)",
+            &[&epoch, &build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_build_epoch(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_build_epoch(
+                 'dm_idx'::regclass, $1::bigint, $2::text::uuid)",
+            &[&epoch, &build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_registration_state(
+    client: &tokio_postgres::Client,
+    build_id: &str,
+) -> Result<String> {
+    Ok(client
+        .query_one(
+            "SELECT COALESCE((
+                 SELECT state FROM ec_distann_build_registration
+                  WHERE index_oid = 'dm_idx'::regclass::oid
+                    AND build_id = $1::text::uuid), 'Missing')",
+            &[&build_id],
+        )
+        .await?
+        .get(0))
+}
+
+async fn task235_abort_build(client: &tokio_postgres::Client, build_id: &str) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_abort_epoch_build(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_prepare_publish(
+    client: &tokio_postgres::Client,
+    epoch: i64,
+    build_id: &str,
+) -> Result<()> {
+    task235_begin_build(client, epoch, build_id).await?;
+    task235_build_epoch(client, epoch, build_id).await?;
+    client
+        .execute(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_recover_publish(client: &tokio_postgres::Client, build_id: &str) -> Result<()> {
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn task235_publish_state(
+    client: &tokio_postgres::Client,
+    build_id: &str,
+) -> Result<(String, String, bool)> {
+    let row = client
+        .query_one(
+            "SELECT
+                 COALESCE((SELECT decision_state FROM ec_distann_publish_decision
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 COALESCE((SELECT state FROM ec_distann_build_registration
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 EXISTS(SELECT 1 FROM ec_distann_active_epoch
+                         WHERE build_id = $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok((row.get(0), row.get(1), row.get(2)))
+}
+
+async fn task235_operator_status_stop_cell(
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let (coordinator, coordinator_task) =
+        task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
+    let roster = task235_recovery_roster(socket_dir, nodes, secure_transport_fixture)?;
+    coordinator
+        .execute(
+            "SELECT set_config('ec_distann.roster', $1, false),
+                    set_config('ec_distann.local_node_id', '1', false)",
+            &[&roster],
+        )
+        .await?;
+    let identity = coordinator
+        .query_one(
+            "SELECT 'dm_idx'::regclass::oid::text,
+                    (SELECT epoch FROM ec_distann_active_epoch
+                      WHERE index_oid = 'dm_idx'::regclass::oid),
+                    pg_current_xact_id()::text",
+            &[],
+        )
+        .await?;
+    let index_oid = identity.get::<_, String>(0);
+    let served_epoch = identity.get::<_, i64>(1);
+    let xid = identity.get::<_, String>(2).parse::<i64>()?;
+    let gid = format!(
+        "ec_distann_insert_{}_1_2_{}_{}_999999",
+        index_oid, served_epoch, xid
+    );
+
+    let owner_node = &nodes[1];
+    let (owner, owner_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let owner_task = tokio::spawn(async move { owner_connection.await });
+    owner
+        .execute(
+            "INSERT INTO ec_distann_remote_prepared_xact_intent
+                 (index_oid, node_id, served_epoch, xid, gid, intent_state)
+             VALUES ($1::text::oid, 2, $2, $3, $4, 'prepare_requested')",
+            &[&index_oid, &served_epoch, &xid, &gid],
+        )
+        .await?;
+
+    task235_set_lifecycle_fault(&coordinator, Some("coordinator_xid_status_unknown")).await?;
+    let first = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let second = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let required = format!("{gid}:prepare_requested:xid_status_unknown:operator_required");
+    if first != vec![required.clone()] || second != vec![required.clone()] {
+        bail!(
+            "Task 235 status-unavailable recovery did not STOP deterministically: first={first:?} second={second:?}"
+        );
+    }
+    let state_while_unknown = owner
+        .query_one(
+            "SELECT intent_state,
+                    EXISTS(SELECT 1 FROM pg_prepared_xacts WHERE gid = $1)
+               FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+            &[&gid],
+        )
+        .await?;
+    if state_while_unknown.get::<_, String>(0) != "prepare_requested"
+        || state_while_unknown.get::<_, bool>(1)
+    {
+        bail!("Task 235 status-unavailable STOP mutated owner recovery state");
+    }
+
+    task235_set_lifecycle_fault(&coordinator, None).await?;
+    let recovered = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    let expected_recovery = format!("{gid}:prepare_requested:commit_local:prepared=false");
+    if recovered != vec![expected_recovery] {
+        bail!(
+            "Task 235 status-unavailable recovery did not converge after status returned: {recovered:?}"
+        );
+    }
+    let duplicate = coordinator
+        .query_one(
+            "SELECT ec_distann_reap_orphaned_remote_prepared_xacts(
+                 'dm_idx'::regclass, 2)",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<String>>(0);
+    if !duplicate.is_empty() {
+        bail!("Task 235 status-unavailable duplicate recovery was not empty: {duplicate:?}");
+    }
+    let terminal = owner
+        .query_one(
+            "SELECT intent_state FROM ec_distann_remote_prepared_xact_intent
+              WHERE gid = $1",
+            &[&gid],
+        )
+        .await?
+        .get::<_, String>(0);
+    if terminal != "commit_local" {
+        bail!("Task 235 status-unavailable recovery ended in {terminal}");
+    }
+    owner
+        .execute(
+            "DELETE FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+            &[&gid],
+        )
+        .await?;
+    drop(owner);
+    tokio::time::timeout(Duration::from_secs(2), owner_task)
+        .await
+        .wrap_err("closing Task 235 status-stop owner client")?
+        .wrap_err("joining Task 235 status-stop owner client")?
+        .wrap_err("Task 235 status-stop owner connection failed while closing")?;
+    drop(coordinator);
+    tokio::time::timeout(Duration::from_secs(2), coordinator_task)
+        .await
+        .wrap_err("closing Task 235 status-stop coordinator client")?
+        .wrap_err("joining Task 235 status-stop coordinator client")?
+        .wrap_err("Task 235 status-stop coordinator connection failed while closing")?;
+    Ok(vec![format!(
+        "task235_operator_recovery cell=xid_status_unavailable_stop pass=true gid={gid} repeated_stop=true intent_while_unknown=prepare_requested prepared_while_unknown=false operator_required=true authoritative_status_returned=committed final_intent=commit_local duplicate_actions=0"
+    )])
+}
+
+async fn task235_run_lifecycle_fault_matrix(
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let (client, connection_task) = task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
+    let mut lines = Vec::new();
+
+    let build_cells = [
+        (
+            "handoff_begin",
+            2_i64,
+            "23500001-0000-4000-8000-000000000001",
+        ),
+        (
+            "handoff_stage",
+            4_i64,
+            "23500002-0000-4000-8000-000000000002",
+        ),
+        (
+            "handoff_seal",
+            6_i64,
+            "23500003-0000-4000-8000-000000000003",
+        ),
+    ];
+    for (cell_ordinal, (phase, epoch, build_id)) in build_cells.into_iter().enumerate() {
+        let cell = phase;
+        task235_begin_build(&client, epoch, build_id).await?;
+        let fault = format!("after_{phase}_error");
+        task235_set_lifecycle_fault(&client, Some(&fault)).await?;
+        let sql = format!(
+            "SELECT ec_distann_build_epoch('dm_idx'::regclass, {epoch}, '{build_id}'::uuid)"
+        );
+        let _message = task235_expect_lifecycle_fault(&client, &sql, phase).await?;
+        let partial = task235_generation_statuses(socket_dir, nodes, build_id).await?;
+        if partial
+            .iter()
+            .all(|status| status.state == "Missing" || status.state == "Ready")
+        {
+            bail!(
+                "Task 235 {cell} did not preserve a partial replay surface: {}",
+                task235_status_labels(&partial)
+            );
+        }
+        if task235_registration_state(&client, build_id).await? != "Registered" {
+            bail!("Task 235 {cell} registration did not remain Registered after fault");
+        }
+        task235_set_lifecycle_fault(&client, None).await?;
+        task235_abort_build(&client, build_id).await?;
+        task235_abort_build(&client, build_id).await?;
+        let aborted = task235_generation_statuses(socket_dir, nodes, build_id).await?;
+        task235_assert_generation_statuses(cell, &aborted, "Missing", 0)?;
+        let registration = task235_registration_state(&client, build_id).await?;
+        if registration != "Aborted" {
+            bail!("Task 235 {cell} registration ended in {registration}, expected Aborted");
+        }
+        let replacement_build = format!(
+            "2350010{}-0000-4000-8000-00000000010{}",
+            cell_ordinal + 1,
+            cell_ordinal + 1,
+        );
+        let replacement_epoch = epoch + 1;
+        task235_begin_build(&client, replacement_epoch, &replacement_build).await?;
+        task235_build_epoch(&client, replacement_epoch, &replacement_build).await?;
+        task235_build_epoch(&client, replacement_epoch, &replacement_build).await?;
+        let replacement_ready =
+            task235_generation_statuses(socket_dir, nodes, &replacement_build).await?;
+        task235_assert_generation_statuses(cell, &replacement_ready, "Ready", 3)?;
+        task235_abort_build(&client, &replacement_build).await?;
+        task235_abort_build(&client, &replacement_build).await?;
+        let replacement_final =
+            task235_generation_statuses(socket_dir, nodes, &replacement_build).await?;
+        task235_assert_generation_statuses(cell, &replacement_final, "Missing", 0)?;
+        lines.push(format!(
+            "task235_lifecycle_fault cell={cell} fault={fault} pass=true partial_states={} recovery_action=abort_then_new_build aborted_states={} replacement_ready={} replacement_final={} registration=Aborted duplicate_build=true duplicate_abort=true relations_after=0",
+            task235_status_labels(&partial),
+            task235_status_labels(&aborted),
+            task235_status_labels(&replacement_ready),
+            task235_status_labels(&replacement_final),
+        ));
+    }
+
+    let abort_build = "23500004-0000-4000-8000-000000000004";
+    task235_begin_build(&client, 8, abort_build).await?;
+    task235_build_epoch(&client, 8, abort_build).await?;
+    task235_set_lifecycle_fault(&client, Some("after_handoff_abort_error")).await?;
+    let abort_sql =
+        format!("SELECT ec_distann_abort_epoch_build('dm_idx'::regclass, '{abort_build}'::uuid)");
+    let _message = task235_expect_lifecycle_fault(&client, &abort_sql, "handoff_abort").await?;
+    let abort_partial = task235_generation_statuses(socket_dir, nodes, abort_build).await?;
+    if !abort_partial.iter().any(|status| status.state == "Missing")
+        || !abort_partial.iter().any(|status| status.state == "Ready")
+        || task235_registration_state(&client, abort_build).await? != "Ready"
+    {
+        bail!(
+            "Task 235 handoff_abort did not expose the expected partial state: {}",
+            task235_status_labels(&abort_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_abort_build(&client, abort_build).await?;
+    task235_abort_build(&client, abort_build).await?;
+    let abort_final = task235_generation_statuses(socket_dir, nodes, abort_build).await?;
+    task235_assert_generation_statuses("handoff_abort", &abort_final, "Missing", 0)?;
+    lines.push(format!(
+        "task235_lifecycle_fault cell=handoff_abort fault=after_handoff_abort_error pass=true partial_states={} final_states={} registration=Aborted duplicate_abort=true relations_after=0",
+        task235_status_labels(&abort_partial),
+        task235_status_labels(&abort_final),
+    ));
+
+    let publish_build = "23500005-0000-4000-8000-000000000005";
+    task235_prepare_publish(&client, 9, publish_build).await?;
+    task235_set_lifecycle_fault(&client, Some("after_epoch_publish_error")).await?;
+    let publish_sql = format!(
+        "SELECT ec_distann_recover_epoch_publish('dm_idx'::regclass, '{publish_build}'::uuid)"
+    );
+    let _message = task235_expect_lifecycle_fault(&client, &publish_sql, "epoch_publish").await?;
+    let publish_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    let publish_partial_state = task235_publish_state(&client, publish_build).await?;
+    if publish_partial_state != ("Pending".to_owned(), "Decided".to_owned(), false)
+        || !publish_partial
+            .iter()
+            .any(|status| status.state == "Published")
+        || !publish_partial.iter().any(|status| status.state == "Ready")
+    {
+        bail!(
+            "Task 235 epoch_publish partial state mismatch: coordinator={publish_partial_state:?} owners={}",
+            task235_status_labels(&publish_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    task235_recover_publish(&client, publish_build).await?;
+    let publish_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("epoch_publish", &publish_final, "Published", 3)?;
+    let publish_final_state = task235_publish_state(&client, publish_build).await?;
+    if publish_final_state != ("Applied".to_owned(), "Published".to_owned(), true) {
+        bail!("Task 235 epoch_publish did not converge: {publish_final_state:?}");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=epoch_publish fault=after_epoch_publish_error pass=true partial_states={} partial_decision=Pending retry_states={} final_decision=Applied active=true duplicate_recovery=true",
+        task235_status_labels(&publish_partial),
+        task235_status_labels(&publish_final),
+    ));
+
+    let retirement_build = "23500006-0000-4000-8000-000000000006";
+    task235_prepare_publish(&client, 10, retirement_build).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    let activated = task235_publish_state(&client, retirement_build).await?;
+    if activated != ("Activated".to_owned(), "Published".to_owned(), true) {
+        bail!("Task 235 predecessor retirement did not reach Activated: {activated:?}");
+    }
+    task235_set_lifecycle_fault(&client, Some("after_predecessor_retirement_error")).await?;
+    let retirement_sql = format!(
+        "SELECT ec_distann_recover_epoch_publish('dm_idx'::regclass, '{retirement_build}'::uuid)"
+    );
+    let _message =
+        task235_expect_lifecycle_fault(&client, &retirement_sql, "predecessor_retirement").await?;
+    let predecessor_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    if !predecessor_partial
+        .iter()
+        .any(|status| status.state == "Retired")
+        || !predecessor_partial
+            .iter()
+            .any(|status| status.state == "Published")
+        || task235_publish_state(&client, retirement_build).await?.0 != "Activated"
+    {
+        bail!(
+            "Task 235 predecessor_retirement partial state mismatch: {}",
+            task235_status_labels(&predecessor_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    task235_recover_publish(&client, retirement_build).await?;
+    let predecessor_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("predecessor_retirement", &predecessor_final, "Retired", 3)?;
+    if task235_publish_state(&client, retirement_build).await?.0 != "Applied" {
+        bail!("Task 235 predecessor retirement decision did not become Applied");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=predecessor_retirement fault=after_predecessor_retirement_error pass=true partial_states={} final_states={} final_decision=Applied duplicate_recovery=true",
+        task235_status_labels(&predecessor_partial),
+        task235_status_labels(&predecessor_final),
+    ));
+
+    let predecessor_fingerprint = client
+        .query_one(
+            "SELECT epoch_fingerprint FROM ec_distann_publish_decision
+              WHERE build_id = $1::text::uuid",
+            &[&publish_build],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    client
+        .execute(
+            "SELECT ec_distann_retire_epoch('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    task235_set_lifecycle_fault(&client, Some("after_epoch_retire_apply_error")).await?;
+    let retire_sql = "SELECT ec_distann_recover_epoch_retire(
+         'dm_idx'::regclass,
+         (SELECT epoch_fingerprint FROM ec_distann_publish_decision
+           WHERE build_id = '23500005-0000-4000-8000-000000000005'::uuid))";
+    let _message =
+        task235_expect_lifecycle_fault(&client, retire_sql, "epoch_retire_apply").await?;
+    let retire_partial = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    if !retire_partial
+        .iter()
+        .any(|status| status.state == "Reclaimed" && status.relations_present == 0)
+        || !retire_partial
+            .iter()
+            .any(|status| status.state == "Retired" && status.relations_present == 3)
+    {
+        bail!(
+            "Task 235 epoch_retire_apply partial state mismatch: {}",
+            task235_status_labels(&retire_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_retire('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    client
+        .execute(
+            "SELECT ec_distann_recover_epoch_retire('dm_idx'::regclass, $1::bytea)",
+            &[&predecessor_fingerprint],
+        )
+        .await?;
+    let retire_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
+    task235_assert_generation_statuses("epoch_retire_apply", &retire_final, "Reclaimed", 0)?;
+    let retire_state = client
+        .query_one(
+            "SELECT decision_state FROM ec_distann_retire_decision
+              WHERE epoch_fingerprint = $1::bytea",
+            &[&predecessor_fingerprint],
+        )
+        .await?
+        .get::<_, String>(0);
+    if retire_state != "Applied" {
+        bail!("Task 235 epoch retire decision ended in {retire_state}");
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=epoch_retire_apply fault=after_epoch_retire_apply_error pass=true partial_states={} final_states={} decision=Applied duplicate_recovery=true relations_after=0",
+        task235_status_labels(&retire_partial),
+        task235_status_labels(&retire_final),
+    ));
+
+    let cancelled_build = "23500007-0000-4000-8000-000000000007";
+    task235_prepare_publish(&client, 11, cancelled_build).await?;
+    client
+        .execute(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'dm_idx'::regclass, $1::text::uuid, 'task235_fault_matrix')",
+            &[&cancelled_build],
+        )
+        .await?;
+    task235_set_lifecycle_fault(&client, Some("after_cancelled_generation_reclaim_error")).await?;
+    let cancelled_sql = format!(
+        "SELECT ec_distann_recover_cancelled_publish('dm_idx'::regclass, '{cancelled_build}'::uuid)"
+    );
+    let _message =
+        task235_expect_lifecycle_fault(&client, &cancelled_sql, "cancelled_generation_reclaim")
+            .await?;
+    let cancelled_partial = task235_generation_statuses(socket_dir, nodes, cancelled_build).await?;
+    if !cancelled_partial
+        .iter()
+        .any(|status| status.state == "CancelledReclaimed" && status.relations_present == 0)
+        || !cancelled_partial
+            .iter()
+            .any(|status| status.state == "Ready" && status.relations_present == 3)
+    {
+        bail!(
+            "Task 235 cancelled_generation_reclaim partial state mismatch: {}",
+            task235_status_labels(&cancelled_partial)
+        );
+    }
+    task235_set_lifecycle_fault(&client, None).await?;
+    client.batch_execute(&cancelled_sql).await?;
+    client.batch_execute(&cancelled_sql).await?;
+    let cancelled_final = task235_generation_statuses(socket_dir, nodes, cancelled_build).await?;
+    task235_assert_generation_statuses(
+        "cancelled_generation_reclaim",
+        &cancelled_final,
+        "CancelledReclaimed",
+        0,
+    )?;
+    let cancelled_state = client
+        .query_one(
+            "SELECT d.decision_state, r.state,
+                    d.cancellation_reclaimed_at IS NOT NULL
+               FROM ec_distann_publish_decision d
+               JOIN ec_distann_build_registration r USING (
+                    index_oid, logical_index_uuid, build_id)
+              WHERE d.build_id = $1::text::uuid",
+            &[&cancelled_build],
+        )
+        .await?;
+    let decision = cancelled_state.get::<_, String>(0);
+    let registration = cancelled_state.get::<_, String>(1);
+    let reclaimed = cancelled_state.get::<_, bool>(2);
+    if decision != "Cancelled" || registration != "Cancelled" || !reclaimed {
+        bail!(
+            "Task 235 cancelled recovery did not converge: decision={decision} registration={registration} reclaimed={reclaimed}"
+        );
+    }
+    lines.push(format!(
+        "task235_lifecycle_fault cell=cancelled_generation_reclaim fault=after_cancelled_generation_reclaim_error pass=true partial_states={} final_states={} decision=Cancelled registration=Cancelled reclaimed=true duplicate_recovery=true relations_after=0",
+        task235_status_labels(&cancelled_partial),
+        task235_status_labels(&cancelled_final),
+    ));
+
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 lifecycle coordinator client")?
+        .wrap_err("joining Task 235 lifecycle coordinator client")?
+        .wrap_err("Task 235 lifecycle coordinator connection failed while closing")?;
+    Ok(lines)
+}
+
+async fn run_task235_write_fault_matrix(
+    args: &LocalMultinodePg18Args,
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<Vec<String>> {
+    let target_owner = 1_usize;
+    let mut lines = task235_run_lifecycle_fault_matrix(socket_dir, nodes).await?;
+    lines.extend(
+        task235_operator_status_stop_cell(socket_dir, nodes, secure_transport_fixture).await?,
+    );
+    let cells = [
+        ("clean_commit", None, false, false, true),
+        (
+            "before_mutation",
+            Some("before_endpoint_mutation_error"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "after_mutation_before_prepare",
+            Some("after_endpoint_mutation_error"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "owner_backend_death_during_mutation",
+            Some("endpoint_mutation_after_apply_delay"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "after_prepare_before_ack",
+            Some("after_prepare_before_ack_pause"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "after_precommit_intent",
+            Some("after_precommit_intent_error"),
+            false,
+            true,
+            false,
+        ),
+        (
+            "before_commit_prepared",
+            Some("before_commit_prepared_skip"),
+            false,
+            false,
+            true,
+        ),
+        (
+            "after_commit_prepared_ack_loss",
+            Some("after_commit_prepared_ack_loss"),
+            false,
+            false,
+            true,
+        ),
+        (
+            "one_owner_partial_commit",
+            Some("before_commit_prepared_skip"),
+            false,
+            false,
+            true,
+        ),
+        (
+            "missing_intent_recovery",
+            Some("before_commit_prepared_skip"),
+            false,
+            false,
+            true,
+        ),
+        (
+            "before_rollback_prepared",
+            Some("before_rollback_prepared_skip"),
+            true,
+            false,
+            false,
+        ),
+        (
+            "after_rollback_prepared_ack_loss",
+            Some("after_rollback_prepared_ack_loss"),
+            true,
+            false,
+            false,
+        ),
+    ];
+    for (ordinal, (cell, fault, rollback, expect_error, final_commit)) in
+        cells.into_iter().enumerate()
+    {
+        let candidate =
+            task235_write_candidate(u32::try_from(ordinal + 1)?, nodes.len(), target_owner)?;
+        crate::ecaz_println!(
+            "[distann-multicluster] task235_write_fault_start cell={cell} fault={} source_id={} vec_id={} owner_ordinal={}",
+            fault.unwrap_or("none"),
+            candidate.source_id,
+            candidate.vec_id,
+            candidate.owner_ordinal,
+        );
+        let error = if cell == "after_prepare_before_ack" {
+            let error =
+                task235_terminate_coordinator_after_prepare(args, socket_dir, nodes, &candidate)
+                    .await?;
+            task235_restart_owner_with_prepared(
+                pg_ctl,
+                socket_dir,
+                nodes,
+                &candidate,
+                secure_transport_fixture,
+            )
+            .await?;
+            Some(error)
+        } else if cell == "owner_backend_death_during_mutation" {
+            Some(
+                task235_terminate_owner_during_mutation(args, socket_dir, nodes, &candidate)
+                    .await?,
+            )
+        } else {
+            task235_attempt_insert(args, socket_dir, &nodes[0], &candidate, fault, rollback).await?
+        };
+        if expect_error != error.is_some() {
+            bail!("Task 235 {cell} unexpected insert outcome: error={error:?}");
+        }
+        let recovery_requirement = match cell {
+            "one_owner_partial_commit" => {
+                let gid =
+                    task235_commit_one_backlink_prepared(socket_dir, nodes, &candidate).await?;
+                crate::ecaz_println!(
+                    "[distann-multicluster] task235_write_fault_boundary cell={cell} partial_gid={gid} decision_applied=true acknowledgement_lost=true"
+                );
+                Some((gid, "commit_local:prepared=false"))
+            }
+            "missing_intent_recovery" => {
+                let gid = task235_delete_one_prepared_intent(socket_dir, nodes).await?;
+                crate::ecaz_println!(
+                    "[distann-multicluster] task235_write_fault_boundary cell={cell} deleted_intent_gid={gid}"
+                );
+                Some((gid, "missing_intent:commit_local:prepared=true"))
+            }
+            _ => None,
+        };
+        let before = task235_write_snapshot(socket_dir, nodes, &candidate).await?;
+        let expect_prepared = matches!(
+            cell,
+            "after_precommit_intent"
+                | "before_commit_prepared"
+                | "one_owner_partial_commit"
+                | "missing_intent_recovery"
+                | "before_rollback_prepared"
+        );
+        let prepared_expectation = (cell != "after_prepare_before_ack").then_some(expect_prepared);
+        // Every faulted path has already written at least one independent
+        // prepare_requested fence. Before mutation there is no prepared xact,
+        // but the reaper still must reconcile that nonterminal row from the
+        // coordinator's aborted full XID rather than silently abandoning it.
+        let expect_nonterminal = cell != "clean_commit";
+        task235_assert_snapshot(
+            cell,
+            &before,
+            final_commit,
+            final_commit && !expect_prepared,
+            prepared_expectation,
+            Some(expect_nonterminal),
+        )?;
+        let (after, recovery, recovery_attempts) = task235_recover_until_terminal(
+            cell,
+            socket_dir,
+            nodes,
+            &candidate,
+            final_commit,
+            final_commit,
+            secure_transport_fixture,
+        )
+        .await?;
+        if let Some((gid, required)) = recovery_requirement {
+            let matching = recovery
+                .iter()
+                .any(|report| report.contains(&gid) && report.contains(required));
+            if !matching {
+                bail!(
+                    "Task 235 {cell} recovery did not report required disposition {required} for {gid}: {recovery:?}"
+                );
+            }
+        }
+        task235_assert_snapshot(
+            cell,
+            &after,
+            final_commit,
+            final_commit,
+            Some(false),
+            Some(false),
+        )?;
+        let duplicate = task235_reap_all(socket_dir, nodes, secure_transport_fixture).await?;
+        if !duplicate.is_empty() {
+            bail!("Task 235 {cell} duplicate recovery was not idempotent: {duplicate:?}");
+        }
+        lines.push(format!(
+            "task235_write_fault cell={cell} fault={} pass=true source={} owner={} before_prepared={} before_nonterminal={} recovery_attempts={} recovery_reports={} duplicate_actions=0 vec_id={} owner_ordinal={}",
+            fault.unwrap_or("none"),
+            after.source_rows,
+            after.owner_current_rows,
+            before.prepared_xacts,
+            before.nonterminal_intents,
+            recovery_attempts,
+            recovery.len(),
+            candidate.vec_id,
+            candidate.owner_ordinal,
+        ));
+        for report in recovery {
+            lines.push(format!(
+                "task235_write_recovery cell={cell} report={report}"
+            ));
+        }
+    }
+    lines.extend(
+        task235_prepared_slot_saturation_cell(
+            args,
+            socket_dir,
+            nodes,
+            100,
+            secure_transport_fixture,
+        )
+        .await?,
+    );
+    lines.extend(
+        task235_routed_tombstone_owner_death_cell(
+            args,
+            socket_dir,
+            nodes,
+            secure_transport_fixture,
+        )
+        .await?,
+    );
+    Ok(lines)
+}
+
 async fn drive_physical_fixture(
     args: &LocalMultinodePg18Args,
     pg_ctl: &Path,
@@ -9892,7 +12462,7 @@ async fn drive_physical_fixture(
     remote_fault_arm: &Path,
     remote_fault_marker: &Path,
 ) -> Result<()> {
-    if args.tls_security_matrix
+    if (args.tls_security_matrix || args.read_rpc_fault_matrix || args.write_lifecycle_fault_matrix)
         && !extension_preflight
             .features
             .split(',')
@@ -10093,6 +12663,8 @@ async fn drive_physical_fixture(
         .await?;
     let publish_fault_lines = if !args.skip_fault_drills
         && !args.tls_security_matrix
+        && !args.read_rpc_fault_matrix
+        && !args.write_lifecycle_fault_matrix
         && !args.physical_benchmark
         && !args.coordinator_outside_roster
         && owners.len() >= 3
@@ -10167,15 +12739,17 @@ async fn drive_physical_fixture(
         )
         .await?
         .get::<_, i64>(0);
-    let serving_ok = served == query_limit.min(source_count);
-    crate::ecaz_println!(
-        "[distann-multicluster] physical_serving pass={} rows={} owners={} source_rows={}",
-        serving_ok,
-        served,
-        owners.len(),
-        source_count
+    let serving_outcome =
+        PhysicalDrillOutcome::from_passed(served == query_limit.min(source_count));
+    let serving_details = format!(
+        "rows={served} owners={} source_rows={source_count}",
+        owners.len()
     );
-    if !serving_ok {
+    crate::ecaz_println!(
+        "{}",
+        physical_drill_line("physical_serving", serving_outcome, &serving_details)
+    );
+    if serving_outcome.failed() {
         bail!("physical serving returned {served} rows, expected {query_limit}");
     }
     if args.tls_security_matrix {
@@ -10211,6 +12785,55 @@ async fn drive_physical_fixture(
         }
         crate::ecaz_println!(
             "[distann-multicluster] Task 236 TLS security matrix PASS cells={}",
+            lines.len()
+        );
+        return Ok(());
+    }
+    if args.read_rpc_fault_matrix {
+        let lines =
+            run_read_rpc_fault_matrix(pg_ctl, psql, socket_dir, nodes, secure_transport_fixture)
+                .await?;
+        let body = lines.join("\n") + "\n";
+        fs::write(log_dir.join("task234-read-rpc-fault-matrix.log"), &body)?;
+        for line in &lines {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] Task 234 read RPC fault matrix PASS cells={}",
+            lines.len()
+        );
+        return Ok(());
+    }
+    if args.write_lifecycle_fault_matrix {
+        let lines = run_task235_write_fault_matrix(
+            args,
+            pg_ctl,
+            socket_dir,
+            nodes,
+            secure_transport_fixture,
+        )
+        .await?;
+        let scenario_count = lines
+            .iter()
+            .filter(|line| {
+                line.starts_with("task235_lifecycle_fault ")
+                    || line.starts_with("task235_operator_recovery ")
+                    || line.starts_with("task235_write_fault ")
+            })
+            .count();
+        if scenario_count != 23 {
+            bail!("Task 235 matrix emitted {scenario_count} scenario records, expected 23");
+        }
+        let body = lines.join("\n") + "\n";
+        fs::write(
+            log_dir.join("task235-write-lifecycle-fault-matrix.log"),
+            &body,
+        )?;
+        for line in &lines {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] Task 235 write/lifecycle fault matrix PASS scenarios={scenario_count} records={}",
             lines.len()
         );
         return Ok(());
@@ -10454,11 +13077,22 @@ async fn drive_physical_fixture(
         }
         remote_verified += 1;
     }
-    let physical_mid_insert_ok = mid_insert_drill(psql, socket_dir, nodes[0].port, args).await;
+    let physical_mid_insert_outcome = if args.skip_fault_drills {
+        PhysicalDrillOutcome::Skipped("skip_fault_drills")
+    } else {
+        PhysicalDrillOutcome::from_passed(
+            mid_insert_drill(psql, socket_dir, nodes[0].port, args).await,
+        )
+    };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}"
+        "{}",
+        physical_drill_line(
+            "physical_mid_insert_failure",
+            physical_mid_insert_outcome,
+            ""
+        )
     );
-    if !physical_mid_insert_ok {
+    if physical_mid_insert_outcome.failed() {
         bail!("physical TC-043 mid-insert drill failed");
     }
     let benchmark_lines = if args.physical_benchmark {
@@ -10558,46 +13192,69 @@ async fn drive_physical_fixture(
         })
         .collect::<Vec<_>>()
         .join(";");
-    let physical_concurrency_ok = if args.skip_concurrency_drill {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query pass=skipped reason=skip_concurrency_drill"
-        );
-        true
+    let physical_concurrency_outcome = if args.skip_concurrency_drill {
+        PhysicalDrillOutcome::Skipped("skip_concurrency_drill")
     } else {
-        physical_concurrency_drill(
-            psql,
-            socket_dir,
-            nodes[0].port,
-            args,
-            nodes,
-            &fixture_roster,
-            &concurrency_table,
-            &fingerprint,
+        PhysicalDrillOutcome::from_passed(
+            physical_concurrency_drill(
+                psql,
+                socket_dir,
+                nodes[0].port,
+                args,
+                nodes,
+                &fixture_roster,
+                &concurrency_table,
+                &fingerprint,
+            )
+            .await?,
         )
-        .await?
     };
     // This diagnostic is reverse-edge coverage: `found` contains inserted
     // vec_ids discovered in other nodes' neighbour lists. It is not the
     // number of forward edges selected by inserted nodes; the controlled
     // two-writer target assertion below is the separate backlink invariant.
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
+        "{}",
+        physical_drill_line(
+            "physical_concurrent_insert_query",
+            physical_concurrency_outcome,
+            ""
+        )
     );
-    if !physical_concurrency_ok {
+    if physical_concurrency_outcome.failed() {
         bail!("physical TC-043 concurrent insert/query drill failed");
     }
-    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        nodes,
-        args,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
-    if !physical_delete_vacuum_ok {
+    let physical_delete_vacuum_outcome = if args.skip_fault_drills {
+        PhysicalDrillOutcome::Skipped("skip_fault_drills")
+    } else {
+        PhysicalDrillOutcome::from_passed(
+            physical_routed_delete_vacuum_drill(
+                psql,
+                socket_dir,
+                nodes[0].port,
+                nodes,
+                args,
+                &fixture_roster,
+                &concurrency_table,
+                &fingerprint,
+            )
+            .await?,
+        )
+    };
+    if matches!(
+        physical_delete_vacuum_outcome,
+        PhysicalDrillOutcome::Skipped(_)
+    ) {
+        crate::ecaz_println!(
+            "{}",
+            physical_drill_line(
+                "physical_routed_delete_vacuum",
+                physical_delete_vacuum_outcome,
+                ""
+            )
+        );
+    }
+    if physical_delete_vacuum_outcome.failed() {
         bail!("physical routed DELETE + VACUUM drill failed");
     }
     if args.drop_extension_cleanup_drill {
@@ -10652,25 +13309,32 @@ async fn drive_physical_fixture(
             ));
         }
     }
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_serving pass=true rows={served} owners={} source_rows={source_count}\n",
-        owners.len()
+    summary.push_str(&physical_drill_line(
+        "physical_serving",
+        serving_outcome,
+        &serving_details,
     ));
+    summary.push('\n');
     for line in &publish_fault_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
     for line in &benchmark_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
-    ));
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
-    ));
-    summary.push_str(&format!(
-        "[distann-multicluster] physical_routed_delete_vacuum pass={physical_delete_vacuum_ok}\n"
-    ));
+    for (name, outcome) in [
+        ("physical_mid_insert_failure", physical_mid_insert_outcome),
+        (
+            "physical_concurrent_insert_query",
+            physical_concurrency_outcome,
+        ),
+        (
+            "physical_routed_delete_vacuum",
+            physical_delete_vacuum_outcome,
+        ),
+    ] {
+        summary.push_str(&physical_drill_line(name, outcome, ""));
+        summary.push('\n');
+    }
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
@@ -11020,6 +13684,26 @@ async fn restart_physical_node(
     node: &Node,
     nodes: &[Node],
 ) -> Result<()> {
+    restart_physical_node_with_transport(pg_ctl, socket_dir, node, nodes, None).await
+}
+
+async fn restart_physical_node_with_transport(
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    nodes: &[Node],
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+) -> Result<()> {
+    let secure_transport_startup_options = if secure_transport_fixture.is_some() {
+        " -c ssl=on -c ssl_ca_file=root.crt"
+    } else {
+        ""
+    };
+    let listen_addresses = if secure_transport_fixture.is_some() {
+        "127.0.0.1,127.0.0.2"
+    } else {
+        "127.0.0.1"
+    };
     let mut restart = Command::new(pg_ctl);
     restart
         .arg("-w")
@@ -11029,17 +13713,21 @@ async fn restart_physical_node(
         .arg(&node.log_file)
         .arg("-o")
         .arg(format!(
-            "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-             -c shared_preload_libraries=ecaz -c max_prepared_transactions=32",
-            node.port
+            "-p {} -c listen_addresses={} -c unix_socket_directories='' \
+             -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}",
+            node.port, listen_addresses, secure_transport_startup_options
         ))
         .arg("start")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     for target in nodes {
+        let remote_conninfo = match secure_transport_fixture {
+            Some(fixture) => secure_remote_conninfo(target.port, fixture)?,
+            None => conninfo(socket_dir, target.port),
+        };
         restart.env(
             format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
-            conninfo(socket_dir, target.port),
+            remote_conninfo,
         );
     }
     run_status(restart)
@@ -14073,6 +16761,33 @@ mod tests {
                 .len(),
             TASK167_AB_SAMPLE_ROWS,
         );
+    }
+
+    #[test]
+    fn physical_drill_summary_preserves_skipped_outcome() {
+        assert_eq!(
+            physical_drill_line(
+                "physical_mid_insert_failure",
+                PhysicalDrillOutcome::Skipped("skip_fault_drills"),
+                "",
+            ),
+            "[distann-multicluster] physical_mid_insert_failure pass=skipped reason=skip_fault_drills"
+        );
+    }
+
+    #[test]
+    fn task167_insert_trials_emit_recoverable_elapsed_times() {
+        let measurement = Task167InsertMeasurement {
+            rows_per_second: 8.0,
+            inserted_rows: 64,
+            trial_elapsed_ns: vec![4_000_000_000, 8_000_000_000],
+        };
+        let lines = task167_insert_trial_lines("10k", "physical", &measurement, 32);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("trial=0 rows=32 elapsed_ns=4000000000"));
+        assert!(lines[0].contains("rows_per_second=8.000000 pass=true"));
+        assert!(lines[1].contains("trial=1 rows=32 elapsed_ns=8000000000"));
+        assert!(lines[1].contains("rows_per_second=4.000000 pass=true"));
     }
 
     #[test]

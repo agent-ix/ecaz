@@ -1,0 +1,25 @@
+2026-08-25 10:53:01.101 PDT [187842] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:53:01.115 PDT [187842] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:53:01.115 PDT [187842] LOG:  listening on IPv4 address "127.0.0.1", port 44422
+2026-08-25 10:53:01.119 PDT [187842] LOG:  listening on IPv4 address "127.0.0.2", port 44422
+2026-08-25 10:53:01.125 PDT [187848] LOG:  database system was shut down at 2026-08-25 10:53:00 PDT
+2026-08-25 10:53:01.137 PDT [187842] LOG:  database system is ready to accept connections
+2026-08-25 10:53:58.501 PDT [187934] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:53:58.502 PDT [187934] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:01.615 PDT [187946] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:54:01.615 PDT [187946] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:17.787 PDT [188038] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:54:17.787 PDT [188038] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:20.965 PDT [188064] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:54:20.965 PDT [188064] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:25.666 PDT [188068] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:54:25.667 PDT [188068] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:26.164 PDT [187911] LOG:  SSL error: unexpected eof while reading
+2026-08-25 10:54:26.164 PDT [187911] LOG:  could not receive data from client: Connection reset by peer
+2026-08-25 10:54:27.266 PDT [187842] LOG:  received fast shutdown request
+2026-08-25 10:54:27.280 PDT [187842] LOG:  aborting any active transactions
+2026-08-25 10:54:27.282 PDT [187842] LOG:  background worker "logical replication launcher" (PID 187851) exited with exit code 1
+2026-08-25 10:54:27.283 PDT [187846] LOG:  shutting down
+2026-08-25 10:54:27.287 PDT [187846] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:54:27.654 PDT [187846] LOG:  checkpoint complete: wrote 10216 buffers (62.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.050 s, sync=0.284 s, total=0.372 s; sync files=283, longest=0.045 s, average=0.002 s; distance=70569 kB, estimate=70569 kB; lsn=0/5C3EBC8, redo lsn=0/5C3EBC8
+2026-08-25 10:54:27.676 PDT [187842] LOG:  database system is shut down

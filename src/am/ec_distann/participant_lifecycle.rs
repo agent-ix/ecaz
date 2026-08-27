@@ -901,11 +901,6 @@ fn ec_distann_reclaim_cancelled_generation(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_reclaim_cancelled_generation",
         )?;
-        if audit.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes() {
-            return Err(
-                "EC_PUBLISH_CANCEL: cancellation audit coordinator identity mismatch".to_owned(),
-            );
-        }
 
         let tombstone =
             generation_catalog::extension_relation_name("ec_distann_cancelled_generation_reclaim")?;
@@ -988,6 +983,18 @@ fn ec_distann_reclaim_cancelled_generation(
         {
             return Err(
                 "EC_PUBLISH_CANCEL: cancellation audit generation identity mismatch".to_owned(),
+            );
+        }
+        let owner_ordinal = usize::try_from(row.owner_ordinal)
+            .map_err(|_| "EC_PUBLISH_CANCEL: local owner ordinal is invalid".to_owned())?;
+        let local_member = descriptor.roster.get(owner_ordinal).ok_or_else(|| {
+            "EC_PUBLISH_CANCEL: local owner ordinal is outside the cancellation roster".to_owned()
+        })?;
+        if local_member.logical_index_uuid != *logical_index_uuid.as_bytes()
+            || local_member.node_id != row.node_id
+        {
+            return Err(
+                "EC_PUBLISH_CANCEL: cancellation audit participant identity mismatch".to_owned(),
             );
         }
         if row.state == GenerationState::Published {

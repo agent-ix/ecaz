@@ -1,0 +1,83 @@
+2026-08-24 12:36:41.063 PDT [1816046] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 12:36:41.075 PDT [1816046] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 12:36:41.075 PDT [1816046] LOG:  listening on IPv4 address "127.0.0.1", port 43823
+2026-08-24 12:36:41.086 PDT [1816052] LOG:  database system was shut down at 2026-08-24 12:36:40 PDT
+2026-08-24 12:36:41.098 PDT [1816046] LOG:  database system is ready to accept connections
+2026-08-24 12:36:44.704 PDT [1816126] ERROR:  canceling statement due to user request
+2026-08-24 12:36:44.704 PDT [1816126] CONTEXT:  SQL statement "SELECT a.attnum::int4 AS attnum,
+	                        CASE WHEN a.attisdropped THEN '' ELSE a.attname::text END AS attribute_name,
+	                        CASE WHEN a.attisdropped THEN '' ELSE tn.nspname::text END AS type_namespace,
+	                        CASE WHEN a.attisdropped THEN '' ELSE t.typname::text END AS type_name,
+	                        CASE WHEN a.attisdropped THEN -1 ELSE a.atttypmod END AS typmod,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE cn.nspname::text END AS collation_namespace,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE c.collname::text END AS collation_name,
+	                        a.attisdropped AS dropped,
+	                        CASE WHEN a.attisdropped THEN '' ELSE a.attgenerated::text END AS generated_kind,
+	                        CASE WHEN a.attisdropped OR send_proc.oid IS NULL THEN ''
+	                             ELSE format('%I.%I', send_ns.nspname, send_proc.proname) END AS send_function,
+	                        CASE WHEN a.attisdropped OR recv_proc.oid IS NULL THEN ''
+	                             ELSE format('%I.%I', recv_ns.nspname, recv_proc.proname) END AS receive_function,
+	                        CASE WHEN a.attisdropped THEN '' ELSE format_type(a.atttypid, a.atttypmod) END AS sql_type,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN NULL
+	                             ELSE format('%I.%I', cn.nspname, c.collname) END AS collation_sql
+	                   FROM pg_catalog.pg_attribute a
+	                   LEFT JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+	                   LEFT JOIN pg_catalog.pg_namespace tn ON tn.oid = t.typnamespace
+	                   LEFT JOIN pg_catalog.pg_collation c ON c.oid = a.attcollation
+	                   LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = c.collnamespace
+	                   LEFT JOIN pg_catalog.pg_proc send_proc ON send_proc.oid = t.typsend
+	                   LEFT JOIN pg_catalog.pg_namespace send_ns ON send_ns.oid = send_proc.pronamespace
+	                   LEFT JOIN pg_catalog.pg_proc recv_proc ON recv_proc.oid = t.typreceive
+	                   LEFT JOIN pg_catalog.pg_namespace recv_ns ON recv_ns.oid = recv_proc.pronamespace
+	                  WHERE a.attrelid = $1::oid
+	                    AND a.attnum > 0
+	                  ORDER BY a.attnum"
+2026-08-24 12:36:44.704 PDT [1816126] STATEMENT:  SELECT vec_id, dist
+	   FROM ec_distann_head_search_physical(
+	       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+	       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)
+2026-08-24 12:36:44.722 PDT [1816126] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 12:36:46.386 PDT [1816203] ERROR:  canceling statement due to user request
+2026-08-24 12:36:46.386 PDT [1816203] STATEMENT:  SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-24 12:36:46.407 PDT [1816203] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 12:36:46.428 PDT [1816213] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 12:36:47.890 PDT [1816280] ERROR:  canceling statement due to user request
+2026-08-24 12:36:47.890 PDT [1816280] CONTEXT:  SQL statement "SELECT a.attnum::int4 AS attnum,
+	                        CASE WHEN a.attisdropped THEN '' ELSE a.attname::text END AS attribute_name,
+	                        CASE WHEN a.attisdropped THEN '' ELSE tn.nspname::text END AS type_namespace,
+	                        CASE WHEN a.attisdropped THEN '' ELSE t.typname::text END AS type_name,
+	                        CASE WHEN a.attisdropped THEN -1 ELSE a.atttypmod END AS typmod,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE cn.nspname::text END AS collation_namespace,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE c.collname::text END AS collation_name,
+	                        a.attisdropped AS dropped,
+	                        CASE WHEN a.attisdropped THEN '' ELSE a.attgenerated::text END AS generated_kind,
+	                        CASE WHEN a.attisdropped OR send_proc.oid IS NULL THEN ''
+	                             ELSE format('%I.%I', send_ns.nspname, send_proc.proname) END AS send_function,
+	                        CASE WHEN a.attisdropped OR recv_proc.oid IS NULL THEN ''
+	                             ELSE format('%I.%I', recv_ns.nspname, recv_proc.proname) END AS receive_function,
+	                        CASE WHEN a.attisdropped THEN '' ELSE format_type(a.atttypid, a.atttypmod) END AS sql_type,
+	                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN NULL
+	                             ELSE format('%I.%I', cn.nspname, c.collname) END AS collation_sql
+	                   FROM pg_catalog.pg_attribute a
+	                   LEFT JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+	                   LEFT JOIN pg_catalog.pg_namespace tn ON tn.oid = t.typnamespace
+	                   LEFT JOIN pg_catalog.pg_collation c ON c.oid = a.attcollation
+	                   LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = c.collnamespace
+	                   LEFT JOIN pg_catalog.pg_proc send_proc ON send_proc.oid = t.typsend
+	                   LEFT JOIN pg_catalog.pg_namespace send_ns ON send_ns.oid = send_proc.pronamespace
+	                   LEFT JOIN pg_catalog.pg_proc recv_proc ON recv_proc.oid = t.typreceive
+	                   LEFT JOIN pg_catalog.pg_namespace recv_ns ON recv_ns.oid = recv_proc.pronamespace
+	                  WHERE a.attrelid = $1::oid
+	                    AND a.attnum > 0
+	                  ORDER BY a.attnum"
+2026-08-24 12:36:47.890 PDT [1816280] STATEMENT:  SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+	   FROM ec_distann_gateway_routing_export(
+	       $1::text::regclass, $2::bytea, $3::bigint[])
+2026-08-24 12:36:47.909 PDT [1816280] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 12:36:55.039 PDT [1816046] LOG:  received fast shutdown request
+2026-08-24 12:36:55.045 PDT [1816046] LOG:  aborting any active transactions
+2026-08-24 12:36:55.046 PDT [1816046] LOG:  background worker "logical replication launcher" (PID 1816055) exited with exit code 1
+2026-08-24 12:36:55.047 PDT [1816050] LOG:  shutting down
+2026-08-24 12:36:55.051 PDT [1816050] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 12:36:55.592 PDT [1816050] LOG:  checkpoint complete: wrote 575 buffers (3.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.018 s, sync=0.504 s, total=0.546 s; sync files=268, longest=0.008 s, average=0.002 s; distance=5015 kB, estimate=5015 kB; lsn=0/1C3A2A8, redo lsn=0/1C3A2A8
+2026-08-24 12:36:55.608 PDT [1816046] LOG:  database system is shut down
