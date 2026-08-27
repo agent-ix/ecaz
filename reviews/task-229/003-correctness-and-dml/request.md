@@ -27,11 +27,14 @@ are:
   sidecar topology/storage accounting, DML gates, and structured suite output;
 - `4c060ef9c` — the checked-in counterbalanced 10k/50k/100k suite; and
 - `8b4618ca5` — explicit `payload_sidecar_live_content_digest` naming and the
-  pre-DML-only initial/live equality assertion requested by seq-07.
+  pre-DML-only initial/live equality assertion requested by seq-07; and
+- `6e4cb3c4a` — preserves the established fail-closed missing-row-tier error
+  for uncovered reads while limiting the same-snapshot skip to the sidecar
+  path, as requested by seq-08.
 
-Reviewer feedback commits `ec83fd671` and `49a4bf1ae` are present in the
-branch history but contain no coder source and are not part of this source
-review.
+Reviewer feedback commits `ec83fd671`, `49a4bf1ae`, and `da6963dc2` are
+present in the branch history but contain no coder source and are not part of
+this source review.
 
 ## Read-path contract implemented
 
@@ -66,6 +69,12 @@ review.
   failure roll back graph, row tier, and sidecar together. Covered publication,
   restart, retained-predecessor reads, abort, retire, and reclaim continue to
   use the cataloged five-relation generation.
+- The focused owner-insert fixture uses
+  `insert_from_owner_payload_for_test`, which differs from the production
+  entry point only by skipping `record_physical_insert_intent` and its remote
+  RPC. The atomicity assertions therefore cover the three local owner
+  relations, not end-to-end production intent recording; production's sole
+  owner-insert caller remains `remote_endpoint.rs`.
 - Topology now calls its recomputed relation digest
   `payload_sidecar_live_content_digest`. It equals the immutable Ready receipt
   `initial_content_digest` before DML only and is expected to diverge after
@@ -92,10 +101,12 @@ review.
 
 Static/shared-target preflight is green: `cargo fmt --check`, CLI test compile,
 focused Task 229/covering CLI tests, full PG18+attribution check, and suite
-audit (`12 steps`). Packet-local PG18 correctness/DML logs will be added to
-this packet before its decision; packet 004 owns the release install and the
-single authorized full-scale matrix. No custom Cargo target, new worktree,
-database, fixture, or corpus was created for this request.
+audit (`12 steps`). Packet-local PG18 correctness/DML logs are under
+`artifacts/`: the payload-projection contract, sidecar materialization and
+fail-closed behavior, and local owner-side DML atomicity checks each pass on
+PG18. Packet 004 owns the release install and the single authorized full-scale
+matrix. No custom Cargo target, new worktree, benchmark fixture, or corpus was
+created for this request.
 
 ## Review questions
 
