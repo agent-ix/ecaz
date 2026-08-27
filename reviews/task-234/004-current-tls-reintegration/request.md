@@ -66,4 +66,3 @@ handling, typed error and eviction decisions, secure restart harness, 25-cell
 fault evidence, and the one-result 100k recall boundary delta. The coder
 recommendation is ACCEPT, but Task 234 remains review-open until an outside
 reviewer records a verdict. Tasks 237 and 228 remain blocked on that verdict.
-

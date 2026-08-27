@@ -68,4 +68,3 @@ cargo test --lib --no-default-features --features pg18 remote_transport::tests
 The required 10k/50k/100k recall, latency, and storage evidence is stored in
 `benchmarks/task234-current-tls-read-rpc-cancellation-ab/manifest.md` and its
 packet-local artifacts.
-
