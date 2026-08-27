@@ -1563,7 +1563,9 @@ fn build_topology_row(
 /// Published and retained Retired generations are inspected by fingerprint
 /// through `ec_distann_epoch_topology`, and Reclaimed/Aborted/absent build ids
 /// carry no physical generation and yield no rows. All counts and digests are
-/// recomputed from the physical relations, never from expected manifest fields.
+/// recomputed from the live physical relations, never from expected manifest
+/// fields. The sidecar digest therefore diverges from the immutable Ready
+/// receipt's initial-content digest after any valid post-Ready DML.
 #[pg_extern(stable, strict, parallel_restricted)]
 #[allow(clippy::type_complexity)]
 fn ec_distann_generation_topology(
@@ -1588,7 +1590,7 @@ fn ec_distann_generation_topology(
         name!(directory_bytes, i64),
         name!(control_index_bytes, i64),
         name!(payload_sidecar_row_count, Option<i64>),
-        name!(payload_sidecar_content_digest, Option<Vec<u8>>),
+        name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
         name!(payload_sidecar_heap_bytes, Option<i64>),
         name!(payload_sidecar_index_bytes, Option<i64>),
     ),
@@ -1659,7 +1661,7 @@ fn ec_distann_epoch_topology(
         name!(directory_bytes, i64),
         name!(control_index_bytes, i64),
         name!(payload_sidecar_row_count, Option<i64>),
-        name!(payload_sidecar_content_digest, Option<Vec<u8>>),
+        name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
         name!(payload_sidecar_heap_bytes, Option<i64>),
         name!(payload_sidecar_index_bytes, Option<i64>),
     ),

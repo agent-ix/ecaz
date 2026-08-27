@@ -5940,7 +5940,7 @@ fn test_distann_cover_sidecar_lifecycle() {
 
     let topology = Spi::get_one::<bool>(&format!(
         "SELECT payload_sidecar_row_count = 1
-                AND payload_sidecar_content_digest = decode('{}', 'hex')
+                AND payload_sidecar_live_content_digest = decode('{}', 'hex')
                 AND payload_sidecar_heap_bytes > 0
                 AND payload_sidecar_index_bytes > 0
            FROM ec_distann_generation_topology(
@@ -5952,7 +5952,10 @@ fn test_distann_cover_sidecar_lifecycle() {
     ))
     .unwrap()
     .unwrap();
-    assert!(topology, "topology must expose the physical sidecar evidence");
+    assert!(
+        topology,
+        "pre-DML live topology digest must equal the immutable initial-content digest"
+    );
 
     abort_distann_physical_generation(&fixture);
     for relation in [
