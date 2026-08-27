@@ -4,8 +4,8 @@ packet: 001-retry-snapshot-uaf
 agent: Codex
 role: coder
 model: gpt-5
-date: 2026-08-25
-seq: 02
+date: 2026-08-27
+seq: 03
 ---
 
 # Task 238 current-main reconciliation and closeout request
@@ -27,17 +27,16 @@ second copy of the production fix.
 
 ## Current integration
 
-Commit `3b8b872d6` ports the forced-retry regression block to exact current main
-and keeps it self-contained for both callers of the three-owner fixture. It
-also repairs two test-only integration gaps exposed while verifying the test:
+Commit `7d4103885`, based on merged main `3c81319a3`, ports the previously
+verified forced-retry regression block onto exact current main and keeps it
+self-contained for both callers of the three-owner fixture. It also makes the
+shared PG18 loopback conninfo explicitly request `sslmode=disable`, the only
+plaintext mode allowed by the production Task 236 policy.
 
-1. Task 236's integration had carried Task 234 read-RPC delay call sites into
-   `generation_read.rs` without the `pg_test` GUC definitions/accessor from
-   `options.rs`, so every PG18 `pg_test` build failed to compile.
-2. The shared PG18 loopback conninfo did not explicitly select
-   `sslmode=disable`, so Task 236's secure default correctly rejected the
-   plaintext fixture. The helper now requests plaintext explicitly only for
-   the loopback Unix-socket fixture.
+The Task 234 read-RPC and Task 235 write-fault `pg_test` controls are already
+present on current main. This checkpoint therefore adds only the missing
+Task 238 regression and the loopback test conninfo correction; it does not
+duplicate or remove either accepted hardening surface.
 
 No production TLS or runtime behavior is weakened by either repair.
 
@@ -45,8 +44,10 @@ No production TLS or runtime behavior is weakened by either repair.
 
 - Historical same-tree before/after proof remains in this packet: without the
   guard-lifetime change the backend receives SIGSEGV; with it the test passes.
-- Current-main projection/forced-retry caller: 1 passed, 0 failed, 73.90s.
-- Current-main sibling handoff caller: 1 passed, 0 failed, 59.70s.
+- Exact-current-main projection/forced-retry caller: 1 passed, 0 failed,
+  129.15s (`artifacts/pg18-merged-main-projection-contract.log`).
+- Exact-current-main sibling handoff caller: 1 passed, 0 failed, 67.86s
+  (`artifacts/pg18-merged-main-sibling-handoff.log`).
 - `cargo fmt --all --check` passes (stable-rustfmt nightly-option warnings only).
 
 The pre-fix blast radius includes backend crashes and potentially wrong
