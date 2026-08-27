@@ -176,7 +176,7 @@ Key result: `test tests::pg_test_distann_payload_projection_contract ... ok`;
 `test result: ok. 1 passed; 0 failed`; fixture time `129.15s`.
 
 SHA-256:
-`216177a706d4e005025fbca606fee481b84dfef0ea47987364dd6813b729141f`.
+`f65b621a0c51d883aff3db639df8c233b6353ca2ed7994b1af204cfb2dcef942`.
 
 ### `pg18-merged-main-sibling-handoff.log`
 
@@ -188,4 +188,4 @@ Key result: `test tests::pg_test_distann_three_owner_physical_handoff ... ok`;
 `test result: ok. 1 passed; 0 failed`; fixture time `67.86s`.
 
 SHA-256:
-`25257a8c38be3c28dcc53244806276b31fd53ac91c5ee6551f0bb24f8a2f4124`.
+`edcd429044a1a5c50a5f8d590c5ec98b2efcb622abdf063e8a640cfaa51a5616`.
