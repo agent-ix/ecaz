@@ -6505,7 +6505,7 @@ fn create_distann_participant_lifecycle_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannParticipantLifecycleFixture {
-    create_distann_participant_lifecycle_fixture_configured(stem, build_marker, 1, false)
+    create_distann_participant_lifecycle_fixture_with_rows(stem, build_marker, 1)
 }
 
 fn create_covered_distann_participant_lifecycle_fixture(
