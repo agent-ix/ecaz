@@ -18,9 +18,18 @@ skipped, 0 missing artifacts, and 0 stale artifacts. Suite audit passes.
 
 The explicit decision is **STOP**. The sidecar is semantically neutral and
 distribution-conforming, but it is slower in both independent 100k
-same-generation pairs and breaches additional smaller-scale, tail, build, and
-DML gates. It must not become the production default. This disposition does
-not skip Tasks 230--232.
+same-generation pairs. That uncontaminated primary read gate is the sole STOP
+basis. It must not become the production default. This disposition does not
+skip Tasks 230--232.
+
+This revision addresses reviewer seq-12. The prior request incorrectly attributed
+the cross-step build, total-storage, and DML deltas to the sidecar. All cover
+steps, and no no-cover steps, enabled `materialization_correctness`; that
+fixture adds an external uncompressed 12.8 KB `payload_note` to half the source
+rows. Those three cross-step comparisons are therefore confounded and are not
+decision evidence for or against the sidecar. No rerun is required because the
+within-step primary read comparisons use the same covered generation and are
+unaffected by the fixture difference.
 
 ## Primary read decision
 
@@ -48,24 +57,22 @@ forced controls returned zero sidecar rows. Both mechanisms requested exactly
 remote round trip. Its owner-side sidecar lookup replaced row-tier payload SQL
 but increased end-to-end time.
 
-## Build, storage, and DML gates
+## Supporting measurements and confound correction
 
-- Matched-position covered-build deltas were +14.28% / +11.34% at 10k,
-  +3.69% / +3.98% at 50k, and +7.41% / +8.23% at 100k. Both 10k pairs breach
-  the 10% ceiling; 50k and 100k pass it.
 - The explicit sidecar heap+index is small: 0.41--0.42% of matched no-cover
   total bytes at 10k, 0.35% at 50k, and 0.34% at 100k, inside the 5% gate.
-  However, total covered-generation bytes are 28.0--28.9% above the matched
-  no-cover builds, with most of the observed increase in row-tier bytes. This
-  broader storage result is unfavorable even though the narrowly registered
-  sidecar-relation budget passes.
+  This within-cover-arm relation measurement is clean and the storage gate
+  passes. The observed 28.0--28.9% total-generation difference is not a
+  sidecar cost: it is explained by the cover-only correctness fixture's
+  64/320/640 MB of injected external payload at 10k/50k/100k plus a consistent
+  8% TOAST/page overhead. It is excluded from the decision.
 - NFR-021 passes for all six registered roles: decision eligible, conforming,
   no coordinator-resident unsharded bytes, no non-owned records or orphans,
   and maximum normalized bytes/owned-record growth 1.094499 against 2.0.
-- At 100k the two matched insert-throughput deltas are -0.67% and -3.27%,
-  inside the 10% ceiling. Replacement p95 regresses +15.22% and +15.25%, both
-  just beyond the 15% ceiling. Delete p95 improves 10.98% in the first pair
-  but regresses 23.26% in the second, so DML also independently forces STOP.
+- The recorded build and DML deltas remain useful only as fixture observations.
+  Because the cover steps alone carry the injected TOAST payload, the 10k
+  build-ceiling breach and the replacement/delete deltas cannot be attributed
+  to the sidecar and are not independent STOP reasons.
 - Every covered 160-row insert arm reports 160 graph rows, 160 row-tier rows,
   and 160 sidecar rows appended across all three owners; no-cover arms report
   zero sidecar rows. Replacement/delete distributions each contain 32 routed
@@ -106,7 +113,10 @@ but increased end-to-end time.
 
 ## Review request
 
-1. Confirm the completed evidence supports STOP under the preregistered rule.
+1. Confirm the uncontaminated same-generation read evidence supports STOP
+   under the preregistered primary rule, without relying on the confounded
+   build/total-storage/DML comparisons.
 2. Confirm the 40-stage/52-work-row and DML-distribution carry-in is closed.
-3. Confirm packet 004 is DONE and Task 229 may be tracking-closed and landed,
-   retaining only the explicitly disclosed coordinator-injection limitation.
+3. Confirm seq-12's attribution correction is complete, packet 004 is DONE,
+   and Task 229 may be tracking-closed and landed, retaining only the
+   explicitly disclosed coordinator-injection limitation.

@@ -1,13 +1,17 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
 Status: **implementation and evidence complete — packets 001--003
-review-closed ACCEPT/DONE; packet 004 full-scale decision review-open with
-STOP. The completed suite proves every 40-stage/52-work-row telemetry cell and
-the DML distributions. One disclosed limitation remains: the coordinator
-remote-row disappearance branch is statically reviewed but not dynamically
-injected** (updated 2026-08-28; latest closed review
-`reviews/task-229/002-format-and-lifecycle/feedback/2026-08-28-11-reviewer.md`;
-decision request `reviews/task-229/004-full-scale-decision/request.md`).
+review-closed ACCEPT/DONE; packet 004 STOP correction review-open after seq-12.
+STOP rests on the uncontaminated same-generation read gate: the two 100k pairs
+regress 55.04% and 13.49%. Explicit sidecar storage is 0.34--0.42% and passes;
+cross-step build, total-storage, and DML deltas are excluded because the
+cover-only correctness fixture injects large external payloads. The suite
+proves every 40-stage/52-work-row telemetry cell and DML distribution. One
+disclosed limitation remains: the coordinator remote-row disappearance branch
+is statically reviewed but not dynamically injected** (updated 2026-08-28;
+latest review
+`reviews/task-229/004-full-scale-decision/feedback/2026-08-28-12-reviewer.md`;
+corrected decision request `reviews/task-229/004-full-scale-decision/request.md`).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates

@@ -68,18 +68,24 @@ than 152 duplicate/operational files.
   pairs to improve by at least 5.0% and 0.50 ms.
 - Explicit sidecar storage versus matched no-cover total: 0.41--0.42% at
   10k, 0.35% at 50k, 0.34% at 100k; the narrow 5% sidecar budget passes.
-  Total covered-generation bytes nevertheless rise 28.0--28.9%, primarily
-  in reported row-tier bytes.
-- Matched-position covered-build deltas: +14.28%/+11.34% at 10k,
-  +3.69%/+3.98% at 50k, +7.41%/+8.23% at 100k; the 10k build gate fails.
-- 100k replacement p95 deltas: +15.22%/+15.25%; both fail the 15% ceiling.
-  Delete p95 deltas: -10.98%/+23.26%; the second fails. Insert throughput
-  deltas -0.67%/-3.27% pass.
+  This clean within-cover-arm relation measurement is the only storage-cost
+  attribution made to the sidecar.
+- The 28.0--28.9% total-generation difference is excluded from sidecar
+  attribution. `materialization_correctness` is enabled only on cover steps
+  and injects an uncompressed external 12.8 KB payload into half the source
+  rows: 64/320/640 MB at 10k/50k/100k plus the observed consistent 8% relation
+  overhead. It fully explains the row-tier delta.
+- Matched-position build and DML deltas are also excluded from the decision:
+  their treatment arms carry that same extra TOAST workload. The recorded
+  distributions prove runner behavior but do not isolate sidecar cost.
 - NFR-021: all six roles conform and are decision-eligible; maximum normalized
   bytes/owned-record growth is 1.094499 against the 2.0 threshold.
 - The sidecar path is proven selected: at 100k it returns 3.34 local and 6.66
   remote sidecar rows/scan; controls return zero. Both paths request 2.0 remote
   owners and 9.66 pushdown rounds/scan, so no remote round trip is added.
+- STOP rests solely on the clean within-step primary read gate. Both 100k
+  same-generation pairs regress where both were required to improve; no
+  averaging or supporting cross-step gate is needed.
 
 The suite removed every registered `/home/peter/.ecaz/clusters/task229-*` run
 directory after durable capture. `suite-console.log` records each removal.
