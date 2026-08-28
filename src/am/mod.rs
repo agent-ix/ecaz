@@ -55,10 +55,12 @@ pub use self::ec_distann::page::{
 };
 pub(crate) use self::ec_distann::restore_owner_stream_hash_state;
 pub use self::ec_distann::tuple::{
-    distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset, DistannNodeTuple,
+    distann_node_cold_tid_offset, distann_node_neighbor_codes_offset,
+    distann_node_neighbor_vec_ids_offset, DistannNodeTuple, DISTANN_NODE_COLD_TID_BYTES,
     DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
-    DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_NEIGHBOR_COUNT_OFFSET,
-    DISTANN_NODE_SEARCH_CODE_OFFSET, DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET,
+    DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
+    DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET, DISTANN_NODE_TAG_OFFSET,
+    DISTANN_NODE_VEC_ID_OFFSET,
 };
 pub use self::ec_distann::{
     owner_stream_digest, DistannAbandonBindingAuditV1, DistannAbandonedBinding,

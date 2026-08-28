@@ -344,6 +344,43 @@ fn distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap() {
 }
 
 #[test]
+fn distann_physical_graph_record_v2_fixture_appends_cold_tid() {
+    let v1 = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_graph_record_v1.hex"
+    ));
+    let v2 = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_graph_record_v2.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&v2);
+    assert_eq!(independent.u16(), 2);
+    assert_eq!(independent.u16(), 0);
+    assert_eq!(independent.u64(), 0x1122_3344_5566_7788);
+    assert_eq!(independent.u32(), 9);
+    assert_eq!(independent.u16(), 3);
+    assert_eq!(independent.u16(), 2);
+    assert_eq!(independent.take(2), [0xA1, 0xA2]);
+    assert_eq!(independent.u64(), 101);
+    assert_eq!(independent.u64(), 202);
+    assert_eq!(independent.u64(), 0);
+    assert_eq!(independent.u64(), 0);
+    assert_eq!(independent.take(8), [1, 2, 3, 4, 0, 0, 0, 0]);
+    assert_eq!(independent.u32(), 29);
+    assert_eq!(independent.u16(), 7);
+    independent.finish();
+
+    assert_eq!(&v2[2..v1.len()], &v1[2..]);
+    let record = DistannNodeTuple::decode_physical_v2(&v2, 4, 2).unwrap();
+    assert_eq!(
+        record.cold_tid,
+        Some(ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        })
+    );
+    assert!(DistannNodeTuple::decode_physical_v1(&v2, 4, 2).is_err());
+}
+
+#[test]
 fn distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap() {
     let bytes = decode_hex_fixture(include_str!(
         "../fixtures/on-disk/distann_row_schema_v1.hex"

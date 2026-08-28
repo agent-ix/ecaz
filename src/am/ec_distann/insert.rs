@@ -285,6 +285,7 @@ pub(super) fn build_insert_node_tuple(
         tombstoned: false,
         vec_id,
         heap_tid,
+        cold_tid: None,
         neighbor_count: u16::try_from(forward.len())
             .map_err(|_| "ec_distann insert neighbor count exceeds u16".to_owned())?,
         search_code,

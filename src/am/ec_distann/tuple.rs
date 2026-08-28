@@ -20,6 +20,9 @@ pub const DISTANN_NODE_TAG: u8 = 0x09;
 /// retain `(tag=0x09, reserved=0)` in bytes 0..2; physical v5 generations
 /// reinterpret those same two bytes as this little-endian u16 format version.
 pub const DISTANN_NODE_FORMAT_VERSION: u16 = 1;
+/// Task 230 hot/cold graph record. Every V1 byte retains its offset and the
+/// cold-tier TID is appended after the fixed-size adjacency/code arrays.
+pub const DISTANN_NODE_HOT_COLD_FORMAT_VERSION: u16 = 2;
 
 /// FR-083 / ADR-085 D5 interim delta-buffer tuple: one inserted vector
 /// (vec_id + heap_tid + full-precision vector), chained via next_tid, exact-
@@ -40,6 +43,7 @@ pub const DISTANN_FLAG_TOMBSTONE: u16 = 1 << 0;
 /// tag(1) + reserved(1) + flags(2) + vec_id(8) + heap_tid(6) +
 /// neighbor_count(2).
 pub const DISTANN_NODE_HEADER_BYTES: usize = 20;
+pub const DISTANN_NODE_COLD_TID_BYTES: usize = 6;
 
 pub const DISTANN_NODE_TAG_OFFSET: usize = 0;
 pub const DISTANN_NODE_FORMAT_VERSION_OFFSET: usize = 0;
@@ -57,6 +61,10 @@ pub const fn distann_node_neighbor_codes_offset(graph_degree_r: u16, code_len: u
     distann_node_neighbor_vec_ids_offset(code_len) + graph_degree_r as usize * 8
 }
 
+pub const fn distann_node_cold_tid_offset(graph_degree_r: u16, code_len: usize) -> usize {
+    DistannNodeTuple::encoded_len(graph_degree_r, code_len)
+}
+
 /// FR-076 graph-node record. `search_code` is always exactly the codec
 /// stride; `neighbor_vec_ids` and `neighbor_codes` are always sized for the
 /// full `graph_degree` R (slots past `neighbor_count` are zero padding), so
@@ -66,6 +74,7 @@ pub struct DistannNodeTuple {
     pub tombstoned: bool,
     pub vec_id: u64,
     pub heap_tid: ItemPointer,
+    pub cold_tid: Option<ItemPointer>,
     pub neighbor_count: u16,
     pub search_code: Vec<u8>,
     pub neighbor_vec_ids: Vec<u64>,
@@ -78,6 +87,20 @@ impl DistannNodeTuple {
         DISTANN_NODE_HEADER_BYTES + code_len + r * 8 + r * code_len
     }
 
+    pub fn encoded_len_for_version(
+        format_version: u16,
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<usize, String> {
+        match format_version {
+            DISTANN_NODE_FORMAT_VERSION => Ok(Self::encoded_len(graph_degree_r, code_len)),
+            DISTANN_NODE_HOT_COLD_FORMAT_VERSION => {
+                Ok(Self::encoded_len(graph_degree_r, code_len) + DISTANN_NODE_COLD_TID_BYTES)
+            }
+            other => Err(format!("unsupported distann graph record version {other}")),
+        }
+    }
+
     /// Zero-filled record shaped for pooled `decode_into` reuse.
     pub fn placeholder(graph_degree_r: u16, code_len: usize) -> Self {
         let r = graph_degree_r as usize;
@@ -85,6 +108,7 @@ impl DistannNodeTuple {
             tombstoned: false,
             vec_id: 0,
             heap_tid: ItemPointer::INVALID,
+            cold_tid: None,
             neighbor_count: 0,
             search_code: vec![0; code_len],
             neighbor_vec_ids: vec![0; r],
@@ -98,6 +122,7 @@ impl DistannNodeTuple {
             tombstoned: false,
             vec_id: 0,
             heap_tid: ItemPointer::INVALID,
+            cold_tid: None,
             neighbor_count: 0,
             search_code: Vec::new(),
             neighbor_vec_ids: Vec::new(),
@@ -144,6 +169,32 @@ impl DistannNodeTuple {
         if self.heap_tid == ItemPointer::INVALID {
             return Err("distann physical node record has an invalid row-tier TID".to_owned());
         }
+        if self.cold_tid.is_some() {
+            return Err(
+                "distann V1 physical node record unexpectedly has a cold-tier TID".to_owned(),
+            );
+        }
+        let live = usize::from(self.neighbor_count);
+        if self.neighbor_vec_ids[live..]
+            .iter()
+            .any(|neighbor| *neighbor != 0)
+            || self.neighbor_codes[live * code_len..]
+                .iter()
+                .any(|byte| *byte != 0)
+        {
+            return Err("distann physical node record has non-zero adjacency padding".to_owned());
+        }
+        Ok(())
+    }
+
+    fn validate_physical_v2(&self, graph_degree_r: u16, code_len: usize) -> Result<(), String> {
+        self.validate(graph_degree_r, code_len)?;
+        if self.heap_tid == ItemPointer::INVALID {
+            return Err("distann V2 physical node record has an invalid hot-tier TID".to_owned());
+        }
+        if self.cold_tid.is_none_or(|tid| tid == ItemPointer::INVALID) {
+            return Err("distann V2 physical node record has an invalid cold-tier TID".to_owned());
+        }
         let live = usize::from(self.neighbor_count);
         if self.neighbor_vec_ids[live..]
             .iter()
@@ -167,7 +218,28 @@ impl DistannNodeTuple {
         graph_degree_r: u16,
         code_len: usize,
     ) -> Result<Vec<u8>, String> {
-        self.encode_with_version(graph_degree_r, code_len, Some(DISTANN_NODE_FORMAT_VERSION))
+        self.encode_physical_version(DISTANN_NODE_FORMAT_VERSION, graph_degree_r, code_len)
+    }
+
+    pub fn encode_physical_v2(
+        &self,
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Vec<u8>, String> {
+        self.encode_physical_version(
+            DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
+            graph_degree_r,
+            code_len,
+        )
+    }
+
+    pub fn encode_physical_version(
+        &self,
+        format_version: u16,
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Vec<u8>, String> {
+        self.encode_with_version(graph_degree_r, code_len, Some(format_version))
     }
 
     fn encode_with_version(
@@ -176,12 +248,28 @@ impl DistannNodeTuple {
         code_len: usize,
         format_version: Option<u16>,
     ) -> Result<Vec<u8>, String> {
-        if format_version.is_some() {
-            self.validate_physical_v1(graph_degree_r, code_len)?;
-        } else {
-            self.validate(graph_degree_r, code_len)?;
+        match format_version {
+            None => {
+                self.validate(graph_degree_r, code_len)?;
+                if self.cold_tid.is_some() {
+                    return Err(
+                        "legacy distann node record unexpectedly has a cold-tier TID".to_owned(),
+                    );
+                }
+            }
+            Some(DISTANN_NODE_FORMAT_VERSION) => {
+                self.validate_physical_v1(graph_degree_r, code_len)?
+            }
+            Some(DISTANN_NODE_HOT_COLD_FORMAT_VERSION) => {
+                self.validate_physical_v2(graph_degree_r, code_len)?
+            }
+            Some(other) => return Err(format!("unsupported distann graph record version {other}")),
         }
-        let mut out = Vec::with_capacity(Self::encoded_len(graph_degree_r, code_len));
+        let encoded_len = match format_version {
+            Some(version) => Self::encoded_len_for_version(version, graph_degree_r, code_len)?,
+            None => Self::encoded_len(graph_degree_r, code_len),
+        };
+        let mut out = Vec::with_capacity(encoded_len);
         if let Some(format_version) = format_version {
             out.extend_from_slice(&format_version.to_le_bytes());
         } else {
@@ -201,7 +289,12 @@ impl DistannNodeTuple {
             out.extend_from_slice(&neighbor_vec_id.to_le_bytes());
         }
         out.extend_from_slice(&self.neighbor_codes);
-        debug_assert_eq!(out.len(), Self::encoded_len(graph_degree_r, code_len));
+        if format_version == Some(DISTANN_NODE_HOT_COLD_FORMAT_VERSION) {
+            self.cold_tid
+                .expect("V2 validation requires a cold-tier TID")
+                .encode_into(&mut out);
+        }
+        debug_assert_eq!(out.len(), encoded_len);
         Ok(out)
     }
 
@@ -216,12 +309,29 @@ impl DistannNodeTuple {
         graph_degree_r: u16,
         code_len: usize,
     ) -> Result<Self, String> {
-        Self::decode_version(
+        Self::decode_physical_version(input, DISTANN_NODE_FORMAT_VERSION, graph_degree_r, code_len)
+    }
+
+    pub fn decode_physical_v2(
+        input: &[u8],
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Self, String> {
+        Self::decode_physical_version(
             input,
+            DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
             graph_degree_r,
             code_len,
-            Some(DISTANN_NODE_FORMAT_VERSION),
         )
+    }
+
+    pub fn decode_physical_version(
+        input: &[u8],
+        format_version: u16,
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Self, String> {
+        Self::decode_version(input, graph_degree_r, code_len, Some(format_version))
     }
 
     fn decode_version(
@@ -245,6 +355,16 @@ impl DistannNodeTuple {
         Self::decode_into_version(input, graph_degree_r, code_len, None, out)
     }
 
+    pub fn decode_into_physical_version(
+        input: &[u8],
+        format_version: u16,
+        graph_degree_r: u16,
+        code_len: usize,
+        out: &mut Self,
+    ) -> Result<(), String> {
+        Self::decode_into_version(input, graph_degree_r, code_len, Some(format_version), out)
+    }
+
     fn decode_into_version(
         input: &[u8],
         graph_degree_r: u16,
@@ -252,14 +372,10 @@ impl DistannNodeTuple {
         expected_version: Option<u16>,
         out: &mut Self,
     ) -> Result<(), String> {
-        let expected = Self::encoded_len(graph_degree_r, code_len);
-        if input.len() != expected {
-            return Err(format!(
-                "distann node record length mismatch: got {}, expected {expected}",
-                input.len()
-            ));
-        }
         if let Some(expected_version) = expected_version {
+            if input.len() < 2 {
+                return Err("distann physical node record is too short for a version".to_owned());
+            }
             let format_version = u16::from_le_bytes(
                 input[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
                     .try_into()
@@ -270,11 +386,27 @@ impl DistannNodeTuple {
                     "invalid distann graph record version: got {format_version}, expected {expected_version}"
                 ));
             }
-        } else if input[DISTANN_NODE_TAG_OFFSET] != DISTANN_NODE_TAG || input[1] != 0 {
-            return Err(format!(
+            let expected = Self::encoded_len_for_version(format_version, graph_degree_r, code_len)?;
+            if input.len() != expected {
+                return Err(format!(
+                    "distann node record length mismatch: got {}, expected {expected} for version {format_version}",
+                    input.len()
+                ));
+            }
+        } else {
+            let expected = Self::encoded_len(graph_degree_r, code_len);
+            if input.len() != expected {
+                return Err(format!(
+                    "distann node record length mismatch: got {}, expected {expected}",
+                    input.len()
+                ));
+            }
+            if input[DISTANN_NODE_TAG_OFFSET] != DISTANN_NODE_TAG || input[1] != 0 {
+                return Err(format!(
                 "invalid legacy distann node record tag/reserved: got {:#04x}/{:#04x}, expected {DISTANN_NODE_TAG:#04x}/0x00",
                 input[DISTANN_NODE_TAG_OFFSET], input[1]
             ));
+            }
         }
         let flags = u16::from_le_bytes(
             input[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
@@ -307,6 +439,7 @@ impl DistannNodeTuple {
         out.heap_tid = ItemPointer::decode(
             &input[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6],
         )?;
+        out.cold_tid = None;
         out.neighbor_count = neighbor_count;
 
         out.search_code.clear();
@@ -328,8 +461,19 @@ impl DistannNodeTuple {
         out.neighbor_codes.clear();
         out.neighbor_codes
             .extend_from_slice(&input[codes_offset..][..r * code_len]);
-        if expected_version.is_some() {
-            out.validate_physical_v1(graph_degree_r, code_len)?;
+        match expected_version {
+            Some(DISTANN_NODE_FORMAT_VERSION) => {
+                out.validate_physical_v1(graph_degree_r, code_len)?
+            }
+            Some(DISTANN_NODE_HOT_COLD_FORMAT_VERSION) => {
+                let cold_tid_offset = distann_node_cold_tid_offset(graph_degree_r, code_len);
+                out.cold_tid = Some(ItemPointer::decode(
+                    &input[cold_tid_offset..cold_tid_offset + DISTANN_NODE_COLD_TID_BYTES],
+                )?);
+                out.validate_physical_v2(graph_degree_r, code_len)?;
+            }
+            Some(other) => return Err(format!("unsupported distann graph record version {other}")),
+            None => {}
         }
         Ok(())
     }
@@ -528,8 +672,10 @@ impl DistannDeltaTuple {
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FORMAT_VERSION,
+        distann_node_cold_tid_offset, DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE,
+        DISTANN_NODE_COLD_TID_BYTES, DISTANN_NODE_FORMAT_VERSION,
         DISTANN_NODE_FORMAT_VERSION_OFFSET, DISTANN_NODE_HEADER_BYTES,
+        DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
     };
     use crate::storage::page::ItemPointer;
 
@@ -564,6 +710,7 @@ mod tests {
                 block_number: 11,
                 offset_number: 3,
             },
+            cold_tid: None,
             neighbor_count: 3,
             search_code: (0..CODE_LEN as u8).collect(),
             neighbor_vec_ids: vec![101, 202, 303, 0],
@@ -620,6 +767,68 @@ mod tests {
         let mut noncanonical = tuple;
         noncanonical.neighbor_vec_ids[3] = 404;
         assert!(noncanonical.encode_physical_v1(R, CODE_LEN).is_err());
+    }
+
+    #[test]
+    fn distann_physical_node_v2_appends_cold_tid_without_moving_v1_fields() {
+        let v1_tuple = sample();
+        let v1 = v1_tuple.encode_physical_v1(R, CODE_LEN).unwrap();
+
+        let cold_tid = ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        };
+        let mut v2_tuple = v1_tuple.clone();
+        v2_tuple.cold_tid = Some(cold_tid);
+        let v2 = v2_tuple.encode_physical_v2(R, CODE_LEN).unwrap();
+        let v1_len = DistannNodeTuple::encoded_len(R, CODE_LEN);
+        assert_eq!(
+            v2.len(),
+            DistannNodeTuple::encoded_len_for_version(
+                DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
+                R,
+                CODE_LEN
+            )
+            .unwrap()
+        );
+        assert_eq!(v2.len(), v1_len + DISTANN_NODE_COLD_TID_BYTES);
+        assert_eq!(&v2[2..v1_len], &v1[2..]);
+        assert_eq!(distann_node_cold_tid_offset(R, CODE_LEN), v1_len);
+        assert_eq!(
+            ItemPointer::decode(&v2[v1_len..v1_len + DISTANN_NODE_COLD_TID_BYTES]).unwrap(),
+            cold_tid
+        );
+        assert_eq!(
+            DistannNodeTuple::decode_physical_v2(&v2, R, CODE_LEN).unwrap(),
+            v2_tuple
+        );
+        assert!(DistannNodeTuple::decode_physical_v1(&v2, R, CODE_LEN)
+            .unwrap_err()
+            .contains("version"));
+        assert!(DistannNodeTuple::decode_physical_v2(&v1, R, CODE_LEN)
+            .unwrap_err()
+            .contains("version"));
+    }
+
+    #[test]
+    fn distann_physical_node_version_is_admitted_before_version_sized_length() {
+        let mut wrong_version_and_v2_length = sample();
+        wrong_version_and_v2_length.cold_tid = Some(ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        });
+        let mut encoded = wrong_version_and_v2_length
+            .encode_physical_v2(R, CODE_LEN)
+            .unwrap();
+        encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+            .copy_from_slice(&99_u16.to_le_bytes());
+        let error = DistannNodeTuple::decode_physical_v1(&encoded, R, CODE_LEN).unwrap_err();
+        assert!(error.contains("version"));
+        assert!(!error.contains("length mismatch"));
+
+        let mut missing_cold_tid = sample();
+        missing_cold_tid.cold_tid = Some(ItemPointer::INVALID);
+        assert!(missing_cold_tid.encode_physical_v2(R, CODE_LEN).is_err());
     }
 
     #[test]

@@ -567,6 +567,7 @@ fn prepare_entries(
                 block_number: 0,
                 offset_number: 1,
             },
+            cold_tid: None,
             neighbor_count,
             search_code: entry.search_code.clone(),
             neighbor_vec_ids,

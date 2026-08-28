@@ -1366,13 +1366,14 @@ mod tests {
         );
         emit("distann_control_metadata_v5.hex", &control.encode());
 
-        let graph = DistannNodeTuple {
+        let mut graph = DistannNodeTuple {
             tombstoned: false,
             vec_id: 0x1122_3344_5566_7788,
             heap_tid: ItemPointer {
                 block_number: 9,
                 offset_number: 3,
             },
+            cold_tid: None,
             neighbor_count: 2,
             search_code: vec![0xA1, 0xA2],
             neighbor_vec_ids: vec![101, 202, 0, 0],
@@ -1381,6 +1382,14 @@ mod tests {
         emit(
             "distann_graph_record_v1.hex",
             &graph.encode_physical_v1(4, 2).unwrap(),
+        );
+        graph.cold_tid = Some(ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        });
+        emit(
+            "distann_graph_record_v2.hex",
+            &graph.encode_physical_v2(4, 2).unwrap(),
         );
 
         let row_schema = sample_row_schema();

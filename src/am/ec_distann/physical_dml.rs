@@ -549,6 +549,7 @@ unsafe fn insert_from_prepared_slot(
         tombstoned: false,
         vec_id,
         heap_tid: row_tid,
+        cold_tid: None,
         neighbor_count: u16::try_from(forward.len())
             .map_err(|_| "EC_INSERT_GRAPH: forward degree exceeds u16".to_owned())?,
         search_code: new_code.clone(),

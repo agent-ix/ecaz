@@ -1586,6 +1586,7 @@ unsafe fn flush_build_state(
             tombstoned: false,
             vec_id: vec_ids[node],
             heap_tid: state.rows[node].heap_tid,
+            cold_tid: None,
             neighbor_count: u16::try_from(neighbors.len())
                 .expect("neighbor count bounded by graph_degree u16"),
             search_code: codes[node].clone(),
