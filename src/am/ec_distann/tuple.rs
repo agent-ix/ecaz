@@ -192,7 +192,10 @@ impl DistannNodeTuple {
         if self.heap_tid == ItemPointer::INVALID {
             return Err("distann V2 physical node record has an invalid hot-tier TID".to_owned());
         }
-        if self.cold_tid.is_none_or(|tid| tid == ItemPointer::INVALID) {
+        if self
+            .cold_tid
+            .map_or(true, |tid| tid == ItemPointer::INVALID)
+        {
             return Err("distann V2 physical node record has an invalid cold-tier TID".to_owned());
         }
         let live = usize::from(self.neighbor_count);
