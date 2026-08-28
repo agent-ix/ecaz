@@ -1,11 +1,14 @@
 # Task 229: ec_distann Covering Payload Sidecar
 
-Status: **implementation and evidence in progress — packet 001 review-closed
-ACCEPT; packet 002 checkpoint 4 code reviewed correct with closeout review-open;
-packet 003 read/DML/runner work landed and review-open; packet 004 full-scale
-suite preregistered and audited, measurements pending** (updated 2026-08-27;
-latest review `reviews/task-229/002-format-and-lifecycle/feedback/2026-08-27-07-reviewer.md`;
-packet 003 `reviews/task-229/003-correctness-and-dml/`).
+Status: **implementation and evidence in progress — packets 001 and 003
+review-closed ACCEPT/DONE; packet 002 checkpoint 4 code reviewed correct with
+closeout review-open; packet 004 full-scale suite running. Packet 004 carries
+two explicit closeout items: prove the 40-stage/52-work-row telemetry and DML
+distributions from suite results, and retain the disclosed limitation that the
+coordinator remote-row disappearance branch is statically reviewed but not
+dynamically injected** (updated 2026-08-28; latest review
+`reviews/task-229/003-correctness-and-dml/feedback/2026-08-27-10-reviewer.md`;
+packet 004 `reviews/task-229/004-full-scale-decision/`).
 Priority: P0 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
