@@ -5,17 +5,18 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 03
+seq: 04
 ---
 
 # Task 230 hot/cold vertical row tier — concrete implementation plan
 
 This revision requests outside re-review against exact current main
-`23fb9b7ba1f0803be5dfc700d9865f80fbf60862`. It supersedes seq-02 and resolves
-all seven findings in `feedback/2026-08-28-01-reviewer.md`; the finding-by-
-finding disposition is `artifacts/seq-01-disposition.md`. Task 229 is review-
-closed STOP and its sidecar is absent from both Task 230 arms. Source grounding
-is `artifacts/current-main-architecture.md`.
+`23fb9b7ba1f0803be5dfc700d9865f80fbf60862`. It supersedes seq-03, whose seven
+seq-01 resolutions are accepted and not reopened, and resolves the two findings
+in `feedback/2026-08-28-02-reviewer.md`. Dispositions are
+`artifacts/seq-01-disposition.md` and `artifacts/seq-02-disposition.md`. Task 229
+is review-closed STOP and its sidecar is absent from both Task 230 arms. Source
+grounding is `artifacts/current-main-architecture.md`.
 
 No source, SQL, test, fixture, or benchmark result is under review. Per Task
 230 entry condition 3, persisted-format implementation remains gated on an
@@ -81,19 +82,19 @@ internal identifiers.
 The hot heap contains, with `fillfactor=100` and its exact-vector column
 explicitly set to `STORAGE PLAIN` and verified as `attstorage = 'p'`:
 
-`vec_id bigint | tombstone boolean | exact vector | selected scalar values`
+`vec_id bigint | exact vector | selected scalar values`
 
 The cold heap contains:
 
 `vec_id bigint | every remaining source value`
 
 Both `vec_id` fields are internal identity echoes, not duplicate source
-attributes. Graph `is_current`/tombstone state is the visibility gate for all
-projection shapes. Hot MVCC visibility and the hot `tombstone` byte are
-corroborating integrity echoes: the byte detects graph/hot partial mutation or
-misaddressed locator state without forcing a hot read for cold-only success.
-The cold echo makes a wrong-but-visible locator fail closed during
-reconstruction.
+attributes. Graph `is_current`/tombstone state is the sole visibility gate for
+all projection shapes. The hot tier has no tombstone column: a misaddressed hot
+locator is already rejected by vec_id plus graph current/version validation,
+and graph-only deletion avoids creating a cross-structure partial-mutation
+state. Hot MVCC visibility remains a snapshot-consistency check. The cold echo
+makes a wrong-but-visible locator fail closed during reconstruction.
 
 Hot/cold V1 deliberately supports at most 1,536 exact-vector dimensions. The
 build rejects dimension 1,537 and above before creating either physical tier;
@@ -111,10 +112,15 @@ header and its existing offsets: `hot_tid` remains the current heap TID at byte
 12, neighbor count remains at 18, and search code remains at 20. The six-byte
 `cold_tid` is appended after the version-sized search-code and neighbor arrays.
 Version-dispatched `encoded_len(version, ...)` and
-`cold_tid_offset(version, ...)` helpers own the only variable offset; every raw
-consumer in `insert.rs`, `remote_endpoint.rs`, `dml.rs`, and `routine.rs` first
-validates and dispatches the record version. Existing V1 constants remain V1
-aliases instead of silently changing meaning.
+`cold_tid_offset(version, ...)` helpers own the only variable offset. The codec
+at `tuple.rs:248-261` first bounds-checks the two version bytes, reads and admits
+the version, then computes and checks the version-sized expected length; V2 can
+therefore reach dispatch before its extra six bytes are judged. Existing
+`encoded_len` call sites at `tuple.rs:184`, `tuple.rs:204`, and `insert.rs:867`
+take the admitted version explicitly rather than defaulting to V1. Raw
+consumers in `insert.rs`, `remote_endpoint.rs`, `dml.rs`, and `routine.rs`
+likewise validate and dispatch record version before interpretation. Existing
+V1 constants remain V1 aliases instead of silently changing meaning.
 
 The graph heap's existing `row_tid` column remains a hot-TID echo for lookup
 and integrity checks, while canonical graph-record bytes are the sole authority
@@ -158,8 +164,8 @@ writes.
 
 Ready receipt V3 records one logical row count plus separate initial hot and
 cold content digests and heap bytes. Graph and directory fields remain
-explicit. The hot digest folds, in ascending vec_id order, vec_id, tombstone,
-exact vector bytes, NULL shape, and hot scalar bytes. The cold digest folds
+explicit. The hot digest folds, in ascending vec_id order, vec_id, exact vector
+bytes, NULL shape, and hot scalar bytes. The cold digest folds
 vec_id, NULL shape, and cold attribute bytes; the graph digest binds both
 locators. Receipt validation requires equal graph/hot/cold counts and matching
 vec_id/locator echoes.
@@ -177,8 +183,8 @@ generation becomes readable.
 Expansion, exact scoring, head/traversal-replica construction, and exact rerank
 resolve only the V2 hot locator and deform only the compact hot tuple. They
 validate graph-current/tombstone state first, then vec_id, hot MVCC visibility,
-tombstone parity, exact-vector dimension/finiteness, and expected hot relation
-identity. No cold relation is opened by an exact-vector read. Feature-gated
+exact-vector dimension/finiteness, and expected hot relation identity. No cold
+relation is opened by an exact-vector read. Feature-gated
 counters separately report hot tuple/block reads, exact vector detoast/send
 work, and any cold relation opens/reads; the acceptance invariant is zero cold
 work and zero vector TOAST fetches for expansion/rerank-only calls.
@@ -220,16 +226,13 @@ same-identity replacement appends new cold/hot versions and a new graph
 version; predecessor tuples remain for snapshot-pinned readers until generation
 reclaim.
 
-Delete updates the current graph tombstone and its referenced hot tombstone in
-one transaction. Because changing the inline hot tuple can produce a new heap
-TID, the mutation also replaces the graph V2 locator with that new `hot_tid`
-while retaining the same `cold_tid`, all under the existing intent/current-
-version check. It never rewrites or fetches cold payload. Retry/intent,
-forwarded mutation, fault, and recovery paths validate that both mutations
-target the same build, vec_id, record version, and locator pair. Post-Ready DML
-does not rewrite immutable initial digests or the epoch fingerprint, matching
-the existing graph/row-tier lifecycle rule. Packet 003 measures the cost of
-rewriting a roughly page-sized PLAIN hot tuple on delete.
+Delete flips only the current graph tombstone under the existing intent/current-
+version check, exactly as the current graph-authoritative path does. It never
+rewrites hot or cold, and neither locator changes. Retry/intent, forwarded
+mutation, fault, and recovery paths validate the build, vec_id, record version,
+and locator pair before the graph mutation. Post-Ready DML does not rewrite
+immutable initial digests or the epoch fingerprint, matching the existing
+graph/row-tier lifecycle rule.
 
 Ready, publication, restart, retained-predecessor reads, rollback, cancellation,
 retirement, forced/ordinary reclaim, owner outage, index drop, extension drop,
@@ -324,10 +327,8 @@ verdict. No Task 230 code or task status is closed before that verdict.
 
 ## Review request
 
-Please re-review the seven seq-01 findings and the resulting attribute
-partition/no-duplication invariant, PLAIN dimension boundary, V1/V2 trailing-
-locator compatibility, graph-gated visibility, descriptor/receipt/manifest
-versioning, DML ordering, lifecycle coverage, heap-derived accounting, and
-primary decision shape. The specific authorization requested is to begin
-packet 002 persisted-format implementation; findings should land under this
-packet's `feedback/` directory.
+Please re-review only the two seq-02 findings: removal of the redundant hot
+tombstone and delete-time locator churn, and version-first V2 length dispatch
+at the codec plus all named `encoded_len` call sites. The specific authorization
+requested is to begin packet 002 persisted-format implementation; findings
+should land under this packet's `feedback/` directory.

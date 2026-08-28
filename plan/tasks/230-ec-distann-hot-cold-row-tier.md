@@ -1,22 +1,15 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 seq-03 reviewed NOT DONE (seq-02); packet 002
+Status: **planning packet 001 seq-04 revised; outside re-review open; packet 002
 persisted-format implementation remains gated** (updated 2026-08-28; Task 229 is
 review-closed STOP; request `reviews/task-230/001-plan/request.md`; current
-verdict `reviews/task-230/001-plan/feedback/2026-08-28-02-reviewer.md`; prior
-verdict `.../2026-08-28-01-reviewer.md`; disposition
-`reviews/task-230/001-plan/artifacts/seq-01-disposition.md`). Seq-03 resolves all
-seven seq-01 findings — inline PLAIN vector contract, 1,536-dimension build
-boundary, sole graph locator pair, graph-gated visibility, implicit
-UUID/bytea(16) identity, trailing V2 cold TID, heap-derived accounting, id-only
-primary gate — all accepted and not reopened. Two items remain for a seq-04
-revision: the hot `tombstone` byte is redundant with the vec_id echo and graph
-`is_current` yet costs a page-sized PLAIN rewrite plus a delete-time graph
-locator rewrite (remove it, or name the failure mode it uniquely catches); and
-the trailing-V2 compatibility resolution misses `tuple.rs:248-261`, where the
-version-independent `encoded_len` length gate rejects a V2 record before the
-version is read. Packet 002 is authorized on those two alone. Priority: P1
-storage/retrieval latency.
+verdict `reviews/task-230/001-plan/feedback/2026-08-28-02-reviewer.md`;
+dispositions `reviews/task-230/001-plan/artifacts/seq-01-disposition.md` and
+`seq-02-disposition.md`). The seven seq-01 resolutions remain accepted. Seq-04
+removes the redundant hot tombstone and delete-time locator churn, and makes V2
+decoding read/admit version before applying the version-sized length check at
+`tuple.rs:248-261`, with all named `encoded_len` callers versioned. Priority:
+P1 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
