@@ -1,7 +1,8 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **proposed — operator-selected mandatory prototype, after Task 229**
-(2026-08-22). Priority: P1 storage/retrieval latency.
+Status: **planning packet 001 review-open; persisted-format implementation is
+gated on outside review** (updated 2026-08-28; Task 229 is review-closed STOP;
+`reviews/task-230/001-plan/`). Priority: P1 storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
@@ -112,4 +113,3 @@ and mutation effects. Continue to Tasks 231 and 232 regardless of outcome.
 - FR-076, FR-078, FR-079, FR-082, FR-083
 - NFR-016, NFR-018, NFR-021, NFR-022
 - PostgreSQL TOAST storage behavior
-
