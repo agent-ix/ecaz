@@ -35,9 +35,9 @@ row supplies exact rerank.
 
 ```yaml
 record: distann_graph_node
-version: 1
+version: 1 or 2
 fields:
-  - { name: record_version, type: u16, rule: exactly 1; little-endian at byte offset 0 }
+  - { name: record_version, type: u16, rule: exactly 1 for row-heap generations or 2 for hot/cold generations; little-endian at byte offset 0 }
   - { name: flags, type: u16, rule: bit0 = tombstone }
   - { name: vec_id, type: u64, rule: identity hash per the two derivation modes in Behavior (global source-identity or default local heap-TID); unique per logical row }
   - { name: heap_tid, type: item_pointer, rule: owner-local epoch-row-tier tuple; resolves the full-precision vector for exact rerank and the frozen source payload for final materialization }
@@ -45,13 +45,14 @@ fields:
   - { name: search_code, type: bytes[code_stride], rule: one neighbor_code_format code for this node's own vector; used to score the node when it enters the beam }
   - { name: neighbor_vec_ids, type: u64[R], rule: first neighbor_count slots are adjacency; remaining slots are canonical zero padding }
   - { name: neighbor_codes, type: bytes[R * code_stride], rule: one fixed-stride code per live neighbor slot; remaining slots are canonical zero padding }
+  - { name: cold_tid, type: item_pointer, rule: V2 only; required owner-local cold-tier tuple locator appended after every V1 byte }
 ```
 
 ## Record Fields
 
 | Field | Type | Rule |
 |-------|------|------|
-| record_version | u16 | Exactly 1, little-endian at byte offset 0; unknown and byte-swapped versions reject before any other field is interpreted |
+| record_version | u16 | Exactly 1 (row heap) or 2 (hot/cold), little-endian at byte offset 0; unknown and byte-swapped versions reject before any version-sized length check or other field interpretation |
 | flags | u16 | Bit 0 = tombstone (deleted, retained until vacuum) |
 | vec_id | u64 | Identity hash per the two derivation modes in Behavior; unique per logical row within the index, and across all nodes and epochs in global mode |
 | heap_tid | ItemPointer | Owner-local epoch-row-tier tuple; the co-placed row it resolves ([FR-078](../build/FR-078-distann-hash-placement.md)) is the source of the node's full-precision vector for exact rerank and the frozen source payload for final materialization ([FR-079](../read/FR-079-distann-remote-expansion-protocol.md)) |
@@ -59,27 +60,32 @@ fields:
 | search_code | byte[code_stride] | One `neighbor_code_format` code for this node's own vector; scores the node when it enters the beam without a heap read |
 | neighbor_vec_ids | u64[R] | First `neighbor_count` slots are the adjacency list; unused slots are zero |
 | neighbor_codes | byte[R × code_stride] | One scoreable code per live neighbor slot; unused slots are zero |
+| cold_tid | ItemPointer | V2 only; required owner-local cold-tier locator, appended after the V1 search-code and neighbor arrays |
 
 The fixed header is 20 bytes with offsets: `record_version=0`, `flags=2`,
 `vec_id=4`, `heap_tid=12`, `neighbor_count=18`, and `search_code=20`.
 The 6-byte `ItemPointer` encoding is exactly `block_number u32_le` followed by
 `offset_number u16_le`, with no alignment padding. Thus the header arithmetic
 is `2 + 2 + 8 + 6 + 2 = 20` bytes.
-Consequently the complete record remains exactly
-`20 + code_stride + (R × 8) + (R × code_stride)` bytes. The legacy local-v4
+Consequently the complete V1 record remains exactly
+`20 + code_stride + (R × 8) + (R × code_stride)` bytes. V2 preserves every V1
+offset and byte after the two-byte version, then appends the six-byte
+`cold_tid`; its length is the V1 length plus six. The decoder SHALL admit the
+version before applying the corresponding version-sized length check. The legacy local-v4
 tuple's `(tag=0x09, reserved=0)` prefix is not a physical-generation version
 and SHALL NOT be accepted by the physical-v1 decoder.
 Physical graph-record version `9` SHALL never be assigned: its little-endian
 prefix `(0x09, 0x00)` byte-collides with that legacy local tuple prefix.
 
-The `record_version = 1` layout above is written by physical generations
-only. The legacy lane (`distributed_control = false`,
+The `record_version = 1` and `record_version = 2` layouts above are written by
+physical generations only. A generation descriptor SHALL admit only V1 with
+the row-heap layout and V2 with the hot/cold layout. The legacy lane (`distributed_control = false`,
 [FR-075](../FR-075-ec-distann-access-method-surface.md)) SHALL continue to
 encode the identical payload behind the legacy two-byte
 `(tag=0x09, reserved=0)` prefix in place of `record_version`; its decoder
 SHALL reject any other tag/reserved pair. The two record shapes are
 lane-disjoint: legacy records decode only through the legacy decoder,
-physical records only through the physical-v1 decoder.
+physical records only through the admitted physical-version decoder.
 
 ## Handoff Entry Layout
 
@@ -223,7 +229,7 @@ batch envelope.
 | FR-076-AC-11 | With `source_identity` absent, two rebuilds of the same unchanged table assign identical local-mode vec_ids to identical rows, and local-mode and global-mode hashes of colliding inputs never alias (distinct domain tags) | Test |
 | FR-076-AC-12 | A distributed-control build without `source_identity = 'include'` is rejected at build time | Test |
 | FR-076-AC-13 | A handoff entry whose source-identity payload is not exactly 16 bytes is rejected before any row-tier or graph write | Test (TC-040) |
-| FR-076-AC-14 | A legacy-lane record carries the `(0x09, 0x00)` prefix and decodes only through the legacy decoder, while a physical-generation record carries `record_version = 1` and decodes only through the physical-v1 decoder | Test |
+| FR-076-AC-14 | A legacy-lane record carries the `(0x09, 0x00)` prefix and decodes only through the legacy decoder; physical V1 remains byte-exact; physical V2 changes only the version and appends a required six-byte cold locator; unknown versions reject before version-sized length interpretation | Test |
 
 ## Dependencies
 

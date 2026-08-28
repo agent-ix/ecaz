@@ -234,6 +234,17 @@ pub(super) fn build_epoch(
             .as_ref()
             .map(|cover| cover.digest())
             .transpose()?;
+        let resolved_row_tier_layout = resolve_row_tier_layout_descriptor(
+            index_oid,
+            &row_schema,
+            indexed_vector_attnum,
+            metadata.dimensions,
+            &options,
+        )?;
+        let row_tier_layout_descriptor_digest = resolved_row_tier_layout
+            .as_ref()
+            .map(|layout| layout.digest())
+            .transpose()?;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
@@ -245,6 +256,7 @@ pub(super) fn build_epoch(
             epoch_u64,
             row_schema_fingerprint,
             payload_cover_descriptor_digest,
+            row_tier_layout_descriptor_digest,
             compatibility_digest,
             source_relation_oid,
         )?
@@ -448,7 +460,11 @@ pub(super) fn build_epoch(
         let descriptor = DistannGenerationDescriptor {
             coordinator_logical_index_uuid: metadata.logical_index_uuid,
             index_format_version: super::super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
-            graph_record_version: super::super::DISTANN_GRAPH_RECORD_VERSION,
+            graph_record_version: if resolved_row_tier_layout.is_some() {
+                super::super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION
+            } else {
+                super::super::tuple::DISTANN_NODE_FORMAT_VERSION
+            },
             handoff_wire_version: super::super::DISTANN_HANDOFF_WIRE_VERSION,
             dimensions,
             graph_degree: metadata.graph_degree_r,
@@ -460,6 +476,7 @@ pub(super) fn build_epoch(
             // This is the exact descriptor resolved under the registration
             // locks above. Never re-read reloptions after replay registration.
             payload_cover: resolved_payload_cover,
+            row_tier_layout: resolved_row_tier_layout,
         };
         let descriptor_bytes = descriptor.encode()?;
         let descriptor_digest = descriptor.digest()?;

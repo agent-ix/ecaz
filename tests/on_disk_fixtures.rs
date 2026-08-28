@@ -14,15 +14,15 @@ use ecaz::bench_api::{
     DistannEpochManifestV2, DistannGenerationDescriptor, DistannHandoffBatch, DistannHandoffEntry,
     DistannHandoffShape, DistannManifestBuildOptions, DistannManifestCodecParameters,
     DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt, DistannRetireDecisionV1,
-    DistannRowSchemaDescriptor, DistannSourceSnapshot, DistannSuccessorActivationV1, ItemPointer,
-    IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
-    IvfPqCodebookTuple, IvfRerankMode, IvfRerankScoreMode, IvfStorageFormat, MetadataPage,
-    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
-    SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
-    SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
-    TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple, VamanaCodebookTuple,
-    VamanaMetadataPage, VamanaNodeTuple, DISTANN_CONTROL_METADATA_BYTES,
-    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
+    DistannRowSchemaDescriptor, DistannRowTierLayoutDescriptorV1, DistannSourceSnapshot,
+    DistannSuccessorActivationV1, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+    IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
+    IvfRerankScoreMode, IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest,
+    SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry,
+    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+    TqElementTuple, TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple,
+    TqTurboHotTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
+    DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
     DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_NODE_FORMAT_VERSION_OFFSET,
     DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
     DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
@@ -529,6 +529,86 @@ fn distann_generation_descriptor_v2_fixture_decodes_independently_and_rejects_sw
     let mut swapped = bytes;
     swapped.swap(0, 1);
     assert!(DistannGenerationDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_row_tier_layout_v1_fixture_decodes_independently() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_row_tier_layout_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 16);
+    assert_eq!(independent.u16(), 8);
+    assert_eq!(independent.u32(), 84);
+    assert_eq!(independent.u16(), 16);
+    independent.take(32); // row-schema fingerprint
+    assert_eq!(independent.u16(), 3); // indexed vector attnum
+    assert_eq!(independent.u16(), 1); // source identity attnum
+    assert_eq!(independent.u16(), 0); // optional hot scalars
+    assert_eq!(independent.u16(), 2); // complete live partition
+    assert_eq!(
+        (independent.u16(), independent.u8(), independent.u16()),
+        (1, 1, 2)
+    );
+    assert_eq!(
+        (independent.u16(), independent.u8(), independent.u16()),
+        (3, 1, 3)
+    );
+    independent.finish();
+
+    let layout = DistannRowTierLayoutDescriptorV1::decode(&bytes).unwrap();
+    assert_eq!(layout.encode().unwrap(), bytes);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_row_tier_layout_v1\0",
+        "31b60126024d258762859652e38e832ed2f530730ded430fcbc894c7a618d1dd",
+    );
+}
+
+#[test]
+fn distann_generation_descriptor_v4_fixture_binds_layout_and_graph_v2() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_generation_descriptor_v4.hex"
+    ));
+    let layout_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_row_tier_layout_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 4);
+    independent.take(16); // coordinator UUID
+    assert_eq!(independent.u16(), 5); // index format
+    assert_eq!(independent.u16(), 2); // graph record V2
+    assert_eq!(independent.u16(), 1); // handoff wire
+    assert_eq!(independent.u16(), 8); // dimensions
+    assert_eq!(independent.u16(), 4); // graph degree
+    assert_eq!(independent.u16(), 1); // placement hash
+    assert_eq!(independent.u32(), 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u8(), 2);
+    independent.len_bytes(); // codec artifact
+    independent.len_bytes(); // row schema
+    independent.take(32); // row-schema fingerprint
+    assert_eq!(independent.len_bytes(), layout_bytes);
+    assert_eq!(
+        independent.take(32),
+        hex::decode("31b60126024d258762859652e38e832ed2f530730ded430fcbc894c7a618d1dd").unwrap()
+    );
+    independent.finish();
+
+    let descriptor = DistannGenerationDescriptor::decode(&bytes).unwrap();
+    assert_eq!(descriptor.graph_record_version, 2);
+    assert!(descriptor.payload_cover().is_none());
+    assert!(descriptor.row_tier_layout().is_some());
+    assert_eq!(descriptor.encode().unwrap(), bytes);
+
+    let mut corrupt_layout_digest = bytes;
+    *corrupt_layout_digest.last_mut().unwrap() ^= 1;
+    assert!(DistannGenerationDescriptor::decode(&corrupt_layout_digest).is_err());
 }
 
 #[test]

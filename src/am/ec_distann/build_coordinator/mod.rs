@@ -36,12 +36,65 @@ use super::manifest_v2::{
     DistannSourceSnapshot,
 };
 use super::roster_digest;
-use super::row_schema::resolve_relation_schema;
+use super::row_schema::{resolve_relation_schema, DistannRowSchemaDescriptor};
 
 const BUILD_REGISTRATION_V1_VERSION: u16 = 1;
 const BUILD_REGISTRATION_V2_VERSION: u16 = 2;
+const BUILD_REGISTRATION_V3_VERSION: u16 = 3;
 const BUILD_REGISTRATION_DOMAIN: &[u8] = b"ec_distann_build_registration_v1\0";
 const BUILD_ROSTER_SNAPSHOT_VERSION: u16 = 1;
+
+fn source_identity_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT indkey[1]::int4 AS identity_attnum
+                   FROM pg_catalog.pg_index
+                  WHERE indexrelid = $1::oid
+                    AND indnkeyatts = 1
+                    AND indnatts = 2",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_SCHEMA_MISMATCH: identity lookup failed: {error}"))?
+            .map(|row| {
+                let value = row["identity_attnum"]
+                    .value::<i32>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: identity attnum decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: identity attnum is NULL".to_owned())?;
+                u16::try_from(value)
+                    .map_err(|_| "EC_SCHEMA_MISMATCH: identity attnum is outside u16".to_owned())
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "EC_SCHEMA_MISMATCH: control identity attribute is absent".to_owned())
+    })
+}
+
+fn resolve_row_tier_layout_descriptor(
+    index_oid: pg_sys::Oid,
+    row_schema: &DistannRowSchemaDescriptor,
+    indexed_vector_attnum: u16,
+    dimensions: u16,
+    options: &super::options::EcDistannOptions,
+) -> Result<Option<super::row_layout::DistannRowTierLayoutDescriptorV1>, String> {
+    match options.row_tier_layout {
+        super::options::RowTierLayout::RowHeap => Ok(None),
+        super::options::RowTierLayout::HotCold => {
+            let identity_attnum = source_identity_attnum(index_oid)?;
+            super::row_layout::resolve_hot_cold_layout(
+                row_schema,
+                indexed_vector_attnum,
+                identity_attnum,
+                dimensions,
+                options.hot_payload_attnums.as_deref().unwrap_or(&[]),
+            )
+            .map(Some)
+        }
+    }
+}
 
 thread_local! {
     static SOURCE_SESSION_LOCKS: RefCell<Vec<SourceSessionLock>> = const { RefCell::new(Vec::new()) };
@@ -641,17 +694,26 @@ fn encode_registration(
     roster_digest: [u8; 32],
     row_schema_fingerprint: [u8; 32],
     payload_cover_descriptor_digest: Option<[u8; 32]>,
+    row_tier_layout_descriptor_digest: Option<[u8; 32]>,
     compatibility_digest: [u8; 32],
     participants: &[DesiredParticipant],
 ) -> Result<Vec<u8>, String> {
     let mut encoder = CanonicalEncoder::with_capacity(
         192 + roster_snapshot.len() + participants.len().saturating_mul(160),
     );
-    encoder.put_u16(if payload_cover_descriptor_digest.is_some() {
-        BUILD_REGISTRATION_V2_VERSION
-    } else {
-        BUILD_REGISTRATION_V1_VERSION
-    });
+    let version = match (
+        payload_cover_descriptor_digest,
+        row_tier_layout_descriptor_digest,
+    ) {
+        (None, None) => BUILD_REGISTRATION_V1_VERSION,
+        (Some(_), None) => BUILD_REGISTRATION_V2_VERSION,
+        (None, Some(_)) => BUILD_REGISTRATION_V3_VERSION,
+        (Some(_), Some(_)) => return Err(
+            "EC_BUILD_STATE: registration cannot bind payload cover and hot/cold layout together"
+                .to_owned(),
+        ),
+    };
+    encoder.put_u16(version);
     encoder.put_u32(u32::from(index_oid));
     encoder.put_fixed(logical_index_uuid.as_bytes());
     encoder.put_u32(u32::from(source_relation_oid));
@@ -662,6 +724,8 @@ fn encode_registration(
     encoder.put_fixed(&roster_digest);
     encoder.put_fixed(&row_schema_fingerprint);
     if let Some(digest) = payload_cover_descriptor_digest {
+        encoder.put_fixed(&digest);
+    } else if let Some(digest) = row_tier_layout_descriptor_digest {
         encoder.put_fixed(&digest);
     }
     encoder.put_fixed(&compatibility_digest);
@@ -694,6 +758,7 @@ fn registration_digest(
     roster_digest: [u8; 32],
     row_schema_fingerprint: [u8; 32],
     payload_cover_descriptor_digest: Option<[u8; 32]>,
+    row_tier_layout_descriptor_digest: Option<[u8; 32]>,
     compatibility_digest: [u8; 32],
     participants: &[DesiredParticipant],
 ) -> Result<[u8; 32], String> {
@@ -710,6 +775,7 @@ fn registration_digest(
             roster_digest,
             row_schema_fingerprint,
             payload_cover_descriptor_digest,
+            row_tier_layout_descriptor_digest,
             compatibility_digest,
             participants,
         )?,
@@ -735,6 +801,7 @@ fn replay_registration(
     epoch: u64,
     current_row_schema_fingerprint: [u8; 32],
     current_payload_cover_descriptor_digest: Option<[u8; 32]>,
+    current_row_tier_layout_descriptor_digest: Option<[u8; 32]>,
     current_compatibility_digest: [u8; 32],
     source_relation_oid: pg_sys::Oid,
 ) -> Result<Option<([u8; 32], bool)>, String> {
@@ -943,6 +1010,7 @@ fn replay_registration(
         stored.roster_digest,
         stored.row_schema_fingerprint,
         current_payload_cover_descriptor_digest,
+        current_row_tier_layout_descriptor_digest,
         current_compatibility_digest,
         &participants,
     )?;
@@ -1356,6 +1424,7 @@ mod tests {
             roster_digest(&roster).unwrap(),
             [0x11; 32],
             None,
+            None,
             [0x22; 32],
             &participants,
         )
@@ -1379,6 +1448,7 @@ mod tests {
                 roster_digest(&roster).unwrap(),
                 [0x11; 32],
                 None,
+                None,
                 [0x22; 32],
                 &changed,
             )
@@ -1398,10 +1468,48 @@ mod tests {
                 roster_digest(&roster).unwrap(),
                 [0x11; 32],
                 Some([0x33; 32]),
+                None,
                 [0x22; 32],
                 &participants,
             )
             .unwrap()
         );
+
+        assert_ne!(
+            digest,
+            registration_digest(
+                pg_sys::Oid::from(1234_u32),
+                Uuid::from_bytes(sample_rfc4122_v4_uuid(0xA1)),
+                pg_sys::Oid::from(5678_u32),
+                7,
+                Uuid::from_bytes(sample_rfc4122_v4_uuid(0xAB)),
+                9,
+                &snapshot,
+                roster_digest(&roster).unwrap(),
+                [0x11; 32],
+                None,
+                Some([0x44; 32]),
+                [0x22; 32],
+                &participants,
+            )
+            .unwrap()
+        );
+
+        assert!(registration_digest(
+            pg_sys::Oid::from(1234_u32),
+            Uuid::from_bytes(sample_rfc4122_v4_uuid(0xA1)),
+            pg_sys::Oid::from(5678_u32),
+            7,
+            Uuid::from_bytes(sample_rfc4122_v4_uuid(0xAB)),
+            9,
+            &snapshot,
+            roster_digest(&roster).unwrap(),
+            [0x11; 32],
+            Some([0x33; 32]),
+            Some([0x44; 32]),
+            [0x22; 32],
+            &participants,
+        )
+        .is_err());
     }
 }

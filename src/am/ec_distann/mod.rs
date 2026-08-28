@@ -115,6 +115,7 @@ pub use self::generation_descriptor::{
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET,
+    DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION,
     DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,
@@ -179,6 +180,7 @@ pub use self::manifest_v2::{
     DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
 };
 pub use self::payload_sidecar::DistannPayloadCoverDescriptorV1;
+pub use self::row_layout::DistannRowTierLayoutDescriptorV1;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::row_schema::resolve_relation_schema;
 pub use self::row_schema::{

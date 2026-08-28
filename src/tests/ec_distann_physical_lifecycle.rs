@@ -348,6 +348,7 @@ fn create_distann_physical_generation_fixture_configured_schema(
         },
         row_schema,
         payload_cover,
+        row_tier_layout: None,
     };
     let mut build_id = [build_marker; 16];
     build_id[6] = (build_id[6] & 0x0f) | 0x40;

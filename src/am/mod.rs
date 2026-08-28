@@ -55,8 +55,8 @@ pub use self::ec_distann::page::{
 };
 pub(crate) use self::ec_distann::restore_owner_stream_hash_state;
 pub use self::ec_distann::tuple::{
-    distann_node_cold_tid_offset, distann_node_neighbor_codes_offset,
-    distann_node_neighbor_vec_ids_offset, DistannNodeTuple, DISTANN_NODE_COLD_TID_BYTES,
+    distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
+    distann_node_v2_cold_tid_offset, DistannNodeTuple, DISTANN_NODE_COLD_TID_BYTES,
     DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
     DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
     DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET, DISTANN_NODE_TAG_OFFSET,
@@ -71,8 +71,8 @@ pub use self::ec_distann::{
     DistannManifestBuildOptions, DistannManifestCodecParameters, DistannOwnerExpectation,
     DistannPayloadCoverDescriptorV1, DistannPublishedEpochIdentity, DistannReadyReceipt,
     DistannReadyReceiptPayloadSidecar, DistannRetireDecisionV1, DistannRosterEntry,
-    DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannSourceSnapshot,
-    DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+    DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannRowTierLayoutDescriptorV1,
+    DistannSourceSnapshot, DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
     DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET, DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
     DISTANN_ABANDONED_BINDING_SET_VERSION, DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
     DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
@@ -97,6 +97,7 @@ pub use self::ec_distann::{
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET,
+    DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION,
     DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,

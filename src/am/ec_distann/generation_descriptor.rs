@@ -14,15 +14,18 @@ use super::page::{
 };
 use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::quantizer::{DISTANN_RABITQ_BITS, DISTANN_TURBOQUANT_BITS};
+use super::row_layout::DistannRowTierLayoutDescriptorV1;
 use super::row_schema::DistannRowSchemaDescriptor;
+use super::tuple::{DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_HOT_COLD_FORMAT_VERSION};
 
 /// Legacy/no-cover descriptor version. Kept as the public compatibility
 /// constant because descriptors without a cover must remain byte-identical.
 pub const DISTANN_GENERATION_DESCRIPTOR_VERSION: u16 = 2;
 pub const DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION: u16 = 3;
+pub const DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION: u16 = 4;
 pub const DISTANN_CODEC_ARTIFACT_VERSION: u16 = 1;
 pub const DISTANN_BUILD_SPEC_VERSION: u16 = 1;
-pub const DISTANN_GRAPH_RECORD_VERSION: u16 = 1;
+pub const DISTANN_GRAPH_RECORD_VERSION: u16 = DISTANN_NODE_FORMAT_VERSION;
 pub const DISTANN_HANDOFF_WIRE_VERSION: u16 = 1;
 pub const DISTANN_PHYSICAL_INDEX_FORMAT_VERSION: u16 = INDEX_FORMAT_V5_DISTANN_CONTROL;
 pub const DISTANN_PLACEMENT_HASH_VERSION: u16 = super::placement::DISTANN_PLACEMENT_HASH_V1;
@@ -484,13 +487,13 @@ pub struct DistannGenerationDescriptor {
     pub codec_artifact: DistannCodecArtifact,
     pub row_schema: DistannRowSchemaDescriptor,
     pub payload_cover: Option<DistannPayloadCoverDescriptorV1>,
+    pub row_tier_layout: Option<DistannRowTierLayoutDescriptorV1>,
 }
 
 impl DistannGenerationDescriptor {
     pub fn validate(&self) -> Result<(), String> {
         if !is_rfc4122_v4_uuid(&self.coordinator_logical_index_uuid)
             || self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
-            || self.graph_record_version != DISTANN_GRAPH_RECORD_VERSION
             || self.handoff_wire_version != DISTANN_HANDOFF_WIRE_VERSION
             || self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
             || self.dimensions == 0
@@ -509,15 +512,53 @@ impl DistannGenerationDescriptor {
             return Err("EC_GENERATION_DESCRIPTOR: codec kind/dimension mismatch".to_owned());
         }
         self.row_schema.validate()?;
-        if let Some(payload_cover) = &self.payload_cover {
-            payload_cover.validate()?;
-            payload_cover.validate_row_schema(&self.row_schema)?;
+        match (&self.payload_cover, &self.row_tier_layout) {
+            (None, None) => {
+                if self.graph_record_version != DISTANN_NODE_FORMAT_VERSION {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: row-heap layout requires graph record V1"
+                            .to_owned(),
+                    );
+                }
+            }
+            (Some(payload_cover), None) => {
+                if self.graph_record_version != DISTANN_NODE_FORMAT_VERSION {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: payload-cover row heap requires graph record V1"
+                            .to_owned(),
+                    );
+                }
+                payload_cover.validate()?;
+                payload_cover.validate_row_schema(&self.row_schema)?;
+            }
+            (None, Some(row_tier_layout)) => {
+                if self.graph_record_version != DISTANN_NODE_HOT_COLD_FORMAT_VERSION {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: hot/cold layout requires graph record V2"
+                            .to_owned(),
+                    );
+                }
+                row_tier_layout.validate_row_schema(&self.row_schema)?;
+                if row_tier_layout.exact_vector_dimensions != self.dimensions {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: hot/cold layout dimension mismatch".to_owned(),
+                    );
+                }
+            }
+            (Some(_), Some(_)) => {
+                return Err(
+                    "EC_GENERATION_DESCRIPTOR: payload cover and hot/cold layout are mutually exclusive"
+                        .to_owned(),
+                )
+            }
         }
         Ok(())
     }
 
     pub fn version(&self) -> u16 {
-        if self.payload_cover.is_some() {
+        if self.row_tier_layout.is_some() {
+            DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION
+        } else if self.payload_cover.is_some() {
             DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
         } else {
             DISTANN_GENERATION_DESCRIPTOR_VERSION
@@ -526,6 +567,10 @@ impl DistannGenerationDescriptor {
 
     pub fn payload_cover(&self) -> Option<&DistannPayloadCoverDescriptorV1> {
         self.payload_cover.as_ref()
+    }
+
+    pub fn row_tier_layout(&self) -> Option<&DistannRowTierLayoutDescriptorV1> {
+        self.row_tier_layout.as_ref()
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {
@@ -538,10 +583,16 @@ impl DistannGenerationDescriptor {
             .as_ref()
             .map(DistannPayloadCoverDescriptorV1::encode)
             .transpose()?;
+        let row_tier_layout = self
+            .row_tier_layout
+            .as_ref()
+            .map(DistannRowTierLayoutDescriptorV1::encode)
+            .transpose()?;
         let mut encoder = CanonicalEncoder::with_capacity(
             68 + codec_artifact.len()
                 + row_schema.len()
                 + payload_cover.as_ref().map_or(0, Vec::len)
+                + row_tier_layout.as_ref().map_or(0, Vec::len)
                 + self.roster.len() * 32,
         );
         encoder.put_u16(self.version());
@@ -560,6 +611,9 @@ impl DistannGenerationDescriptor {
         if let (Some(descriptor), Some(encoded)) = (&self.payload_cover, payload_cover) {
             encoder.put_len_prefixed(&encoded)?;
             encoder.put_fixed(&descriptor.digest()?);
+        } else if let (Some(descriptor), Some(encoded)) = (&self.row_tier_layout, row_tier_layout) {
+            encoder.put_len_prefixed(&encoded)?;
+            encoder.put_fixed(&descriptor.digest()?);
         }
         encoder.finish()
     }
@@ -569,7 +623,9 @@ impl DistannGenerationDescriptor {
         let version = decoder.get_u16("generation descriptor version")?;
         if !matches!(
             version,
-            DISTANN_GENERATION_DESCRIPTOR_VERSION | DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
+            DISTANN_GENERATION_DESCRIPTOR_VERSION
+                | DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION
+                | DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION
         ) {
             return Err(format!(
                 "EC_GENERATION_DESCRIPTOR: unsupported descriptor version {version}"
@@ -589,18 +645,35 @@ impl DistannGenerationDescriptor {
         let row_schema_bytes = decoder.get_len_prefixed("row schema descriptor")?;
         let row_schema = DistannRowSchemaDescriptor::decode(row_schema_bytes)?;
         let expected_schema_fingerprint: [u8; 32] = decoder.get_fixed("row schema fingerprint")?;
-        let payload_cover = if version == DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION {
-            let encoded = decoder.get_len_prefixed("payload cover descriptor")?;
-            let descriptor = DistannPayloadCoverDescriptorV1::decode(encoded)?;
-            let expected_digest: [u8; 32] = decoder.get_fixed("payload cover descriptor digest")?;
-            if descriptor.digest()? != expected_digest {
-                return Err(
-                    "EC_GENERATION_DESCRIPTOR: payload cover descriptor digest mismatch".to_owned(),
-                );
+        let (payload_cover, row_tier_layout) = match version {
+            DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION => {
+                let encoded = decoder.get_len_prefixed("payload cover descriptor")?;
+                let descriptor = DistannPayloadCoverDescriptorV1::decode(encoded)?;
+                let expected_digest: [u8; 32] =
+                    decoder.get_fixed("payload cover descriptor digest")?;
+                if descriptor.digest()? != expected_digest {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: payload cover descriptor digest mismatch"
+                            .to_owned(),
+                    );
+                }
+                (Some(descriptor), None)
             }
-            Some(descriptor)
-        } else {
-            None
+            DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION => {
+                let encoded = decoder.get_len_prefixed("hot/cold row-tier descriptor")?;
+                let descriptor = DistannRowTierLayoutDescriptorV1::decode(encoded)?;
+                let expected_digest: [u8; 32] =
+                    decoder.get_fixed("hot/cold row-tier descriptor digest")?;
+                if descriptor.digest()? != expected_digest {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: hot/cold row-tier descriptor digest mismatch"
+                            .to_owned(),
+                    );
+                }
+                (None, Some(descriptor))
+            }
+            DISTANN_GENERATION_DESCRIPTOR_VERSION => (None, None),
+            _ => unreachable!("descriptor version admitted above"),
         };
         decoder.finish("generation descriptor")?;
         if row_schema.fingerprint()? != expected_schema_fingerprint {
@@ -619,6 +692,7 @@ impl DistannGenerationDescriptor {
             codec_artifact,
             row_schema,
             payload_cover,
+            row_tier_layout,
         };
         descriptor.validate()?;
         Ok(descriptor)
@@ -1071,6 +1145,7 @@ pub(crate) fn sample_generation_descriptor() -> DistannGenerationDescriptor {
         },
         row_schema: super::row_schema::sample_row_schema(),
         payload_cover: None,
+        row_tier_layout: None,
     }
 }
 
@@ -1189,6 +1264,55 @@ mod tests {
         let mut corrupt_cover_digest = encoded;
         *corrupt_cover_digest.last_mut().unwrap() ^= 1;
         assert!(DistannGenerationDescriptor::decode(&corrupt_cover_digest).is_err());
+    }
+
+    #[test]
+    fn generation_descriptor_v4_binds_hot_cold_layout_and_graph_v2() {
+        let mut hot_cold = sample_generation_descriptor();
+        hot_cold.graph_record_version = DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
+        hot_cold.row_tier_layout = Some(
+            super::super::row_layout::resolve_hot_cold_layout(
+                &hot_cold.row_schema,
+                3,
+                1,
+                hot_cold.dimensions,
+                &[],
+            )
+            .unwrap(),
+        );
+        let encoded = hot_cold.encode().unwrap();
+        assert_eq!(
+            u16::from_le_bytes(encoded[..2].try_into().unwrap()),
+            DISTANN_GENERATION_DESCRIPTOR_HOT_COLD_VERSION
+        );
+        assert_eq!(
+            DistannGenerationDescriptor::decode(&encoded).unwrap(),
+            hot_cold
+        );
+        assert!(hot_cold.row_tier_layout().is_some());
+
+        let mut corrupt_layout_digest = encoded;
+        *corrupt_layout_digest.last_mut().unwrap() ^= 1;
+        assert!(DistannGenerationDescriptor::decode(&corrupt_layout_digest).is_err());
+
+        let mut wrong_graph_version = hot_cold.clone();
+        wrong_graph_version.graph_record_version = DISTANN_NODE_FORMAT_VERSION;
+        assert!(wrong_graph_version
+            .validate()
+            .unwrap_err()
+            .contains("requires graph record V2"));
+
+        let mut conflicting = hot_cold;
+        conflicting.payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+            &conflicting.row_schema,
+            3,
+            Some(&[1]),
+        )
+        .unwrap();
+        assert!(conflicting
+            .validate()
+            .unwrap_err()
+            .contains("mutually exclusive"));
     }
 
     #[test]

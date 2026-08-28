@@ -475,9 +475,9 @@ layout:
 
 ```yaml
 record: distann_generation_descriptor
-version: 2
+version: 2, 3, or 4
 fields:
-  - { name: descriptor_version, type: u16, rule: exactly 2 }
+  - { name: descriptor_version, type: u16, rule: 2 for legacy row heap, 3 for Task 229 payload cover, or 4 for Task 230 hot/cold layout }
   - { name: coordinator_logical_index_uuid, type: byte[16], rule: authoritative coordinator control UUID captured by begin-build }
   - { name: index_format_version, type: u16, rule: destination generation format }
   - { name: graph_record_version, type: u16, rule: FR-076 graph-node record version }
@@ -490,6 +490,7 @@ fields:
   - { name: codec_artifact, type: length_prefixed_bytes, rule: canonical codec shape plus every trained codebook/model byte required to prepare and score queries }
   - { name: row_schema_descriptor, type: length_prefixed_bytes, rule: canonical descriptor defined by Epoch Row Tier below }
   - { name: row_schema_fingerprint, type: byte[32], rule: SHA-256 identity of row_schema_descriptor }
+  - { name: optional_layout_extension, type: length_prefixed_bytes + byte[32], rule: absent in V2; payload-cover descriptor plus digest in V3; hot/cold row-tier descriptor plus digest in V4 }
 ```
 
 Fixed-width integers SHALL use little-endian encoding and variable fields SHALL
@@ -498,7 +499,11 @@ with an unsigned little-endian `u32` element count; the roster then encodes
 each entry as `node_id u32`, `logical_index_uuid byte[16]`, and one
 length-prefixed UTF-8 endpoint identity. The descriptor digest SHALL be
 `SHA-256("ec_distann_generation_descriptor_v2\0" || canonical_descriptor)`.
-The pre-publication descriptor-v1 draft is superseded and SHALL be rejected by
+V2 bytes end at the row-schema fingerprint and remain byte-identical. V3 binds
+the Task 229 payload-cover descriptor. V4 binds the Task 230 hot/cold row-tier
+descriptor. V3 and V4 are mutually exclusive, and descriptor validation SHALL
+admit only graph-record V1 with V2/V3 row-heap layouts and graph-record V2 with
+the V4 hot/cold layout. The pre-publication descriptor-v1 draft is superseded and SHALL be rejected by
 the physical handoff lane rather than reinterpreted; existing draft fixtures
 are rebuild-only. Descriptor v2's coordinator UUID lets every participant bind
 later authenticated activation/retire decisions even when the authoritative

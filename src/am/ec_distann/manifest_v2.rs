@@ -1416,6 +1416,31 @@ mod tests {
             "distann_generation_descriptor_v2.hex",
             &descriptor.encode().unwrap(),
         );
+        let mut hot_cold_descriptor = descriptor.clone();
+        hot_cold_descriptor.graph_record_version =
+            super::super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
+        hot_cold_descriptor.row_tier_layout = Some(
+            super::super::row_layout::resolve_hot_cold_layout(
+                &hot_cold_descriptor.row_schema,
+                3,
+                1,
+                hot_cold_descriptor.dimensions,
+                &[],
+            )
+            .unwrap(),
+        );
+        emit(
+            "distann_row_tier_layout_v1.hex",
+            &hot_cold_descriptor
+                .row_tier_layout()
+                .unwrap()
+                .encode()
+                .unwrap(),
+        );
+        emit(
+            "distann_generation_descriptor_v4.hex",
+            &hot_cold_descriptor.encode().unwrap(),
+        );
         let build_spec = DistannBuildSpec {
             epoch: 7,
             build_id: crate::am::ec_distann::canonical_wire::sample_rfc4122_v4_uuid(0xAB),

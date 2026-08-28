@@ -329,6 +329,17 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             .as_ref()
             .map(|cover| cover.digest())
             .transpose()?;
+        let resolved_row_tier_layout = resolve_row_tier_layout_descriptor(
+            index_oid,
+            &row_schema,
+            indexed_vector_attnum,
+            metadata.dimensions,
+            &options,
+        )?;
+        let row_tier_layout_descriptor_digest = resolved_row_tier_layout
+            .as_ref()
+            .map(|layout| layout.digest())
+            .transpose()?;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
@@ -339,6 +350,7 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             epoch,
             row_schema_fingerprint,
             payload_cover_descriptor_digest,
+            row_tier_layout_descriptor_digest,
             compatibility_digest,
             source_relation_oid,
         )? {
@@ -379,6 +391,7 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             frozen_roster_digest,
             row_schema_fingerprint,
             payload_cover_descriptor_digest,
+            row_tier_layout_descriptor_digest,
             compatibility_digest,
             &participants,
         )?;

@@ -61,7 +61,7 @@ pub const fn distann_node_neighbor_codes_offset(graph_degree_r: u16, code_len: u
     distann_node_neighbor_vec_ids_offset(code_len) + graph_degree_r as usize * 8
 }
 
-pub const fn distann_node_cold_tid_offset(graph_degree_r: u16, code_len: usize) -> usize {
+pub const fn distann_node_v2_cold_tid_offset(graph_degree_r: u16, code_len: usize) -> usize {
     DistannNodeTuple::encoded_len(graph_degree_r, code_len)
 }
 
@@ -164,16 +164,7 @@ impl DistannNodeTuple {
         Ok(())
     }
 
-    fn validate_physical_v1(&self, graph_degree_r: u16, code_len: usize) -> Result<(), String> {
-        self.validate(graph_degree_r, code_len)?;
-        if self.heap_tid == ItemPointer::INVALID {
-            return Err("distann physical node record has an invalid row-tier TID".to_owned());
-        }
-        if self.cold_tid.is_some() {
-            return Err(
-                "distann V1 physical node record unexpectedly has a cold-tier TID".to_owned(),
-            );
-        }
+    fn validate_canonical_adjacency_padding(&self, code_len: usize) -> Result<(), String> {
         let live = usize::from(self.neighbor_count);
         if self.neighbor_vec_ids[live..]
             .iter()
@@ -187,6 +178,19 @@ impl DistannNodeTuple {
         Ok(())
     }
 
+    fn validate_physical_v1(&self, graph_degree_r: u16, code_len: usize) -> Result<(), String> {
+        self.validate(graph_degree_r, code_len)?;
+        if self.heap_tid == ItemPointer::INVALID {
+            return Err("distann physical node record has an invalid row-tier TID".to_owned());
+        }
+        if self.cold_tid.is_some() {
+            return Err(
+                "distann V1 physical node record unexpectedly has a cold-tier TID".to_owned(),
+            );
+        }
+        self.validate_canonical_adjacency_padding(code_len)
+    }
+
     fn validate_physical_v2(&self, graph_degree_r: u16, code_len: usize) -> Result<(), String> {
         self.validate(graph_degree_r, code_len)?;
         if self.heap_tid == ItemPointer::INVALID {
@@ -198,17 +202,7 @@ impl DistannNodeTuple {
         {
             return Err("distann V2 physical node record has an invalid cold-tier TID".to_owned());
         }
-        let live = usize::from(self.neighbor_count);
-        if self.neighbor_vec_ids[live..]
-            .iter()
-            .any(|neighbor| *neighbor != 0)
-            || self.neighbor_codes[live * code_len..]
-                .iter()
-                .any(|byte| *byte != 0)
-        {
-            return Err("distann physical node record has non-zero adjacency padding".to_owned());
-        }
-        Ok(())
+        self.validate_canonical_adjacency_padding(code_len)
     }
 
     pub fn encode(&self, graph_degree_r: u16, code_len: usize) -> Result<Vec<u8>, String> {
@@ -469,7 +463,7 @@ impl DistannNodeTuple {
                 out.validate_physical_v1(graph_degree_r, code_len)?
             }
             Some(DISTANN_NODE_HOT_COLD_FORMAT_VERSION) => {
-                let cold_tid_offset = distann_node_cold_tid_offset(graph_degree_r, code_len);
+                let cold_tid_offset = distann_node_v2_cold_tid_offset(graph_degree_r, code_len);
                 out.cold_tid = Some(ItemPointer::decode(
                     &input[cold_tid_offset..cold_tid_offset + DISTANN_NODE_COLD_TID_BYTES],
                 )?);
@@ -675,8 +669,8 @@ impl DistannDeltaTuple {
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_node_cold_tid_offset, DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE,
-        DISTANN_NODE_COLD_TID_BYTES, DISTANN_NODE_FORMAT_VERSION,
+        distann_node_v2_cold_tid_offset, DistannDeltaTuple, DistannNodeTuple,
+        DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_COLD_TID_BYTES, DISTANN_NODE_FORMAT_VERSION,
         DISTANN_NODE_FORMAT_VERSION_OFFSET, DISTANN_NODE_HEADER_BYTES,
         DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
     };
@@ -808,7 +802,7 @@ mod tests {
         );
         assert_eq!(v2.len(), v1_len + DISTANN_NODE_COLD_TID_BYTES);
         assert_eq!(&v2[2..v1_len], &v1[2..]);
-        assert_eq!(distann_node_cold_tid_offset(R, CODE_LEN), v1_len);
+        assert_eq!(distann_node_v2_cold_tid_offset(R, CODE_LEN), v1_len);
         assert_eq!(
             ItemPointer::decode(&v2[v1_len..v1_len + DISTANN_NODE_COLD_TID_BYTES]).unwrap(),
             cold_tid
