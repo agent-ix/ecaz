@@ -1,8 +1,8 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-01
-descriptor foundation reviewed NOT DONE (seq-01); persisted-format
-implementation authorized; entry condition 3 satisfied**
+Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-02
+descriptor-foundation fixes implemented and rereview open after seq-01 NOT
+DONE; persisted-format implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -45,6 +45,16 @@ identity's is. Accepted as correct: canonical partition/ordinal validation in
 both directions, implicit-identity contract, no hot tombstone, Task 229
 byte-for-byte compatibility, reloption mutual exclusion, and version/tier/
 trailing-byte decode rejection.
+
+Packet 002 seq-02 fix checkpoint: code `8faac4bad`; request
+`reviews/task-230/002-format-and-read-path/request.md` at seq-02. The descriptor
+now rejects a maximum hot-tuple bound below its checked header/bitmap,
+`vec_id`, vector-varlena, identity, and hot-scalar minimum; persists and
+schema-pins the 16-byte UUID versus 17-byte `bytea(16)` identity contribution;
+fixes the checkpoint-owned clippy error; splits corrupt placement diagnostics;
+and validates indexed-vector/generated-column identity. Focused PG18 tests and
+formatting pass. The all-target PG18 clippy gate has only the five pre-existing
+failures recorded in the packet manifest.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
