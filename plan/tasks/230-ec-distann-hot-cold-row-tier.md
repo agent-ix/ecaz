@@ -1,15 +1,29 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 seq-04 revised; outside re-review open; packet 002
-persisted-format implementation remains gated** (updated 2026-08-28; Task 229 is
-review-closed STOP; request `reviews/task-230/001-plan/request.md`; current
-verdict `reviews/task-230/001-plan/feedback/2026-08-28-02-reviewer.md`;
+Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
+persisted-format implementation AUTHORIZED; entry condition 3 satisfied**
+(updated 2026-08-28; Task 229 is review-closed STOP; request
+`reviews/task-230/001-plan/request.md` at seq-04; verdict
+`reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
+`.../2026-08-28-01-reviewer.md` and `.../2026-08-28-02-reviewer.md`;
 dispositions `reviews/task-230/001-plan/artifacts/seq-01-disposition.md` and
-`seq-02-disposition.md`). The seven seq-01 resolutions remain accepted. Seq-04
-removes the redundant hot tombstone and delete-time locator churn, and makes V2
-decoding read/admit version before applying the version-sized length check at
-`tuple.rs:248-261`, with all named `encoded_len` callers versioned. Priority:
-P1 storage/retrieval latency.
+`seq-02-disposition.md`). Frozen contract: opt-in `row_tier_layout='hot_cold'`,
+implicit mandatory hot vector and identity, `PLAIN`/`fillfactor=100` hot heap
+pinned by `attstorage='p'` with a hard 1,536-dimension build boundary and no
+`MAIN`/`EXTERNAL` fallback, paired `row_tier_relid`/`cold_tier_relid` mutually
+exclusive with the Task 229 sidecar, graph record V2 appending `cold_tid` after
+the variable arrays with every V1 offset preserved, graph record as sole locator
+authority, graph `is_current`/tombstone as sole visibility gate, descriptor V4 /
+receipt V3 / manifest V4, and end-to-end id-only ANN retrieval as the single
+preregistered primary decision shape. Carried into packet 002: amend the P1
+bullet below, which still names hot-tier tombstone/visibility metadata that the
+accepted contract removes; scope version-first decoding to
+`decode_into_version`'s `Some(_)` branch and leave the legacy tag-guarded
+`expand.rs:61`, `reader.rs:214`, and `insert.rs:433` unversioned; define the
+`bytea(16)` varlena contribution in the maximal-tuple estimator. Carried into
+packet 004 preregistration: a failure condition for the cold/mixed secondary
+cost gates, and shared-buffer hit ratio as an explicit metric. Priority: P1
+storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
