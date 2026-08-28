@@ -24,8 +24,12 @@ use super::page::{
 use super::quantizer::{DISTANN_RABITQ_BITS, DISTANN_TURBOQUANT_BITS};
 
 pub const DISTANN_SOURCE_SNAPSHOT_VERSION: u16 = 1;
+/// Legacy/no-cover receipt version and size.
 pub const DISTANN_READY_RECEIPT_VERSION: u16 = 1;
+pub const DISTANN_READY_RECEIPT_COVER_VERSION: u16 = 2;
+/// Legacy/no-cover manifest version.
 pub const DISTANN_EPOCH_MANIFEST_VERSION: u16 = 2;
+pub const DISTANN_EPOCH_MANIFEST_COVER_VERSION: u16 = 3;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION: u16 = 1;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION: u16 = 2;
 pub const DISTANN_READY_RECEIPT_STATE: u8 = 1;
@@ -36,12 +40,15 @@ pub const DISTANN_EPOCH_MANIFEST_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
+pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = 351;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES: usize = 31;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 73;
 
 const SOURCE_SNAPSHOT_DOMAIN: &[u8] = b"ec_distann_source_snapshot_v1\0";
 const READY_RECEIPT_DOMAIN: &[u8] = b"ec_distann_ready_receipt_v1\0";
 const EPOCH_MANIFEST_DOMAIN: &[u8] = b"ec_distann_epoch_manifest_v2\0";
+const PAYLOAD_SIDECAR_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
+    b"ec_distann_payload_sidecar_global_initial_content_v1\0";
 const DIGEST_BYTES: usize = 32;
 const BUILD_OPTIONS_V1_BYTES: usize = 26;
 const MANIFEST_BUILD_OPTIONS_V1_VERSION: u16 = 1;
@@ -414,6 +421,13 @@ impl DistannManifestBuildOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistannReadyReceiptPayloadSidecar {
+    pub initial_content_digest: [u8; DIGEST_BYTES],
+    pub heap_bytes: u64,
+    pub index_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannReadyReceipt {
     pub node_id: u32,
     pub epoch: u64,
@@ -431,6 +445,7 @@ pub struct DistannReadyReceipt {
     pub row_tier_bytes: u64,
     pub directory_bytes: u64,
     pub state: u8,
+    pub payload_sidecar: Option<DistannReadyReceiptPayloadSidecar>,
 }
 
 impl DistannReadyReceipt {
@@ -463,10 +478,18 @@ impl DistannReadyReceipt {
         Ok(())
     }
 
+    pub fn version(&self) -> u16 {
+        if self.payload_sidecar.is_some() {
+            DISTANN_READY_RECEIPT_COVER_VERSION
+        } else {
+            DISTANN_READY_RECEIPT_VERSION
+        }
+    }
+
     fn canonical_without_digest(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
-        let mut encoder = CanonicalEncoder::with_capacity(271);
-        encoder.put_u16(DISTANN_READY_RECEIPT_VERSION);
+        let mut encoder = CanonicalEncoder::with_capacity(DISTANN_READY_RECEIPT_MAX_BYTES);
+        encoder.put_u16(self.version());
         encoder.put_u32(self.node_id);
         encoder.put_u64(self.epoch);
         encoder.put_fixed(&self.build_id);
@@ -483,6 +506,11 @@ impl DistannReadyReceipt {
         encoder.put_u64(self.row_tier_bytes);
         encoder.put_u64(self.directory_bytes);
         encoder.put_u8(self.state);
+        if let Some(sidecar) = &self.payload_sidecar {
+            encoder.put_fixed(&sidecar.initial_content_digest);
+            encoder.put_u64(sidecar.heap_bytes);
+            encoder.put_u64(sidecar.index_bytes);
+        }
         encoder.finish()
     }
 
@@ -510,30 +538,60 @@ impl DistannReadyReceipt {
         }
         let mut decoder = CanonicalDecoder::new(canonical, "Ready receipt")?;
         let version = decoder.get_u16("Ready receipt version")?;
-        if version != DISTANN_READY_RECEIPT_VERSION {
+        if !matches!(
+            version,
+            DISTANN_READY_RECEIPT_VERSION | DISTANN_READY_RECEIPT_COVER_VERSION
+        ) {
             return Err(format!(
                 "EC_READY_RECEIPT: unsupported receipt version {version}"
             ));
         }
+        let node_id = decoder.get_u32("Ready receipt node id")?;
+        let epoch = decoder.get_u64("Ready receipt epoch")?;
+        let build_id = decoder.get_fixed("Ready receipt build id")?;
+        let build_spec_digest = decoder.get_fixed("Ready receipt build spec digest")?;
+        let generation_descriptor_digest =
+            decoder.get_fixed("Ready receipt generation descriptor digest")?;
+        let last_acknowledged_batch_sequence =
+            decoder.get_u64("Ready receipt last batch sequence")?;
+        let owned_record_count = decoder.get_u64("Ready receipt record count")?;
+        let row_count = decoder.get_u64("Ready receipt row count")?;
+        let owner_stream_digest = decoder.get_fixed("Ready receipt owner stream digest")?;
+        let persisted_graph_digest = decoder.get_fixed("Ready receipt graph digest")?;
+        let persisted_row_tier_digest = decoder.get_fixed("Ready receipt row-tier digest")?;
+        let local_directory_digest = decoder.get_fixed("Ready receipt directory digest")?;
+        let graph_bytes = decoder.get_u64("Ready receipt graph bytes")?;
+        let row_tier_bytes = decoder.get_u64("Ready receipt row-tier bytes")?;
+        let directory_bytes = decoder.get_u64("Ready receipt directory bytes")?;
+        let state = decoder.get_u8("Ready receipt state")?;
+        let payload_sidecar = if version == DISTANN_READY_RECEIPT_COVER_VERSION {
+            Some(DistannReadyReceiptPayloadSidecar {
+                initial_content_digest: decoder
+                    .get_fixed("Ready receipt payload sidecar initial content digest")?,
+                heap_bytes: decoder.get_u64("Ready receipt payload sidecar heap bytes")?,
+                index_bytes: decoder.get_u64("Ready receipt payload sidecar index bytes")?,
+            })
+        } else {
+            None
+        };
         let receipt = Self {
-            node_id: decoder.get_u32("Ready receipt node id")?,
-            epoch: decoder.get_u64("Ready receipt epoch")?,
-            build_id: decoder.get_fixed("Ready receipt build id")?,
-            build_spec_digest: decoder.get_fixed("Ready receipt build spec digest")?,
-            generation_descriptor_digest: decoder
-                .get_fixed("Ready receipt generation descriptor digest")?,
-            last_acknowledged_batch_sequence: decoder
-                .get_u64("Ready receipt last batch sequence")?,
-            owned_record_count: decoder.get_u64("Ready receipt record count")?,
-            row_count: decoder.get_u64("Ready receipt row count")?,
-            owner_stream_digest: decoder.get_fixed("Ready receipt owner stream digest")?,
-            persisted_graph_digest: decoder.get_fixed("Ready receipt graph digest")?,
-            persisted_row_tier_digest: decoder.get_fixed("Ready receipt row-tier digest")?,
-            local_directory_digest: decoder.get_fixed("Ready receipt directory digest")?,
-            graph_bytes: decoder.get_u64("Ready receipt graph bytes")?,
-            row_tier_bytes: decoder.get_u64("Ready receipt row-tier bytes")?,
-            directory_bytes: decoder.get_u64("Ready receipt directory bytes")?,
-            state: decoder.get_u8("Ready receipt state")?,
+            node_id,
+            epoch,
+            build_id,
+            build_spec_digest,
+            generation_descriptor_digest,
+            last_acknowledged_batch_sequence,
+            owned_record_count,
+            row_count,
+            owner_stream_digest,
+            persisted_graph_digest,
+            persisted_row_tier_digest,
+            local_directory_digest,
+            graph_bytes,
+            row_tier_bytes,
+            directory_bytes,
+            state,
+            payload_sidecar,
         };
         decoder.finish("Ready receipt")?;
         receipt.validate()?;
@@ -545,11 +603,29 @@ impl DistannReadyReceipt {
 pub struct DistannEpochFingerprint([u8; DISTANN_EPOCH_FINGERPRINT_BYTES]);
 
 impl DistannEpochFingerprint {
+    /// Constructs the legacy V2 fingerprint. Existing callers that create
+    /// non-manifest test identities retain their exact bytes.
     pub fn from_manifest_digest(digest: [u8; DIGEST_BYTES]) -> Self {
+        Self::from_versioned_manifest_digest(DISTANN_EPOCH_MANIFEST_VERSION, digest)
+            .expect("legacy manifest version is supported")
+    }
+
+    pub fn from_versioned_manifest_digest(
+        manifest_version: u16,
+        digest: [u8; DIGEST_BYTES],
+    ) -> Result<Self, String> {
+        if !matches!(
+            manifest_version,
+            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        ) {
+            return Err(format!(
+                "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {manifest_version}"
+            ));
+        }
         let mut bytes = [0_u8; DISTANN_EPOCH_FINGERPRINT_BYTES];
-        bytes[0..2].copy_from_slice(&DISTANN_EPOCH_MANIFEST_VERSION.to_le_bytes());
+        bytes[0..2].copy_from_slice(&manifest_version.to_le_bytes());
         bytes[2..].copy_from_slice(&digest);
-        Self(bytes)
+        Ok(Self(bytes))
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
@@ -560,7 +636,10 @@ impl DistannEpochFingerprint {
             ));
         }
         let version = u16::from_le_bytes(input[0..2].try_into().expect("fingerprint version"));
-        if version != DISTANN_EPOCH_MANIFEST_VERSION {
+        if !matches!(
+            version,
+            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        ) {
             return Err(format!(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {version}"
             ));
@@ -574,6 +653,10 @@ impl DistannEpochFingerprint {
 
     pub fn as_bytes(&self) -> &[u8; DISTANN_EPOCH_FINGERPRINT_BYTES] {
         &self.0
+    }
+
+    pub fn version(&self) -> u16 {
+        u16::from_le_bytes(self.0[0..2].try_into().expect("fingerprint version"))
     }
 
     pub fn manifest_digest(&self) -> [u8; DIGEST_BYTES] {
@@ -603,10 +686,43 @@ pub struct DistannEpochManifestV2 {
     pub global_record_count: u64,
     pub global_graph_digest: [u8; DIGEST_BYTES],
     pub global_row_tier_digest: [u8; DIGEST_BYTES],
+    pub payload_cover_descriptor_digest: Option<[u8; DIGEST_BYTES]>,
+    pub global_payload_sidecar_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
     pub participant_receipts: Vec<DistannReadyReceipt>,
 }
 
 impl DistannEpochManifestV2 {
+    pub fn version(&self) -> u16 {
+        if self.payload_cover_descriptor_digest.is_some()
+            || self.global_payload_sidecar_initial_content_digest.is_some()
+        {
+            DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        } else {
+            DISTANN_EPOCH_MANIFEST_VERSION
+        }
+    }
+
+    pub(crate) fn payload_sidecar_global_initial_content_digest(
+        receipts: &[DistannReadyReceipt],
+    ) -> Result<[u8; DIGEST_BYTES], String> {
+        let mut encoder = CanonicalEncoder::with_capacity(4 + receipts.len() * 44);
+        encoder.put_u32(u32::try_from(receipts.len()).map_err(|_| {
+            "EC_EPOCH_MANIFEST: payload sidecar receipt count exceeds u32".to_owned()
+        })?);
+        for receipt in receipts {
+            let sidecar = receipt.payload_sidecar.as_ref().ok_or_else(|| {
+                "EC_EPOCH_MANIFEST: covered manifest has a legacy Ready receipt".to_owned()
+            })?;
+            encoder.put_u32(receipt.node_id);
+            encoder.put_u64(receipt.owned_record_count);
+            encoder.put_fixed(&sidecar.initial_content_digest);
+        }
+        Ok(domain_digest(
+            PAYLOAD_SIDECAR_GLOBAL_INITIAL_CONTENT_DOMAIN,
+            &encoder.finish()?,
+        ))
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.epoch == 0 || !is_rfc4122_v4_uuid(&self.build_id) {
             return Err(
@@ -631,6 +747,41 @@ impl DistannEpochManifestV2 {
                 self.participant_receipts.len(),
                 self.roster.len()
             ));
+        }
+
+        match (
+            self.payload_cover_descriptor_digest,
+            self.global_payload_sidecar_initial_content_digest,
+        ) {
+            (None, None) => {
+                if self
+                    .participant_receipts
+                    .iter()
+                    .any(|receipt| receipt.payload_sidecar.is_some())
+                {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: no-cover manifest contains a covered Ready receipt"
+                            .to_owned(),
+                    );
+                }
+            }
+            (Some(_), Some(expected)) => {
+                let actual = Self::payload_sidecar_global_initial_content_digest(
+                    &self.participant_receipts,
+                )?;
+                if actual != expected {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: global payload sidecar initial-content digest mismatch"
+                            .to_owned(),
+                    );
+                }
+            }
+            _ => {
+                return Err(
+                    "EC_EPOCH_MANIFEST: payload cover descriptor and initial-content digests must be paired"
+                        .to_owned(),
+                )
+            }
         }
 
         let mut record_sum = 0_u64;
@@ -675,7 +826,7 @@ impl DistannEpochManifestV2 {
                 + self.roster.len() * 48
                 + encoded_receipts.iter().map(Vec::len).sum::<usize>(),
         );
-        encoder.put_u16(DISTANN_EPOCH_MANIFEST_VERSION);
+        encoder.put_u16(self.version());
         encoder.put_u64(self.epoch);
         encoder.put_fixed(&self.build_id);
         encoder.put_len_prefixed(&self.parent_fingerprint)?;
@@ -694,6 +845,13 @@ impl DistannEpochManifestV2 {
         encoder.put_u64(self.global_record_count);
         encoder.put_fixed(&self.global_graph_digest);
         encoder.put_fixed(&self.global_row_tier_digest);
+        if let (Some(cover_digest), Some(initial_content_digest)) = (
+            self.payload_cover_descriptor_digest,
+            self.global_payload_sidecar_initial_content_digest,
+        ) {
+            encoder.put_fixed(&cover_digest);
+            encoder.put_fixed(&initial_content_digest);
+        }
         encoder.put_u32(
             u32::try_from(encoded_receipts.len())
                 .map_err(|_| "EC_EPOCH_MANIFEST: receipt count exceeds u32".to_owned())?,
@@ -705,9 +863,12 @@ impl DistannEpochManifestV2 {
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
-        let mut decoder = CanonicalDecoder::new(input, "epoch manifest v2")?;
+        let mut decoder = CanonicalDecoder::new(input, "epoch manifest")?;
         let version = decoder.get_u16("epoch manifest version")?;
-        if version != DISTANN_EPOCH_MANIFEST_VERSION {
+        if !matches!(
+            version,
+            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        ) {
             return Err(format!(
                 "EC_EPOCH_MANIFEST: unsupported manifest version {version}"
             ));
@@ -735,6 +896,18 @@ impl DistannEpochManifestV2 {
         let global_record_count = decoder.get_u64("manifest global record count")?;
         let global_graph_digest = decoder.get_fixed("manifest global graph digest")?;
         let global_row_tier_digest = decoder.get_fixed("manifest global row-tier digest")?;
+        let (payload_cover_descriptor_digest, global_payload_sidecar_initial_content_digest) =
+            if version == DISTANN_EPOCH_MANIFEST_COVER_VERSION {
+                (
+                    Some(decoder.get_fixed("manifest payload cover descriptor digest")?),
+                    Some(
+                        decoder
+                            .get_fixed("manifest global payload sidecar initial content digest")?,
+                    ),
+                )
+            } else {
+                (None, None)
+            };
         let receipt_count = decoder.get_u32("manifest receipt count")? as usize;
         if receipt_count != roster.len()
             || receipt_count
@@ -749,7 +922,7 @@ impl DistannEpochManifestV2 {
                 decoder.get_len_prefixed("participant Ready receipt")?,
             )?);
         }
-        decoder.finish("epoch manifest v2")?;
+        decoder.finish("epoch manifest")?;
         let manifest = Self {
             epoch,
             build_id,
@@ -769,6 +942,8 @@ impl DistannEpochManifestV2 {
             global_record_count,
             global_graph_digest,
             global_row_tier_digest,
+            payload_cover_descriptor_digest,
+            global_payload_sidecar_initial_content_digest,
             participant_receipts,
         };
         manifest.validate()?;
@@ -780,9 +955,7 @@ impl DistannEpochManifestV2 {
     }
 
     pub fn fingerprint(&self) -> Result<DistannEpochFingerprint, String> {
-        Ok(DistannEpochFingerprint::from_manifest_digest(
-            self.digest()?,
-        ))
+        DistannEpochFingerprint::from_versioned_manifest_digest(self.version(), self.digest()?)
     }
 }
 
@@ -805,6 +978,7 @@ fn sample_receipt(node_id: u32, count: u64) -> DistannReadyReceipt {
         row_tier_bytes: count * 200,
         directory_bytes: count * 10,
         state: DISTANN_READY_RECEIPT_STATE,
+        payload_sidecar: None,
     }
 }
 
@@ -853,6 +1027,8 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
         global_record_count: 10,
         global_graph_digest: [0x88; DIGEST_BYTES],
         global_row_tier_digest: [0x99; DIGEST_BYTES],
+        payload_cover_descriptor_digest: None,
+        global_payload_sidecar_initial_content_digest: None,
         participant_receipts: vec![sample_receipt(10, 6), sample_receipt(20, 4)],
     }
 }
@@ -860,6 +1036,15 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decode_fixture_hex(input: &str) -> Vec<u8> {
+        let canonical = input
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect::<String>();
+        hex::decode(canonical).unwrap()
+    }
 
     fn sample_snapshot() -> DistannSourceSnapshot {
         DistannSourceSnapshot {
@@ -936,6 +1121,34 @@ mod tests {
         let mut invalid_node = sample_receipt(10, 6);
         invalid_node.node_id = 0;
         assert!(invalid_node.encode().is_err());
+
+        let legacy_bytes = decode_fixture_hex(include_str!(
+            "../../../fixtures/on-disk/distann_ready_receipt_v1.hex"
+        ));
+        let legacy = DistannReadyReceipt::decode(&legacy_bytes).unwrap();
+        assert_eq!(legacy.version(), DISTANN_READY_RECEIPT_VERSION);
+        assert_eq!(legacy.encode().unwrap(), legacy_bytes);
+        assert_eq!(
+            legacy.digest().unwrap(),
+            legacy_bytes[legacy_bytes.len() - 32..]
+        );
+
+        let mut covered = sample_receipt(10, 6);
+        covered.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
+            initial_content_digest: [0xA5; DIGEST_BYTES],
+            heap_bytes: 4096,
+            index_bytes: 8192,
+        });
+        let covered_bytes = covered.encode().unwrap();
+        assert_eq!(covered_bytes.len(), DISTANN_READY_RECEIPT_MAX_BYTES);
+        assert_eq!(
+            u16::from_le_bytes(covered_bytes[..2].try_into().unwrap()),
+            DISTANN_READY_RECEIPT_COVER_VERSION
+        );
+        assert_eq!(
+            DistannReadyReceipt::decode(&covered_bytes).unwrap(),
+            covered
+        );
     }
 
     #[test]
@@ -957,6 +1170,71 @@ mod tests {
         let mut invalid_uuid = manifest;
         invalid_uuid.build_id = [0xAB; 16];
         assert!(invalid_uuid.encode().is_err());
+    }
+
+    #[test]
+    fn manifest_preserves_legacy_v2_and_round_trips_covered_v3_fingerprints() {
+        let legacy_bytes = decode_fixture_hex(include_str!(
+            "../../../fixtures/on-disk/distann_epoch_manifest_v2.hex"
+        ));
+        let legacy = DistannEpochManifestV2::decode(&legacy_bytes).unwrap();
+        assert_eq!(legacy.version(), DISTANN_EPOCH_MANIFEST_VERSION);
+        assert_eq!(legacy.encode().unwrap(), legacy_bytes);
+        assert_eq!(
+            legacy.digest().unwrap(),
+            domain_digest(EPOCH_MANIFEST_DOMAIN, &legacy_bytes)
+        );
+        let legacy_fingerprint = legacy.fingerprint().unwrap();
+        assert_eq!(legacy_fingerprint.version(), DISTANN_EPOCH_MANIFEST_VERSION);
+
+        let mut covered = sample_manifest_v2();
+        for (index, receipt) in covered.participant_receipts.iter_mut().enumerate() {
+            receipt.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
+                initial_content_digest: [0xA0 + index as u8; DIGEST_BYTES],
+                heap_bytes: 4096 + index as u64,
+                index_bytes: 8192 + index as u64,
+            });
+        }
+        covered.payload_cover_descriptor_digest = Some([0xC7; DIGEST_BYTES]);
+        covered.global_payload_sidecar_initial_content_digest = Some(
+            DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(
+                &covered.participant_receipts,
+            )
+            .unwrap(),
+        );
+        covered.parent_fingerprint = legacy_fingerprint.as_bytes().to_vec();
+        let covered_bytes = covered.encode().unwrap();
+        assert_eq!(
+            u16::from_le_bytes(covered_bytes[..2].try_into().unwrap()),
+            DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        );
+        assert_eq!(
+            DistannEpochManifestV2::decode(&covered_bytes).unwrap(),
+            covered
+        );
+        let covered_fingerprint = covered.fingerprint().unwrap();
+        assert_eq!(
+            covered_fingerprint.version(),
+            DISTANN_EPOCH_MANIFEST_COVER_VERSION
+        );
+        assert_eq!(
+            DistannEpochFingerprint::decode(covered_fingerprint.as_bytes()).unwrap(),
+            covered_fingerprint
+        );
+
+        let mut legacy_child = sample_manifest_v2();
+        legacy_child.parent_fingerprint = covered_fingerprint.as_bytes().to_vec();
+        assert_eq!(
+            u16::from_le_bytes(legacy_child.encode().unwrap()[..2].try_into().unwrap()),
+            DISTANN_EPOCH_MANIFEST_VERSION
+        );
+
+        let mut wrong_global = covered;
+        wrong_global
+            .global_payload_sidecar_initial_content_digest
+            .as_mut()
+            .unwrap()[0] ^= 1;
+        assert!(wrong_global.encode().is_err());
     }
 
     #[test]

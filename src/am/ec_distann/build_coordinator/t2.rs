@@ -220,6 +220,20 @@ pub(super) fn build_epoch(
         }
         let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
         let row_schema = resolve_relation_schema(source_relation_oid)?.descriptor;
+        let options = super::super::options::relation_options(control.as_ptr());
+        let indexed_vector_attnum = u16::try_from(
+            super::super::routine::indexed_ecvector_attnum(control.as_ptr())?,
+        )
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: indexed vector attnum exceeds u16".to_owned())?;
+        let resolved_payload_cover = super::super::payload_sidecar::resolve_payload_cover(
+            &row_schema,
+            indexed_vector_attnum,
+            options.covering_payload_attnums.as_deref(),
+        )?;
+        let payload_cover_descriptor_digest = resolved_payload_cover
+            .as_ref()
+            .map(|cover| cover.digest())
+            .transpose()?;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
@@ -230,6 +244,7 @@ pub(super) fn build_epoch(
             build_id,
             epoch_u64,
             row_schema_fingerprint,
+            payload_cover_descriptor_digest,
             compatibility_digest,
             source_relation_oid,
         )?
@@ -318,7 +333,6 @@ pub(super) fn build_epoch(
             index_relation.heap_relation_oid(),
         )
         .ok_or_else(|| "EC_BUILD_INCOMPLETE: source heap could not open".to_owned())?;
-        let options = super::super::options::relation_options(index_relation.as_ptr());
         options.validate_head_sizing_inputs()?;
         let index_info = crate::am::common::index_info::IndexInfoGuard::build(
             index_relation.as_ptr(),
@@ -443,6 +457,9 @@ pub(super) fn build_epoch(
             neighbor_codec_kind: metadata.neighbor_codec_kind,
             codec_artifact,
             row_schema,
+            // This is the exact descriptor resolved under the registration
+            // locks above. Never re-read reloptions after replay registration.
+            payload_cover: resolved_payload_cover,
         };
         let descriptor_bytes = descriptor.encode()?;
         let descriptor_digest = descriptor.digest()?;
@@ -692,6 +709,12 @@ pub(super) fn build_epoch(
             group_size: 0,
             centroids_per_group: 0,
         };
+        let global_payload_sidecar_initial_content_digest =
+            payload_cover_descriptor_digest
+                .map(|_| {
+                    DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(&receipts)
+                })
+                .transpose()?;
         let manifest = DistannEpochManifestV2 {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
@@ -714,6 +737,8 @@ pub(super) fn build_epoch(
             global_record_count: global_count,
             global_graph_digest,
             global_row_tier_digest,
+            payload_cover_descriptor_digest,
+            global_payload_sidecar_initial_content_digest,
             participant_receipts: receipts,
         };
 

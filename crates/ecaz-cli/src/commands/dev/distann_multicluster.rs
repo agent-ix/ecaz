@@ -81,6 +81,19 @@ pub struct LocalMultinodePg18Args {
     /// storage measurements through the standard benchmark commands.
     #[arg(long, default_value_t = false)]
     pub physical_benchmark: bool,
+    /// Task 229 opt-in generation payload cover, expressed as canonical
+    /// comma-separated physical attnums (for the standard fixture, `1`
+    /// covers the benchmark id column).
+    #[arg(long)]
+    pub covering_payload_attnums: Option<String>,
+    /// Preregistered fresh-build position within a counterbalanced format
+    /// pair (for example `pair-a-first` or `pair-a-second`).
+    #[arg(long)]
+    pub benchmark_position_label: Option<String>,
+    /// Measure single-row replacement and delete latency for Task 229's
+    /// counterbalanced covered/no-cover DML cost gate.
+    #[arg(long, default_value_t = false)]
+    pub task229_dml_benchmark: bool,
     /// Query iterations per latency arm in physical benchmark mode.
     #[arg(long, default_value_t = 5)]
     pub benchmark_iterations: u32,
@@ -2051,6 +2064,53 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
     )
 }
 
+fn canonical_covering_payload_attnums(raw: &str) -> Result<String> {
+    let values = raw
+        .split(',')
+        .map(|field| {
+            if field.is_empty()
+                || !field.bytes().all(|byte| byte.is_ascii_digit())
+                || (field.len() > 1 && field.starts_with('0'))
+            {
+                bail!(
+                    "--covering-payload-attnums must be a canonical comma-separated list of positive physical attnums"
+                );
+            }
+            field
+                .parse::<u16>()
+                .wrap_err("parsing --covering-payload-attnums")
+                .and_then(|value| {
+                    if value == 0 {
+                        bail!("--covering-payload-attnums values must be positive")
+                    }
+                    Ok(value)
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if values.is_empty() || values.len() > 16 || values.windows(2).any(|pair| pair[0] >= pair[1]) {
+        bail!("--covering-payload-attnums must contain 1 to 16 strictly increasing unique attnums");
+    }
+    Ok(values
+        .iter()
+        .map(u16::to_string)
+        .collect::<Vec<_>>()
+        .join(","))
+}
+
+fn canonical_benchmark_position_label(raw: &str) -> Result<String> {
+    if raw.is_empty()
+        || raw.len() > 64
+        || !raw
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        bail!(
+            "--benchmark-position-label must be a 1-to-64-byte ASCII identifier using letters, digits, '-' or '_'"
+        );
+    }
+    Ok(raw.to_owned())
+}
+
 fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Result<String> {
     let head_sizing = head_sizing_reloptions(args);
     let physical_dim = if let Some(corpus_prefix) = &args.corpus_prefix {
@@ -2186,6 +2246,13 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         ""
     };
+    let payload_cover = args
+        .covering_payload_attnums
+        .as_deref()
+        .map(canonical_covering_payload_attnums)
+        .transpose()?
+        .map(|attnums| format!(", covering_payload_attnums = '{attnums}'"))
+        .unwrap_or_default();
     Ok(format!(
         "{prefix}
          {load}
@@ -2202,12 +2269,13 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
                    graph_degree = {}, head_index_cap = {},
                    build_shards = {},
                    head_construction = '{}',
-                   neighbor_code_format = 'rabitq'{});",
+                   neighbor_code_format = 'rabitq'{}{});",
         args.graph_degree,
         args.head_index_cap,
         args.build_shards,
         args.head_construction,
-        head_sizing
+        head_sizing,
+        payload_cover,
     ))
 }
 
@@ -2225,6 +2293,9 @@ struct PhysicalTopologyRow {
     row_bytes: i64,
     directory_bytes: i64,
     control_bytes: i64,
+    sidecar_rows: i64,
+    sidecar_heap_bytes: i64,
+    sidecar_index_bytes: i64,
 }
 
 async fn physical_topology(
@@ -2237,12 +2308,15 @@ async fn physical_topology(
         "SELECT concat_ws('|', node_id, state, record_count, row_count,
                 non_owned_live_count, non_owned_tombstone_count,
                 orphan_record_count, orphan_row_count, graph_bytes,
-                row_tier_bytes, directory_bytes, control_index_bytes)
+                row_tier_bytes, directory_bytes, control_index_bytes,
+                coalesce(payload_sidecar_row_count, -1),
+                coalesce(payload_sidecar_heap_bytes, -1),
+                coalesce(payload_sidecar_index_bytes, -1))
            FROM {selector_sql}"
     );
     let raw = capture_psql(psql, socket_dir, node.port, &sql).await?;
     let fields = raw.trim().split('|').collect::<Vec<_>>();
-    if fields.len() != 12 {
+    if fields.len() != 15 {
         bail!(
             "physical topology node {} returned malformed row {:?}",
             node.node_id,
@@ -2267,6 +2341,9 @@ async fn physical_topology(
         row_bytes: number(9, "row_tier_bytes")?,
         directory_bytes: number(10, "directory_bytes")?,
         control_bytes: number(11, "control_index_bytes")?,
+        sidecar_rows: number(12, "payload_sidecar_row_count")?,
+        sidecar_heap_bytes: number(13, "payload_sidecar_heap_bytes")?,
+        sidecar_index_bytes: number(14, "payload_sidecar_index_bytes")?,
     })
 }
 
@@ -2275,6 +2352,7 @@ fn validate_physical_topology(
     topology: &[PhysicalTopologyRow],
     expected_state: &str,
     source_count: i64,
+    expect_sidecar: bool,
 ) -> Result<()> {
     if topology.is_empty()
         || topology.iter().any(|row| {
@@ -2285,6 +2363,15 @@ fn validate_physical_topology(
                 || row.non_owned_tombstones != 0
                 || row.orphan_records != 0
                 || row.orphan_rows != 0
+                || if expect_sidecar {
+                    row.sidecar_rows < row.records
+                        || row.sidecar_heap_bytes <= 0
+                        || row.sidecar_index_bytes <= 0
+                } else {
+                    row.sidecar_rows != -1
+                        || row.sidecar_heap_bytes != -1
+                        || row.sidecar_index_bytes != -1
+                }
         })
         || topology.iter().map(|row| row.records).sum::<i64>() != source_count
     {
@@ -2437,6 +2524,15 @@ fn append_payload_projection_guc(args: &mut Vec<String>, arm: &str, enabled: boo
         args.extend([
             "--session-guc".into(),
             "ec_distann.benchmark_payload_projection=off".into(),
+        ]);
+    }
+}
+
+fn append_covering_sidecar_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && !enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.benchmark_covering_sidecar=off".into(),
         ]);
     }
 }
@@ -2595,6 +2691,7 @@ struct BenchmarkSeedVariant {
     packed_payload: bool,
     expanded_locator: bool,
     payload_projection: bool,
+    covering_sidecar: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2795,9 +2892,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if !(5..=14).contains(&fields.len()) {
+            if !(5..=15).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR[:PACKED_PAYLOAD[:EXPANDED_LOCATOR[:PAYLOAD_PROJECTION]]]]]]]]], got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR[:PACKED_PAYLOAD[:EXPANDED_LOCATOR[:PAYLOAD_PROJECTION[:COVERING_SIDECAR]]]]]]]]]], got {value:?}"
                 );
             }
             let name = fields[0];
@@ -2955,6 +3052,17 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 })
                 .transpose()?
                 .unwrap_or(true);
+            let covering_sidecar = fields
+                .get(14)
+                .map(|field| match *field {
+                    "on" => Ok(true),
+                    "off" => Ok(false),
+                    _ => bail!(
+                        "benchmark seed variant covering sidecar must be on or off, got {value:?}"
+                    ),
+                })
+                .transpose()?
+                .unwrap_or(true);
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
@@ -2970,6 +3078,7 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 packed_payload,
                 expanded_locator,
                 payload_projection,
+                covering_sidecar,
             })
         })
         .collect()
@@ -3079,6 +3188,14 @@ fn materialization_variant_settings_sql(
                 "off"
             }
         ));
+        settings.push(format!(
+            "SET ec_distann.benchmark_covering_sidecar = {}",
+            if variant.covering_sidecar {
+                "on"
+            } else {
+                "off"
+            }
+        ));
     }
     if settings.is_empty() {
         String::new()
@@ -3114,6 +3231,67 @@ fn materialization_semantic_sql(
               LIMIT {limit}
            ) result"
     )
+}
+
+fn covering_sidecar_semantic_sql(
+    corpus: &str,
+    queries: &str,
+    limit: u32,
+    query_offset: u32,
+) -> String {
+    format!(
+        "WITH query_vector AS (
+             SELECT source FROM {queries} ORDER BY id OFFSET {query_offset} LIMIT 1
+         )
+         SELECT COALESCE(jsonb_agg(to_jsonb(result) ORDER BY result.distance)::text, '[]')
+           FROM (
+             SELECT id,
+                    embedding <#> (SELECT source FROM query_vector) AS distance
+               FROM {corpus}
+              ORDER BY embedding <#> (SELECT source FROM query_vector)
+              LIMIT {limit}
+           ) result"
+    )
+}
+
+async fn covering_sidecar_explain_source(
+    coordinator: &tokio_postgres::Client,
+    variant: &BenchmarkSeedVariant,
+    corpus: &str,
+    queries: &str,
+    has_attribution_hooks: bool,
+) -> Result<String> {
+    coordinator
+        .batch_execute(&format!(
+            "SET enable_seqscan = off; {}",
+            materialization_variant_settings_sql(variant, has_attribution_hooks),
+        ))
+        .await?;
+    let rows = coordinator
+        .query(
+            &format!(
+                "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF, TIMING OFF, SUMMARY OFF)
+                 SELECT id
+                   FROM {corpus}
+                  ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id LIMIT 1)
+                  LIMIT 10"
+            ),
+            &[],
+        )
+        .await?;
+    rows.iter()
+        .map(|row| row.get::<_, String>(0))
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("Payload Source: ")
+                .map(ToOwned::to_owned)
+        })
+        .ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "Task 229 covering-sidecar EXPLAIN for variant {} omitted Payload Source",
+                variant.name
+            )
+        })
 }
 
 async fn task198_replica_semantic_result(
@@ -3825,6 +4003,122 @@ struct Task167DefaultInsertBaseline {
     backlink_no_room: i64,
 }
 
+const TASK229_DML_SAMPLES: usize = 32;
+
+#[derive(Debug, Clone, Copy)]
+struct Task229DmlLatency {
+    mean_ms: f64,
+    p50_ms: f64,
+    p95_ms: f64,
+    p99_ms: f64,
+    max_ms: f64,
+}
+
+fn task229_dml_latency(samples: &[u128]) -> Result<Task229DmlLatency> {
+    if samples.is_empty() {
+        bail!("Task 229 DML benchmark produced no latency samples");
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let percentile = |numerator: usize| {
+        let rank = (sorted.len() * numerator).div_ceil(100).max(1);
+        sorted[rank.saturating_sub(1)] as f64 / 1_000_000.0
+    };
+    Ok(Task229DmlLatency {
+        mean_ms: sorted.iter().sum::<u128>() as f64 / sorted.len() as f64 / 1_000_000.0,
+        p50_ms: percentile(50),
+        p95_ms: percentile(95),
+        p99_ms: percentile(99),
+        max_ms: *sorted.last().expect("nonempty Task 229 DML samples") as f64 / 1_000_000.0,
+    })
+}
+
+async fn task229_replacement_delete_latency(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    benchmark_position: &str,
+    covered_generation: bool,
+) -> Result<Vec<String>> {
+    let rows = coordinator
+        .query(
+            &format!(
+                "SELECT id, source::text
+                   FROM {physical_corpus}
+                  WHERE id < 1000000
+                  ORDER BY id
+                  OFFSET 512
+                  LIMIT {}",
+                TASK229_DML_SAMPLES * 2
+            ),
+            &[],
+        )
+        .await
+        .wrap_err("selecting Task 229 replacement/delete benchmark rows")?;
+    if rows.len() != TASK229_DML_SAMPLES * 2 {
+        bail!(
+            "Task 229 DML benchmark selected {} rows, expected {}",
+            rows.len(),
+            TASK229_DML_SAMPLES * 2
+        );
+    }
+
+    let mut replacement_samples = Vec::with_capacity(TASK229_DML_SAMPLES);
+    for ordinal in 0..TASK229_DML_SAMPLES {
+        let id = rows[ordinal].get::<_, i64>(0);
+        let replacement_source = rows[ordinal + TASK229_DML_SAMPLES].get::<_, String>(1);
+        let started = Instant::now();
+        let updated = coordinator
+            .execute(
+                &format!(
+                    "UPDATE {physical_corpus}
+                        SET source = ($2::text)::real[],
+                            embedding = encode_to_ecvector(($2::text)::real[], 4, 42)
+                      WHERE id = $1"
+                ),
+                &[&id, &replacement_source],
+            )
+            .await
+            .wrap_err_with(|| format!("Task 229 replacement sample {ordinal}"))?;
+        replacement_samples.push(started.elapsed().as_nanos());
+        if updated != 1 {
+            bail!("Task 229 replacement sample {ordinal} updated {updated} rows");
+        }
+    }
+
+    let mut delete_samples = Vec::with_capacity(TASK229_DML_SAMPLES);
+    for ordinal in 0..TASK229_DML_SAMPLES {
+        let id = rows[ordinal + TASK229_DML_SAMPLES].get::<_, i64>(0);
+        let started = Instant::now();
+        let deleted = coordinator
+            .execute(
+                &format!("DELETE FROM {physical_corpus} WHERE id = $1"),
+                &[&id],
+            )
+            .await
+            .wrap_err_with(|| format!("Task 229 delete sample {ordinal}"))?;
+        delete_samples.push(started.elapsed().as_nanos());
+        if deleted != 1 {
+            bail!("Task 229 delete sample {ordinal} deleted {deleted} rows");
+        }
+    }
+
+    let replacement = task229_dml_latency(&replacement_samples)?;
+    let delete = task229_dml_latency(&delete_samples)?;
+    Ok([
+        ("replacement", replacement),
+        ("delete", delete),
+    ]
+    .into_iter()
+    .map(|(operation, stats)| {
+        format!(
+            "physical_benchmark_dml_latency scale={scale} operation={operation} statements={TASK229_DML_SAMPLES} mean_ms={:.6} p50_ms={:.6} p95_ms={:.6} p99_ms={:.6} max_ms={:.6} benchmark_position={benchmark_position} covered_generation={covered_generation} workload=single_row_routed_statement pass=true",
+            stats.mean_ms, stats.p50_ms, stats.p95_ms, stats.p99_ms, stats.max_ms,
+        )
+    })
+    .collect())
+}
+
 fn task167_insert_trial_items(
     trial: usize,
     rows_per_trial: usize,
@@ -3983,9 +4277,9 @@ async fn task167_default_insert_throughput(
     ));
     let rows = shipped_work;
     let expected_inserts = shipped.inserted_rows as i64;
-    if rows.len() != 8 {
+    if rows.len() != 10 {
         bail!(
-            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
+            "Task 167 physical insert-work snapshot returned {} rows, expected 10",
             rows.len()
         );
     }
@@ -4002,7 +4296,7 @@ async fn task167_default_insert_throughput(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} node=coordinator counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
@@ -4026,6 +4320,87 @@ async fn task167_default_insert_throughput(
             .map(|(value, _)| *value)
             .unwrap_or_default(),
     })
+}
+
+async fn task229_sidecar_insert_topology(
+    coordinator: &tokio_postgres::Client,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    before: &[PhysicalTopologyRow],
+    scale: &str,
+    inserted_rows: usize,
+    covered_generation: bool,
+    benchmark_position: &str,
+) -> Result<Vec<String>> {
+    if nodes.len() != before.len() {
+        bail!(
+            "Task 229 insert topology node mismatch: nodes={} before={}",
+            nodes.len(),
+            before.len()
+        );
+    }
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT encode(epoch_fingerprint, 'hex')
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await
+        .wrap_err("reading Task 229 post-insert epoch fingerprint")?
+        .get::<_, String>(0);
+    let selector = format!(
+        "ec_distann_epoch_topology('public.dm_idx'::regclass, decode('{fingerprint}', 'hex'))"
+    );
+    let mut lines = Vec::with_capacity(nodes.len() + 1);
+    let mut record_delta = 0_i64;
+    let mut row_delta = 0_i64;
+    let mut sidecar_row_delta = 0_i64;
+    let mut sidecar_heap_growth = 0_i64;
+    let mut sidecar_index_growth = 0_i64;
+    for (node, prior) in nodes.iter().zip(before) {
+        let after = physical_topology(psql, socket_dir, node, &selector).await?;
+        if prior.node_id != after.node_id || prior.state != after.state {
+            bail!(
+                "Task 229 insert topology identity changed on node {}: before={prior:?} after={after:?}",
+                node.node_id
+            );
+        }
+        let node_record_delta = after.records - prior.records;
+        let node_row_delta = after.rows - prior.rows;
+        let node_sidecar_row_delta = after.sidecar_rows.max(0) - prior.sidecar_rows.max(0);
+        let node_sidecar_heap_growth =
+            after.sidecar_heap_bytes.max(0) - prior.sidecar_heap_bytes.max(0);
+        let node_sidecar_index_growth =
+            after.sidecar_index_bytes.max(0) - prior.sidecar_index_bytes.max(0);
+        record_delta += node_record_delta;
+        row_delta += node_row_delta;
+        sidecar_row_delta += node_sidecar_row_delta;
+        sidecar_heap_growth += node_sidecar_heap_growth;
+        sidecar_index_growth += node_sidecar_index_growth;
+        lines.push(format!(
+            "physical_benchmark_sidecar_insert_work scale={scale} node={} covered_generation={covered_generation} statements={inserted_rows} record_rows_appended={node_record_delta} row_tier_rows_appended={node_row_delta} sidecar_rows_appended={node_sidecar_row_delta} sidecar_heap_growth_bytes={node_sidecar_heap_growth} sidecar_index_growth_bytes={node_sidecar_index_growth} benchmark_position={benchmark_position} evidence=post_minus_pre_topology pass=true",
+            node.node_id,
+        ));
+    }
+    let inserted_rows = i64::try_from(inserted_rows).unwrap_or(i64::MAX);
+    let pass = record_delta == inserted_rows
+        && row_delta == inserted_rows
+        && if covered_generation {
+            sidecar_row_delta == inserted_rows
+        } else {
+            sidecar_row_delta == 0 && sidecar_heap_growth == 0 && sidecar_index_growth == 0
+        };
+    lines.push(format!(
+        "physical_benchmark_sidecar_insert_work scale={scale} node=cluster covered_generation={covered_generation} statements={inserted_rows} record_rows_appended={record_delta} row_tier_rows_appended={row_delta} sidecar_rows_appended={sidecar_row_delta} sidecar_heap_growth_bytes={sidecar_heap_growth} sidecar_index_growth_bytes={sidecar_index_growth} benchmark_position={benchmark_position} evidence=post_minus_pre_topology remote_owner_work_included=true pass={pass}"
+    ));
+    if !pass {
+        bail!(
+            "Task 229 insert topology mismatch: covered={covered_generation} statements={inserted_rows} records={record_delta} rows={row_delta} sidecar_rows={sidecar_row_delta} sidecar_heap_growth={sidecar_heap_growth} sidecar_index_growth={sidecar_index_growth}"
+        );
+    }
+    Ok(lines)
 }
 
 async fn task167_append_when_room_diagnostic(
@@ -6171,6 +6546,7 @@ async fn run_materialization_correctness(
                         && candidate.packed_payload == control.packed_payload
                         && candidate.expanded_locator == control.expanded_locator
                         && candidate.payload_projection == control.payload_projection
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -6189,6 +6565,7 @@ async fn run_materialization_correctness(
                         && candidate.packed_payload == control.packed_payload
                         && candidate.expanded_locator == control.expanded_locator
                         && candidate.payload_projection == control.payload_projection
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -6208,6 +6585,7 @@ async fn run_materialization_correctness(
                         && candidate.packed_payload == control.packed_payload
                         && candidate.expanded_locator == control.expanded_locator
                         && candidate.payload_projection == control.payload_projection
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -6227,6 +6605,7 @@ async fn run_materialization_correctness(
                         && candidate.typed_locator == control.typed_locator
                         && candidate.expanded_locator == control.expanded_locator
                         && candidate.payload_projection == control.payload_projection
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -6246,6 +6625,7 @@ async fn run_materialization_correctness(
                         && candidate.packed_payload == control.packed_payload
                         && candidate.traversal_replica == control.traversal_replica
                         && candidate.payload_projection == control.payload_projection
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -6265,19 +6645,47 @@ async fn run_materialization_correctness(
                         && candidate.typed_locator == control.typed_locator
                         && candidate.packed_payload == control.packed_payload
                         && candidate.expanded_locator == control.expanded_locator
+                        && candidate.covering_sidecar == control.covering_sidecar
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
         });
+    let covering_sidecar_pair = seed_variants
+        .iter()
+        .filter(|variant| !variant.covering_sidecar)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.covering_sidecar
+                        && candidate.materialization_batch_size
+                            == control.materialization_batch_size
+                        && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
+                        && candidate.traversal_replica == control.traversal_replica
+                        && candidate.typed_locator == control.typed_locator
+                        && candidate.packed_payload == control.packed_payload
+                        && candidate.expanded_locator == control.expanded_locator
+                        && candidate.payload_projection == control.payload_projection
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let selected_covering_sidecar_pair = covering_sidecar_pair.is_some();
+    if selected_covering_sidecar_pair && !has_attribution_hooks {
+        bail!(
+            "Task 229 covering-sidecar correctness pair requires the distann-head-attribution-benchmark build"
+        );
+    }
     let (control, candidate) = plan_pair
         .or(batch_pair)
         .or(traversal_pair)
         .or(packed_pair)
         .or(expanded_pair)
         .or(payload_projection_pair)
+        .or(covering_sidecar_pair)
         .ok_or_else(|| {
             color_eyre::eyre::eyre!(
-                "materialization correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, or payload-projection pair"
+                "materialization correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, payload-projection, or covering-sidecar pair"
             )
         })?;
 
@@ -6328,6 +6736,56 @@ async fn run_materialization_correctness(
     let exclude_multiple = ranked_ids[..40].join(",");
 
     let mut lines = Vec::new();
+    if selected_covering_sidecar_pair {
+        let sql = covering_sidecar_semantic_sql(corpus, queries, 10, 0);
+        lines.push(
+            compare_materialization_scenario(
+                coordinator,
+                control,
+                candidate,
+                scale,
+                "covering_sidecar_id_projection",
+                &sql,
+                false,
+                false,
+                10,
+                false,
+                has_attribution_hooks,
+                line_suffix,
+            )
+            .await?,
+        );
+        let control_source = covering_sidecar_explain_source(
+            coordinator,
+            control,
+            corpus,
+            queries,
+            has_attribution_hooks,
+        )
+        .await?;
+        let candidate_source = covering_sidecar_explain_source(
+            coordinator,
+            candidate,
+            corpus,
+            queries,
+            has_attribution_hooks,
+        )
+        .await?;
+        let pass = control_source == "row_tier" && candidate_source == "sidecar";
+        let line = format!(
+            "physical_materialization_covering_sidecar_selection scale={scale} pass={pass} control_variant={} control_source={control_source} candidate_variant={} candidate_source={candidate_source}",
+            control.name, candidate.name,
+        );
+        crate::ecaz_println!("[distann-multicluster] {line}{line_suffix}");
+        if !pass {
+            bail!(
+                "Task 229 covering-sidecar selection failed: control={} candidate={}",
+                control_source,
+                candidate_source
+            );
+        }
+        lines.push(line);
+    }
     for (scenario, predicate, limit, require_null, require_toast, qualified) in [
         (
             "fewer_than_window",
@@ -6845,6 +7303,7 @@ async fn run_physical_benchmarks(
     coordinator: &tokio_postgres::Client,
     coordinator_port: u16,
     pg_ctl: &Path,
+    psql: &Path,
     socket_dir: &Path,
     nodes: &[Node],
     published: &[PhysicalTopologyRow],
@@ -6911,6 +7370,7 @@ async fn run_physical_benchmarks(
             packed_payload: false,
             expanded_locator: false,
             payload_projection: true,
+            covering_sidecar: true,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -7268,8 +7728,14 @@ async fn run_physical_benchmarks(
         "--user".to_owned(),
         "postgres".to_owned(),
     ];
+    let benchmark_position = args
+        .benchmark_position_label
+        .as_deref()
+        .map(canonical_benchmark_position_label)
+        .transpose()?
+        .unwrap_or_else(|| "unspecified".to_owned());
     let mut lines = vec![format!(
-        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={} query_offset={} query_rows={} query_slice_sha256={query_slice_sha256}",
+        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={} benchmark_position={benchmark_position} query_offset={} query_rows={} query_slice_sha256={query_slice_sha256}",
         extension_preflight.nodes,
         args.stage_counter_only,
         args.query_offset,
@@ -7603,7 +8069,7 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} seed_set_change={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} payload_projection={} queries={} seed_id_digest={} compared_with={} same_seed={}",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} seed_set_change={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} payload_projection={} covering_sidecar={} queries={} seed_id_digest={} compared_with={} same_seed={}",
                 variant.name,
                 seed_label,
                 args.fused_head_hop || args.crown_width_pruning,
@@ -7614,6 +8080,7 @@ async fn run_physical_benchmarks(
                 variant.owner_payload_plan_cache,
                 variant.traversal_replica,
                 variant.payload_projection,
+                variant.covering_sidecar,
                 args.queries,
                 seed_id_digest,
                 compared_with,
@@ -7635,11 +8102,12 @@ async fn run_physical_benchmarks(
             variant.packed_payload,
             variant.expanded_locator,
             variant.payload_projection,
+            variant.covering_sidecar,
             variant_beam_width,
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} seed_set_change={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} typed_locator={} packed_payload={} expanded_locator={} payload_projection={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} benchmark_position={benchmark_position} variant={} seed_strategy={} seed_set_change={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} typed_locator={} packed_payload={} expanded_locator={} payload_projection={} covering_sidecar={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             seed_label,
             args.fused_head_hop || args.crown_width_pruning,
@@ -7660,6 +8128,7 @@ async fn run_physical_benchmarks(
             variant.packed_payload,
             variant.expanded_locator,
             variant.payload_projection,
+            variant.covering_sidecar,
         ));
     }
     if !args.stage_counter_only && !args.skip_single_control && !args.skip_single_benchmark {
@@ -7677,6 +8146,7 @@ async fn run_physical_benchmarks(
             false,
             false,
             false,
+            true,
             true,
             beam_width,
             hop_rounds,
@@ -7707,6 +8177,7 @@ async fn run_physical_benchmarks(
         packed_payload,
         expanded_locator,
         payload_projection,
+        covering_sidecar,
         arm_beam_width,
         arm_hop_rounds,
     ) in benchmark_arms
@@ -7838,6 +8309,7 @@ async fn run_physical_benchmarks(
                 append_packed_payload_guc(&mut recall_args, arm, packed_payload);
                 append_expanded_locator_guc(&mut recall_args, arm, expanded_locator);
                 append_payload_projection_guc(&mut recall_args, arm, payload_projection);
+                append_covering_sidecar_guc(&mut recall_args, arm, covering_sidecar);
                 append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
                 append_sharded_head_guc(
                     &mut recall_args,
@@ -8382,6 +8854,7 @@ async fn run_physical_benchmarks(
         append_packed_payload_guc(&mut latency_args, arm, packed_payload);
         append_expanded_locator_guc(&mut latency_args, arm, expanded_locator);
         append_payload_projection_guc(&mut latency_args, arm, payload_projection);
+        append_covering_sidecar_guc(&mut latency_args, arm, covering_sidecar);
         append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
         append_sharded_head_guc(
             &mut latency_args,
@@ -8496,7 +8969,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -8522,17 +8995,18 @@ async fn run_physical_benchmarks(
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
             let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
-            if stage_rows.len() != 37 * expected_counter_groups {
+            const DISTANN_STAGE_ROWS: usize = 40;
+            if stage_rows.len() != DISTANN_STAGE_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann stage rows ({} concurrency groups), got {}",
-                    37 * expected_counter_groups,
+                    DISTANN_STAGE_ROWS * expected_counter_groups,
                     expected_counter_groups,
                     stage_rows.len()
                 );
             }
             // Reconcile the first concurrency group; all groups are retained
             // in the packet output below for the latency sweep evidence.
-            let attribution_stage_rows = &stage_rows[..37];
+            let attribution_stage_rows = &stage_rows[..DISTANN_STAGE_ROWS];
             let remote_expand = attribution_stage_mean(attribution_stage_rows, "remote_expand")?;
             let remote_components = [
                 "traversal_connection_ready",
@@ -8580,30 +9054,31 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 33 server-side work metrics
+            // The extension exposes 51 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 34 * expected_counter_groups {
+            const DISTANN_WORK_ROWS: usize = 52;
+            if work_rows.len() != DISTANN_WORK_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    34 * expected_counter_groups,
+                    DISTANN_WORK_ROWS * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -9016,7 +9491,7 @@ async fn run_physical_benchmarks(
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} covering_sidecar={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -9026,6 +9501,7 @@ async fn run_physical_benchmarks(
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
+            variant.covering_sidecar,
         );
         // NFR-018/NFR-021 storage is deliberately measured inside the arm
         // loop.  The owner generation rows are immutable across variants, but
@@ -9037,7 +9513,16 @@ async fn run_physical_benchmarks(
             .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
             .sum::<i64>();
         let owner_row_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
-        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes;
+        let owner_sidecar_heap_bytes = published
+            .iter()
+            .map(|row| row.sidecar_heap_bytes.max(0))
+            .sum::<i64>();
+        let owner_sidecar_index_bytes = published
+            .iter()
+            .map(|row| row.sidecar_index_bytes.max(0))
+            .sum::<i64>();
+        let owner_sidecar_bytes = owner_sidecar_heap_bytes + owner_sidecar_index_bytes;
+        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes + owner_sidecar_bytes;
         let max_owner_graph_side_bytes = published
             .iter()
             .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
@@ -9045,7 +9530,14 @@ async fn run_physical_benchmarks(
             .unwrap_or(0);
         let physical_generation_bytes = published
             .iter()
-            .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
+            .map(|row| {
+                row.graph_bytes
+                    + row.row_bytes
+                    + row.directory_bytes
+                    + row.control_bytes
+                    + row.sidecar_heap_bytes.max(0)
+                    + row.sidecar_index_bytes.max(0)
+            })
             .sum::<i64>();
         let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
         let mut derived_relation_bytes = 0_i64;
@@ -9138,21 +9630,25 @@ async fn run_physical_benchmarks(
         ));
         for row in published {
             let graph_side_bytes = row.graph_bytes + row.directory_bytes + row.control_bytes;
+            let sidecar_heap_bytes = row.sidecar_heap_bytes.max(0);
+            let sidecar_index_bytes = row.sidecar_index_bytes.max(0);
+            let sidecar_bytes = sidecar_heap_bytes + sidecar_index_bytes;
             lines.push(format!(
-                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} total_resident_bytes={} derived_relation_bytes=0",
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
                 row.node_id,
                 row.graph_bytes,
                 row.directory_bytes,
                 row.control_bytes,
                 row.row_bytes,
-                graph_side_bytes + row.row_bytes,
+                row.sidecar_rows.max(0),
+                graph_side_bytes + row.row_bytes + sidecar_bytes,
             ));
         }
         lines.push(format!(
             "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} crown_resident_bytes={crown_resident_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
             published.len(),
         ));
         lines.push(format!(
@@ -9214,6 +9710,22 @@ async fn run_physical_benchmarks(
             &mut lines,
         )
         .await?;
+        if args.task229_dml_benchmark {
+            lines.extend(
+                task229_sidecar_insert_topology(
+                    coordinator,
+                    psql,
+                    socket_dir,
+                    nodes,
+                    published,
+                    scale,
+                    default_insert_baseline.measurement.inserted_rows,
+                    args.covering_payload_attnums.is_some(),
+                    &benchmark_position,
+                )
+                .await?,
+            );
+        }
         let roster = nodes
             .iter()
             .map(|node| {
@@ -9283,6 +9795,18 @@ async fn run_physical_benchmarks(
                 &physical_corpus,
                 &physical_queries,
                 &line_provenance_suffix,
+            )
+            .await?,
+        );
+    }
+    if args.task229_dml_benchmark {
+        lines.extend(
+            task229_replacement_delete_latency(
+                coordinator,
+                scale,
+                &physical_corpus,
+                &benchmark_position,
+                args.covering_payload_attnums.is_some(),
             )
             .await?,
         );
@@ -9626,7 +10150,13 @@ async fn drive_reused_physical_fixture(
     for node in owners {
         published.push(physical_topology(psql, socket_dir, node, &selector).await?);
     }
-    validate_physical_topology("reused", &published, "Published", source_count)?;
+    validate_physical_topology(
+        "reused",
+        &published,
+        "Published",
+        source_count,
+        args.covering_payload_attnums.is_some(),
+    )?;
     crate::ecaz_println!(
         "[distann-multicluster] fixture_decision action=reuse run_dir={} scale={} source_rows={} extension_git_sha={} extension_build_profile={}",
         nodes[0].data_dir.parent().unwrap_or(nodes[0].data_dir.as_path()).display(),
@@ -9641,6 +10171,7 @@ async fn drive_reused_physical_fixture(
             &coordinator,
             nodes[0].port,
             pg_ctl,
+            psql,
             socket_dir,
             owners,
             &published,
@@ -9666,7 +10197,7 @@ async fn drive_reused_physical_fixture(
     );
     for row in &published {
         summary.push_str(&format!(
-            "[distann-multicluster] physical_topology phase=reused node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+            "[distann-multicluster] physical_topology phase=reused node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
             row.node_id,
             row.state,
             row.records,
@@ -9677,6 +10208,9 @@ async fn drive_reused_physical_fixture(
             row.row_bytes,
             row.directory_bytes,
             row.control_bytes,
+            row.sidecar_rows,
+            row.sidecar_heap_bytes,
+            row.sidecar_index_bytes,
         ));
     }
     for line in &benchmark_lines {
@@ -12640,7 +13174,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &ready_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}",
+            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -12651,10 +13185,19 @@ async fn drive_physical_fixture(
             row.row_bytes,
             row.directory_bytes,
             row.control_bytes,
+            row.sidecar_rows,
+            row.sidecar_heap_bytes,
+            row.sidecar_index_bytes,
         );
         ready.push(row);
     }
-    validate_physical_topology("ready", &ready, "Ready", source_count)?;
+    validate_physical_topology(
+        "ready",
+        &ready,
+        "Ready",
+        source_count,
+        args.covering_payload_attnums.is_some(),
+    )?;
 
     coordinator
         .batch_execute(&format!(
@@ -12706,7 +13249,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &published_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}",
+            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -12717,10 +13260,19 @@ async fn drive_physical_fixture(
             row.row_bytes,
             row.directory_bytes,
             row.control_bytes,
+            row.sidecar_rows,
+            row.sidecar_heap_bytes,
+            row.sidecar_index_bytes,
         );
         published.push(row);
     }
-    validate_physical_topology("published", &published, "Published", source_count)?;
+    validate_physical_topology(
+        "published",
+        &published,
+        "Published",
+        source_count,
+        args.covering_payload_attnums.is_some(),
+    )?;
 
     let query_limit = i64::from(args.top_k.max(1));
     coordinator
@@ -13101,6 +13653,7 @@ async fn drive_physical_fixture(
             &coordinator,
             nodes[0].port,
             pg_ctl,
+            psql,
             socket_dir,
             owners,
             &published,
@@ -13129,7 +13682,7 @@ async fn drive_physical_fixture(
         for (phase, rows) in [("ready", &ready), ("published", &published)] {
             for row in rows {
                 summary.push_str(&format!(
-                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
                     row.node_id,
                     row.state,
                     row.records,
@@ -13140,6 +13693,9 @@ async fn drive_physical_fixture(
                     row.row_bytes,
                     row.directory_bytes,
                     row.control_bytes,
+                    row.sidecar_rows,
+                    row.sidecar_heap_bytes,
+                    row.sidecar_index_bytes,
                 ));
             }
         }
@@ -13295,7 +13851,7 @@ async fn drive_physical_fixture(
     for (phase, rows) in [("ready", &ready), ("published", &published)] {
         for row in rows {
             summary.push_str(&format!(
-                "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+                "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
                 row.node_id,
                 row.state,
                 row.records,
@@ -13306,6 +13862,9 @@ async fn drive_physical_fixture(
                 row.row_bytes,
                 row.directory_bytes,
                 row.control_bytes,
+                row.sidecar_rows,
+                row.sidecar_heap_bytes,
+                row.sidecar_index_bytes,
             ));
         }
     }
@@ -16859,6 +17418,7 @@ mod tests {
             packed_payload: false,
             expanded_locator: false,
             payload_projection: true,
+            covering_sidecar: true,
         };
         let sql = task167_search_guc_sql(&args, &production, 4, 32, 100).unwrap();
         for pinned in [
@@ -17017,6 +17577,7 @@ mod tests {
             packed_payload: false,
             expanded_locator: false,
             payload_projection: true,
+            covering_sidecar: true,
         }
     }
 
@@ -17047,10 +17608,78 @@ mod tests {
         assert_eq!(variants[0].materialization_batch_size, 10);
         assert_eq!(variants[1].materialization_batch_size, 10);
         assert!(variants.iter().all(|variant| variant.payload_projection));
+        assert!(variants.iter().all(|variant| variant.covering_sidecar));
         let eager =
             parse_benchmark_seed_variants(&["eager:persisted_head:32:32:rabitq:0".to_owned()])
                 .expect("explicit eager variant parses");
         assert_eq!(eager[0].materialization_batch_size, 0);
+    }
+
+    #[test]
+    fn covering_payload_attnums_require_canonical_physical_order() {
+        assert_eq!(canonical_covering_payload_attnums("1").unwrap(), "1");
+        assert_eq!(
+            canonical_covering_payload_attnums("1,3,5").unwrap(),
+            "1,3,5"
+        );
+        for invalid in ["", "0", "01", "1,1", "2,1", "1,", "1, 2", "1;DROP"] {
+            assert!(
+                canonical_covering_payload_attnums(invalid).is_err(),
+                "{invalid:?} must be rejected"
+            );
+        }
+        assert!(
+            canonical_covering_payload_attnums("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn benchmark_position_label_is_manifest_safe() {
+        assert_eq!(
+            canonical_benchmark_position_label("pair-a-first").unwrap(),
+            "pair-a-first"
+        );
+        for invalid in ["", "pair a", "pair/a", "pair=a"] {
+            assert!(canonical_benchmark_position_label(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn task229_dml_latency_uses_nearest_rank_percentiles() {
+        let samples = (1_u128..=100).collect::<Vec<_>>();
+        let stats = task229_dml_latency(&samples).expect("latency summary");
+        assert_eq!(stats.p50_ms, 50.0 / 1_000_000.0);
+        assert_eq!(stats.p95_ms, 95.0 / 1_000_000.0);
+        assert_eq!(stats.p99_ms, 99.0 / 1_000_000.0);
+        assert_eq!(stats.max_ms, 100.0 / 1_000_000.0);
+    }
+
+    #[test]
+    fn covering_sidecar_variant_is_explicit_and_defaults_on() {
+        let variants = parse_benchmark_seed_variants(&[
+            "row-tier:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:off".to_owned(),
+            "covered:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on".to_owned(),
+        ])
+        .expect("covering sidecar variants parse");
+        assert!(!variants[0].covering_sidecar);
+        assert!(variants[1].covering_sidecar);
+        assert!(materialization_variant_settings_sql(&variants[0], true)
+            .contains("benchmark_covering_sidecar = off"));
+        assert!(materialization_variant_settings_sql(&variants[1], true)
+            .contains("benchmark_covering_sidecar = on"));
+        assert!(!materialization_variant_settings_sql(&variants[0], false)
+            .contains("benchmark_covering_sidecar"));
+
+        let mut args = Vec::new();
+        append_covering_sidecar_guc(&mut args, "physical", false);
+        assert_eq!(
+            args,
+            ["--session-guc", "ec_distann.benchmark_covering_sidecar=off"]
+        );
+        let mut production_args = Vec::new();
+        append_covering_sidecar_guc(&mut production_args, "physical", true);
+        assert!(production_args.is_empty());
     }
 
     #[test]

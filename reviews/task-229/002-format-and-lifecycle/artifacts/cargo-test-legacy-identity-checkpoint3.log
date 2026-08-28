@@ -1,0 +1,13 @@
+Script started on 2026-08-26 06:31:51-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-42994ba2f56a9ded)
+
+running 3 tests
+test am::ec_spire::cost::tests::packet_30976_default_tuning_preserves_legacy_modeled_costs ... ok
+test am::ec_distann::generation_descriptor::tests::generation_descriptor_preserves_legacy_v2_and_round_trips_covered_v3 ... ok
+test am::ec_distann::manifest_v2::tests::manifest_preserves_legacy_v2_and_round_trips_covered_v3_fingerprints ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2599 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-26 06:31:51-07:00 [COMMAND_EXIT_CODE="0"]

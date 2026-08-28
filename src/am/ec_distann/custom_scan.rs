@@ -619,10 +619,17 @@ enum CustomScanOutputRow {
     /// A Published physical-generation hit: fetch the immutable row-tier tuple
     /// rather than the coordinator's live source heap.
     Frozen(crate::storage::page::ItemPointer),
+    /// A covered local physical hit awaiting one batched sidecar lookup for
+    /// its deterministic ranked materialization window.
+    FrozenPayloadPending {
+        vec_id: u64,
+        row_tid: crate::storage::page::ItemPointer,
+    },
     /// A remote-owned hit: reconstruct a virtual tuple from the owner-shipped
     /// per-column binary payload.
     Remote {
         vec_id: u64,
+        remote_owner: bool,
         payload_nulls: Vec<bool>,
         payload_offsets: Vec<i64>,
         payload_values: Vec<u8>,
@@ -661,6 +668,7 @@ struct DistannCustomScanExecState {
     payload_columns: Vec<String>,
     payload_send_functions: Vec<String>,
     payload_inputs: Vec<PayloadAttrIo>,
+    payload_sidecar_selected: bool,
     outputs: Vec<CustomScanOutputRow>,
     next_output: usize,
     loaded: bool,
@@ -719,6 +727,7 @@ fn default_exec_state() -> DistannCustomScanExecState {
         payload_columns: Vec::new(),
         payload_send_functions: Vec::new(),
         payload_inputs: Vec::new(),
+        payload_sidecar_selected: false,
         outputs: Vec::new(),
         next_output: 0,
         loaded: false,
@@ -1081,6 +1090,12 @@ unsafe extern "C-unwind" fn explain_custom_scan(
             pg_sys::ExplainPropertyText(c"Payload Fallback".as_ptr(), reason.as_ptr(), es);
         }
     }
+    let payload_source = if exec_state_mut(node).payload_sidecar_selected {
+        c"sidecar"
+    } else {
+        c"row_tier"
+    };
+    pg_sys::ExplainPropertyText(c"Payload Source".as_ptr(), payload_source.as_ptr(), es);
     if let Some(proof) =
         ordering_proof_from_plan_private((*plan).custom_private, (*plan).scan.scanrelid)
             .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"))
@@ -1212,9 +1227,12 @@ unsafe extern "C-unwind" fn custom_scan_access(
         let output_index = state.next_output;
         if matches!(
             state.outputs.get(output_index),
-            Some(CustomScanOutputRow::RemotePending { .. })
+            Some(
+                CustomScanOutputRow::RemotePending { .. }
+                    | CustomScanOutputRow::FrozenPayloadPending { .. }
+            )
         ) {
-            materialize_pending_physical_window(state, output_index);
+            materialize_pending_physical_window(state, scan_state, output_index);
             // Re-read the slot after the in-place Pending -> Remote/Skipped
             // transition. Do not advance the cursor until its final state is
             // handled below.
@@ -1299,17 +1317,23 @@ unsafe extern "C-unwind" fn custom_scan_access(
                     tid.offset_number
                 );
             }
+            CustomScanOutputRow::FrozenPayloadPending { .. } => {
+                pgrx::error!("EC_INTERNAL: pending local sidecar payload was not materialized")
+            }
             CustomScanOutputRow::Remote {
                 vec_id: _,
+                remote_owner,
                 payload_nulls,
                 payload_offsets,
                 payload_values,
             } => {
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                let _ = remote_owner;
                 let nulls = payload_nulls.clone();
                 let offsets = payload_offsets.clone();
                 let values = payload_values.clone();
                 #[cfg(feature = "distann-head-attribution-benchmark")]
-                record_executor_consumption(true);
+                record_executor_consumption(*remote_owner);
                 return store_remote_payload(state, scan_slot, &nulls, &offsets, &values);
             }
             CustomScanOutputRow::RemotePending { .. } => {
@@ -1326,14 +1350,21 @@ unsafe extern "C-unwind" fn custom_scan_access(
 /// no LIMIT-derived completeness assumption is made here.
 fn materialize_pending_physical_window(
     state: &mut DistannCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
     output_index: usize,
 ) {
     let batch_size = super::options::materialization_batch_size();
-    if batch_size == 0 {
-        pgrx::error!("EC_INTERNAL: pending remote payload with eager materialization enabled");
-    }
     let (window_start, window_end) =
         pending_materialization_window(output_index, batch_size, proven_prefix_len(state));
+    let local_pairs = state.outputs[window_start..window_end]
+        .iter()
+        .filter_map(|output| match output {
+            CustomScanOutputRow::FrozenPayloadPending { vec_id, row_tid } => {
+                Some((*vec_id, *row_tid))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let remote_pairs = state.outputs[window_start..window_end]
         .iter()
         .filter_map(|output| match output {
@@ -1344,7 +1375,7 @@ fn materialize_pending_physical_window(
             _ => None,
         })
         .collect::<Vec<_>>();
-    if remote_pairs.is_empty() {
+    if remote_pairs.is_empty() && local_pairs.is_empty() {
         pgrx::error!("EC_INTERNAL: pending materialization window contains no pending rows");
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1371,14 +1402,54 @@ fn materialize_pending_physical_window(
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let materialize_started = Instant::now();
-    let payloads = state
-        .physical_generation
-        .as_ref()
-        .unwrap_or_else(|| {
-            pgrx::error!("EcDistannDistributedScan lost its physical generation context")
-        })
-        .materialize_remote_payload_pairs(&remote_pairs, &state.payload_attnums)
+    let context = state.physical_generation.as_ref().unwrap_or_else(|| {
+        pgrx::error!("EcDistannDistributedScan lost its physical generation context")
+    });
+    let mut payloads = context
+        .materialize_remote_payload_pairs(
+            &remote_pairs,
+            &state.payload_attnums,
+            state.payload_sidecar_selected,
+        )
         .unwrap_or_else(|error| pgrx::error!("{error}"));
+    if !local_pairs.is_empty() {
+        let estate = unsafe { (*scan_state).ps.state };
+        if estate.is_null() {
+            pgrx::error!("EcDistannDistributedScan missing executor estate");
+        }
+        let active = unsafe { pg_sys::GetActiveSnapshot() };
+        if active != unsafe { (*estate).es_snapshot } {
+            pgrx::error!("EC_INTERNAL: local sidecar lookup lost the executor snapshot");
+        }
+        let mut local_payloads = context
+            .materialize_local_sidecar_pairs(&local_pairs, &state.payload_attnums, false)
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        let missing = local_pairs
+            .iter()
+            .copied()
+            .filter(|(vec_id, _)| !local_payloads.contains_key(vec_id))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            if let Some(latest) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() {
+                local_payloads.extend(
+                    context
+                        .materialize_local_sidecar_pairs(&missing, &state.payload_attnums, true)
+                        .unwrap_or_else(|error| pgrx::error!("{error}")),
+                );
+                drop(latest);
+            }
+        }
+        for (vec_id, row_tid) in local_pairs.iter().copied() {
+            if !local_payloads.contains_key(&vec_id) {
+                pgrx::error!(
+                    "EC_GENERATION_MISSING: published row-tier tuple ({},{}) disappeared",
+                    row_tid.block_number,
+                    row_tid.offset_number
+                );
+            }
+        }
+        payloads.extend(local_payloads);
+    }
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         let materialize_elapsed = materialize_started.elapsed();
@@ -1398,18 +1469,21 @@ fn materialize_pending_physical_window(
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let association_started = Instant::now();
     for index in window_start..window_end {
-        let vec_id = match &state.outputs[index] {
-            CustomScanOutputRow::RemotePending { vec_id, .. } => *vec_id,
+        let (vec_id, remote_owner) = match &state.outputs[index] {
+            CustomScanOutputRow::RemotePending { vec_id, .. } => (*vec_id, true),
+            CustomScanOutputRow::FrozenPayloadPending { vec_id, .. } => (*vec_id, false),
             _ => continue,
         };
         state.outputs[index] = match payloads.get(&vec_id) {
             Some(payload) => CustomScanOutputRow::Remote {
                 vec_id,
+                remote_owner,
                 payload_nulls: payload.payload_nulls.clone(),
                 payload_offsets: payload.payload_offsets.clone(),
                 payload_values: payload.payload_values.clone(),
             },
-            None => CustomScanOutputRow::RemoteSkipped { vec_id },
+            None if remote_owner => CustomScanOutputRow::RemoteSkipped { vec_id },
+            None => pgrx::error!("EC_INTERNAL: local sidecar payload disappeared after retry"),
         };
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1424,11 +1498,14 @@ fn pending_materialization_window(
     batch_size: usize,
     proven_outputs: usize,
 ) -> (usize, usize) {
-    debug_assert!(batch_size > 0);
-    let ranked_window_start = output_index / batch_size * batch_size;
-    let end = ranked_window_start
-        .saturating_add(batch_size)
-        .min(proven_outputs);
+    let end = if batch_size == 0 {
+        proven_outputs
+    } else {
+        let ranked_window_start = output_index / batch_size * batch_size;
+        ranked_window_start
+            .saturating_add(batch_size)
+            .min(proven_outputs)
+    };
     // Slots below output_index were already consumed. Materialized-but-
     // unconsumed slots in this window survive a stable-prefix rebuild, so only
     // still-pending rows are requested by the caller.
@@ -1441,6 +1518,7 @@ fn materialized_remote_output_vec_id(output: &CustomScanOutputRow) -> Option<u64
         | CustomScanOutputRow::RemoteSkipped { vec_id } => Some(*vec_id),
         CustomScanOutputRow::Local(_)
         | CustomScanOutputRow::Frozen(_)
+        | CustomScanOutputRow::FrozenPayloadPending { .. }
         | CustomScanOutputRow::RemotePending { .. } => None,
     }
 }
@@ -1605,6 +1683,7 @@ unsafe fn run_search_and_build_outputs(
                 Some(payload) if !payload.tuple_payload_missing => {
                     Some(CustomScanOutputRow::Remote {
                         vec_id: hit.vec_id,
+                        remote_owner: true,
                         payload_nulls: payload.payload_nulls.clone(),
                         payload_offsets: payload.payload_offsets.clone(),
                         payload_values: payload.payload_values.clone(),
@@ -1684,6 +1763,15 @@ unsafe fn run_physical_generation_search(
         .physical_generation
         .as_ref()
         .expect("physical generation initialized");
+    state.payload_sidecar_selected = match &state.payload_mask {
+        PayloadAttributeMask::Exact(attnums) => {
+            super::options::covering_sidecar_enabled()
+                && context
+                    .payload_sidecar_covers(attnums)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"))
+        }
+        PayloadAttributeMask::AllColumns(_) => false,
+    };
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::RankedCandidates,
@@ -1692,7 +1780,7 @@ unsafe fn run_physical_generation_search(
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
     let hits = collection.hits;
-    if super::options::materialization_batch_size() > 0 {
+    if super::options::materialization_batch_size() > 0 || state.payload_sidecar_selected {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let association_started = Instant::now();
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1730,7 +1818,14 @@ unsafe fn run_physical_generation_search(
             .into_iter()
             .map(|hit| {
                 if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
-                    CustomScanOutputRow::Frozen(hit.heap_tid)
+                    if state.payload_sidecar_selected {
+                        CustomScanOutputRow::FrozenPayloadPending {
+                            vec_id: hit.vec_id,
+                            row_tid: hit.heap_tid,
+                        }
+                    } else {
+                        CustomScanOutputRow::Frozen(hit.heap_tid)
+                    }
                 } else {
                     // Distance-only sorting intentionally retains historical
                     // single-node ordering semantics, so equal-distance IDs can
@@ -1750,6 +1845,17 @@ unsafe fn run_physical_generation_search(
                 }
             })
             .collect();
+        if super::options::materialization_batch_size() == 0
+            && matches!(
+                state.outputs.get(state.next_output),
+                Some(
+                    CustomScanOutputRow::RemotePending { .. }
+                        | CustomScanOutputRow::FrozenPayloadPending { .. }
+                )
+            )
+        {
+            materialize_pending_physical_window(state, scan_state, state.next_output);
+        }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         {
             let association_elapsed = association_started.elapsed();
@@ -1771,7 +1877,7 @@ unsafe fn run_physical_generation_search(
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let materialize_started = Instant::now();
     let remote_payloads = context
-        .materialize_remote_payloads(&hits, &state.payload_attnums)
+        .materialize_remote_payloads(&hits, &state.payload_attnums, false)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record(
@@ -1792,6 +1898,7 @@ unsafe fn run_physical_generation_search(
                     .get(&hit.vec_id)
                     .map(|payload| CustomScanOutputRow::Remote {
                         vec_id: hit.vec_id,
+                        remote_owner: true,
                         payload_nulls: payload.payload_nulls.clone(),
                         payload_offsets: payload.payload_offsets.clone(),
                         payload_values: payload.payload_values.clone(),
@@ -2061,6 +2168,8 @@ mod materialization_candidate_tests {
 
     #[test]
     fn ranked_windows_are_deterministic_and_proven_bounded() {
+        assert_eq!(pending_materialization_window(0, 0, 32), (0, 32));
+        assert_eq!(pending_materialization_window(9, 0, 32), (9, 32));
         assert_eq!(pending_materialization_window(0, 10, 32), (0, 10));
         assert_eq!(pending_materialization_window(9, 10, 32), (9, 10));
         assert_eq!(pending_materialization_window(10, 10, 32), (10, 20));
@@ -2073,6 +2182,7 @@ mod materialization_candidate_tests {
         let mut previous = vec![
             Some(CustomScanOutputRow::Remote {
                 vec_id: 11,
+                remote_owner: true,
                 payload_nulls: vec![false],
                 payload_offsets: vec![3],
                 payload_values: vec![1, 2, 3],

@@ -9,13 +9,14 @@ use pgrx::{pg_extern, pg_sys, Spi};
 
 use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
 use super::lifecycle_state::{require_exact_transition_classified, GenerationState};
-use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
+use super::manifest_v2::{DistannReadyReceipt, DISTANN_READY_RECEIPT_MAX_BYTES};
 use super::quote_ident;
 
 const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
     build_spec_digest, roster_digest, generation_descriptor,
     generation_descriptor_digest, expected_owner_count, expected_owner_digest,
-    row_tier_relid, graph_store_relid, directory_relid, next_batch_seq,
+    row_tier_relid, graph_store_relid, directory_relid,
+    payload_sidecar_relid, payload_sidecar_directory_relid, next_batch_seq,
     cumulative_record_count, cumulative_owner_digest, last_vec_id_le,
     owner_stream_sha256_state, ready_receipt";
 
@@ -123,12 +124,14 @@ pub(crate) struct GenerationCatalogRow {
     pub(crate) row_tier_relid: pg_sys::Oid,
     pub(crate) graph_store_relid: pg_sys::Oid,
     pub(crate) directory_relid: pg_sys::Oid,
+    pub(crate) payload_sidecar_relid: Option<pg_sys::Oid>,
+    pub(crate) payload_sidecar_directory_relid: Option<pg_sys::Oid>,
     pub(crate) next_batch_seq: u64,
     pub(crate) cumulative_record_count: u64,
     pub(crate) cumulative_owner_digest: [u8; 32],
     pub(crate) last_vec_id_le: Option<[u8; 8]>,
     pub(crate) owner_stream_sha256_state: [u8; DISTANN_OWNER_STREAM_HASH_STATE_BYTES],
-    pub(crate) ready_receipt: Option<[u8; DISTANN_READY_RECEIPT_BYTES]>,
+    pub(crate) ready_receipt: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +179,15 @@ fn required_oid(row: &pgrx::spi::SpiHeapTupleData<'_>, name: &str) -> Result<pg_
         .ok_or_else(|| format!("ec_distann generation catalog {name} is NULL"))
 }
 
+fn optional_oid(
+    row: &pgrx::spi::SpiHeapTupleData<'_>,
+    name: &str,
+) -> Result<Option<pg_sys::Oid>, String> {
+    row[name]
+        .value::<pg_sys::Oid>()
+        .map_err(|error| format!("ec_distann generation catalog {name} decode failed: {error}"))
+}
+
 fn required_string(row: &pgrx::spi::SpiHeapTupleData<'_>, name: &str) -> Result<String, String> {
     row[name]
         .value::<String>()
@@ -218,6 +230,13 @@ fn optional_fixed_bytes<const N: usize>(
 fn decode_generation_row(
     row: pgrx::spi::SpiHeapTupleData<'_>,
 ) -> Result<GenerationCatalogRow, String> {
+    let payload_sidecar_relid = optional_oid(&row, "payload_sidecar_relid")?;
+    let payload_sidecar_directory_relid = optional_oid(&row, "payload_sidecar_directory_relid")?;
+    if payload_sidecar_relid.is_some() != payload_sidecar_directory_relid.is_some() {
+        return Err(
+            "ec_distann generation catalog payload sidecar relation pair is incomplete".to_owned(),
+        );
+    }
     Ok(GenerationCatalogRow {
         epoch: u64::try_from(required_i64(&row, "epoch")?)
             .map_err(|_| "ec_distann generation catalog epoch is negative".to_owned())?,
@@ -245,6 +264,8 @@ fn decode_generation_row(
         row_tier_relid: required_oid(&row, "row_tier_relid")?,
         graph_store_relid: required_oid(&row, "graph_store_relid")?,
         directory_relid: required_oid(&row, "directory_relid")?,
+        payload_sidecar_relid,
+        payload_sidecar_directory_relid,
         next_batch_seq: u64::try_from(required_i64(&row, "next_batch_seq")?)
             .map_err(|_| "ec_distann next batch sequence is negative".to_owned())?,
         cumulative_record_count: u64::try_from(required_i64(&row, "cumulative_record_count")?)
@@ -261,10 +282,18 @@ fn decode_generation_row(
             required_bytes(&row, "owner_stream_sha256_state")?,
             "owner_stream_sha256_state",
         )?,
-        ready_receipt: optional_fixed_bytes(
-            optional_bytes(&row, "ready_receipt")?,
-            "ready_receipt",
-        )?,
+        ready_receipt: optional_bytes(&row, "ready_receipt")?
+            .map(|bytes| {
+                if bytes.len() > DISTANN_READY_RECEIPT_MAX_BYTES {
+                    return Err(format!(
+                        "ready_receipt is {} bytes, exceeds {DISTANN_READY_RECEIPT_MAX_BYTES}",
+                        bytes.len()
+                    ));
+                }
+                DistannReadyReceipt::decode(&bytes)?;
+                Ok(bytes)
+            })
+            .transpose()?,
     })
 }
 
@@ -391,7 +420,8 @@ pub(crate) fn insert_generation(
              roster_digest, generation_descriptor,
              generation_descriptor_digest, expected_owner_count,
              expected_owner_digest, row_tier_relid, graph_store_relid,
-             directory_relid, next_batch_seq, cumulative_record_count,
+             directory_relid, payload_sidecar_relid,
+             payload_sidecar_directory_relid, next_batch_seq, cumulative_record_count,
              cumulative_owner_digest, last_vec_id_le,
              owner_stream_sha256_state, ready_receipt
          ) VALUES (
@@ -399,8 +429,8 @@ pub(crate) fn insert_generation(
              $5::integer, $6::integer, $7::text, $8::bytea,
              $9::bytea, $10::bytea, $11::bytea, $12::bigint,
              $13::bytea, $14::oid, $15::oid, $16::oid,
-             $17::bigint, $18::bigint, $19::bytea, $20::bytea,
-             $21::bytea, $22::bytea
+             $17::oid, $18::oid, $19::bigint, $20::bigint,
+             $21::bytea, $22::bytea, $23::bytea, $24::bytea
          )",
         catalogs.generation
     );
@@ -426,12 +456,14 @@ pub(crate) fn insert_generation(
                     row.row_tier_relid.into(),
                     row.graph_store_relid.into(),
                     row.directory_relid.into(),
+                    row.payload_sidecar_relid.into(),
+                    row.payload_sidecar_directory_relid.into(),
                     next_batch_seq.into(),
                     cumulative_record_count.into(),
                     row.cumulative_owner_digest.to_vec().into(),
                     row.last_vec_id_le.map(|bytes| bytes.to_vec()).into(),
                     row.owner_stream_sha256_state.to_vec().into(),
-                    row.ready_receipt.map(|bytes| bytes.to_vec()).into(),
+                    row.ready_receipt.clone().into(),
                 ],
             )
             .map_err(|error| format!("ec_distann generation catalog insert failed: {error}"))?;
@@ -700,8 +732,15 @@ pub(crate) fn mark_generation_ready(
     next_batch_seq: u64,
     cumulative_record_count: u64,
     cumulative_owner_digest: [u8; 32],
-    ready_receipt: [u8; DISTANN_READY_RECEIPT_BYTES],
+    ready_receipt: &[u8],
 ) -> Result<(), String> {
+    if ready_receipt.len() > DISTANN_READY_RECEIPT_MAX_BYTES {
+        return Err(format!(
+            "EC_READY_RECEIPT: receipt is {} bytes, exceeds {DISTANN_READY_RECEIPT_MAX_BYTES}",
+            ready_receipt.len()
+        ));
+    }
+    DistannReadyReceipt::decode(ready_receipt)?;
     let next_batch_seq = i64::try_from(next_batch_seq)
         .map_err(|_| "EC_BATCH_SEQUENCE: next batch sequence exceeds bigint".to_owned())?;
     let cumulative_record_count = i64::try_from(cumulative_record_count)
@@ -750,10 +789,20 @@ pub(crate) fn mark_generation_ready(
 
 pub(crate) fn generation_relations_for_index(
     index_oid: pg_sys::Oid,
-) -> Result<Vec<(pg_sys::Oid, pg_sys::Oid, pg_sys::Oid)>, String> {
+) -> Result<
+    Vec<(
+        pg_sys::Oid,
+        pg_sys::Oid,
+        pg_sys::Oid,
+        Option<pg_sys::Oid>,
+        Option<pg_sys::Oid>,
+    )>,
+    String,
+> {
     let catalogs = CatalogRelations::resolve()?;
     let sql = format!(
-        "SELECT row_tier_relid, graph_store_relid, directory_relid
+        "SELECT row_tier_relid, graph_store_relid, directory_relid,
+                payload_sidecar_relid, payload_sidecar_directory_relid
            FROM {}
           WHERE index_oid = $1::oid",
         catalogs.generation
@@ -763,10 +812,21 @@ pub(crate) fn generation_relations_for_index(
             .select(&sql, None, &[index_oid.into()])
             .map_err(|error| format!("ec_distann generation relation lookup failed: {error}"))?
             .map(|row| {
+                let payload_sidecar_relid = optional_oid(&row, "payload_sidecar_relid")?;
+                let payload_sidecar_directory_relid =
+                    optional_oid(&row, "payload_sidecar_directory_relid")?;
+                if payload_sidecar_relid.is_some() != payload_sidecar_directory_relid.is_some() {
+                    return Err(
+                        "ec_distann generation catalog payload sidecar relation pair is incomplete"
+                            .to_owned(),
+                    );
+                }
                 Ok((
                     required_oid(&row, "row_tier_relid")?,
                     required_oid(&row, "graph_store_relid")?,
                     required_oid(&row, "directory_relid")?,
+                    payload_sidecar_relid,
+                    payload_sidecar_directory_relid,
                 ))
             })
             .collect::<Result<Vec<_>, String>>()

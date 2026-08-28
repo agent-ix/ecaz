@@ -2264,16 +2264,18 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         payload_nulls, payload_offsets, payload_values
    FROM ec_distann_materialize_row_payloads(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea)";
+       $4::smallint[], $5::bytea, $6::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
         payload_nulls, payload_offsets, payload_values, owner_total_ns, owner_open_validate_ns,
-        owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
+        owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes, payload_source,
+        payload_fallback_reason, owner_sidecar_lookup_ns, sidecar_rows_requested,
+        sidecar_rows_returned, sidecar_rows_missing, row_tier_visibility_probes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
-       $9::bigint[], $10::integer[], $11::boolean)";
+       $9::boolean, $10::bigint[], $11::integer[], $12::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -3210,6 +3212,7 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) vec_ids: &'a [u64],
     pub(crate) projection_attnums: &'a [i16],
     pub(crate) expected_schema_fingerprint: &'a [u8],
+    pub(crate) prefer_payload_sidecar: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_cached_payload_plan: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -3352,6 +3355,10 @@ pub(crate) fn remote_physical_materialize_batch(
                 super::stage_counters::DistannQueryStage::MaterializeOwnerPayloadSqlWork,
                 Duration::from_nanos(batch.telemetry.owner_payload_sql_ns),
             );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOwnerSidecarLookupWork,
+                Duration::from_nanos(batch.telemetry.owner_sidecar_lookup_ns),
+            );
         }
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::MaterializeOwnerEndpointCritical,
@@ -3385,6 +3392,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_ids,
                     &request.projection_attnums,
                     &request.expected_schema_fingerprint,
+                    &request.prefer_payload_sidecar,
                 ],
             )
             .await;
@@ -3415,6 +3423,7 @@ async fn run_one_physical_materialize_raw(
                     &wire_ids,
                     &request.projection_attnums,
                     &request.expected_schema_fingerprint,
+                    &request.prefer_payload_sidecar,
                     &request.use_cached_payload_plan,
                     &request.use_typed_locator,
                     &request.use_packed_payload,
@@ -3459,8 +3468,28 @@ fn decode_physical_materialize_rows(
                     owner_node_lookup_ns: nonnegative_i64_to_u64(row.try_get(8).map_err(row_err)?)?,
                     owner_payload_sql_ns: nonnegative_i64_to_u64(row.try_get(9).map_err(row_err)?)?,
                     payload_bytes: nonnegative_i64_to_u64(row.try_get(10).map_err(row_err)?)?,
+                    payload_source: row.try_get(11).map_err(row_err)?,
+                    payload_fallback_reason: row.try_get(12).map_err(row_err)?,
+                    owner_sidecar_lookup_ns: nonnegative_i64_to_u64(
+                        row.try_get(13).map_err(row_err)?,
+                    )?,
+                    sidecar_rows_requested: nonnegative_i64_to_u64(
+                        row.try_get(14).map_err(row_err)?,
+                    )?,
+                    sidecar_rows_returned: nonnegative_i64_to_u64(
+                        row.try_get(15).map_err(row_err)?,
+                    )?,
+                    sidecar_rows_missing: nonnegative_i64_to_u64(
+                        row.try_get(16).map_err(row_err)?,
+                    )?,
+                    row_tier_visibility_probes: nonnegative_i64_to_u64(
+                        row.try_get(17).map_err(row_err)?,
+                    )?,
                 };
-                if telemetry.is_some_and(|existing| existing != row_telemetry) {
+                if telemetry
+                    .as_ref()
+                    .is_some_and(|existing| existing != &row_telemetry)
+                {
                     return Err(DistannExpandError::Internal(
                         "physical owner returned inconsistent materialization telemetry".to_owned(),
                     ));
@@ -4209,13 +4238,20 @@ pub(crate) struct DistannPhysicalMaterializeBatch {
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DistannOwnerMaterializeTelemetry {
     pub(crate) owner_total_ns: u64,
     pub(crate) owner_open_validate_ns: u64,
     pub(crate) owner_node_lookup_ns: u64,
     pub(crate) owner_payload_sql_ns: u64,
     pub(crate) payload_bytes: u64,
+    pub(crate) payload_source: String,
+    pub(crate) payload_fallback_reason: String,
+    pub(crate) owner_sidecar_lookup_ns: u64,
+    pub(crate) sidecar_rows_requested: u64,
+    pub(crate) sidecar_rows_returned: u64,
+    pub(crate) sidecar_rows_missing: u64,
+    pub(crate) row_tier_visibility_probes: u64,
 }
 
 /// Issue a batch of remote `ec_distann_materialize_row_payloads` calls — one per

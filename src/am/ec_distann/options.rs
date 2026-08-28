@@ -109,6 +109,8 @@ static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> = GucSetting::
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 #[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -214,6 +216,7 @@ struct EcDistannReloptions {
     neighbor_code_format_offset: i32,
     source_identity_offset: i32,
     head_construction_offset: i32,
+    covering_payload_attnums_offset: i32,
 }
 
 /// Task 207 construction A/B. The graph topology (`build_shards`) and the
@@ -349,6 +352,9 @@ pub(super) struct EcDistannOptions {
     /// graph build and metadata bytes; true creates metadata only.
     pub(super) distributed_control: bool,
     pub(super) head_construction: HeadConstruction,
+    /// Task 229 opt-in physical row-tier cover. `None` preserves the legacy
+    /// descriptor and relation set byte-for-byte.
+    pub(super) covering_payload_attnums: Option<Vec<u16>>,
 }
 
 impl EcDistannOptions {
@@ -366,6 +372,7 @@ impl EcDistannOptions {
         source_identity: DistannSourceIdentityProvider::None,
         distributed_control: false,
         head_construction: HeadConstruction::DEFAULT,
+        covering_payload_attnums: None,
     };
 
     pub(super) fn validate_head_sizing_inputs(&self) -> Result<(), String> {
@@ -432,6 +439,44 @@ impl EcDistannOptions {
             }),
         ))
     }
+}
+
+fn parse_covering_payload_attnums(raw: &str) -> Result<Vec<u16>, String> {
+    let invalid = |reason: &str| {
+        format!(
+            "invalid ec_distann covering_payload_attnums reloption: {reason}; expected 1 to {} strictly increasing positive physical attnums in canonical comma-separated form",
+            super::payload_sidecar::DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES
+        )
+    };
+    if raw.is_empty() {
+        return Err(invalid("value is empty"));
+    }
+    let tokens = raw.split(',').collect::<Vec<_>>();
+    if tokens.len() > super::payload_sidecar::DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES {
+        return Err(invalid("attribute count exceeds the format bound"));
+    }
+    let mut attnums = Vec::with_capacity(tokens.len());
+    let mut previous = 0_u16;
+    for token in tokens {
+        if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(invalid("value contains a non-decimal attribute"));
+        }
+        let attnum = token
+            .parse::<u16>()
+            .map_err(|_| invalid("attribute is outside the positive smallint domain"))?;
+        if attnum == 0 {
+            return Err(invalid("attribute zero is not physical"));
+        }
+        if token != attnum.to_string() {
+            return Err(invalid("attribute spelling is not canonical"));
+        }
+        if attnum <= previous {
+            return Err(invalid("attributes are not strictly increasing and unique"));
+        }
+        attnums.push(attnum);
+        previous = attnum;
+    }
+    Ok(attnums)
 }
 
 pub(super) fn register_gucs() {
@@ -546,6 +591,15 @@ pub(super) fn register_gucs() {
         c"Task 222 benchmark-only payload projection arm.",
         c"On uses the production exact/fail-closed attribute mask. Off forces the historical all-column payload control. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_covering_sidecar",
+        c"Task 229 benchmark-only covering payload sidecar arm.",
+        c"On permits exact covered projections to use the generation-owned sidecar. Off forces the row-tier read against the same covered generation. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -980,6 +1034,15 @@ pub(super) fn payload_projection_enabled() -> bool {
     true
 }
 
+pub(super) fn covering_sidecar_enabled() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_COVERING_SIDECAR_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    true
+}
+
 pub(super) fn benchmark_traversal_replica_fail_batch() -> Option<usize> {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
@@ -1408,6 +1471,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             None,
             offset_of!(EcDistannReloptions, head_construction_offset) as i32,
         );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"covering_payload_attnums\0".as_ptr().cast(),
+            b"Task 229 build-time scalar payload cover as canonical, strictly increasing physical attnums (maximum 16).\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcDistannReloptions, covering_payload_attnums_offset) as i32,
+        );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     })
 }
@@ -1463,6 +1537,20 @@ impl EcDistannReloptionsView {
             }
             None => HeadConstruction::DEFAULT,
         };
+        let covering_payload_attnums = self
+            .read_string_reloption(
+                reloptions.covering_payload_attnums_offset,
+                "covering_payload_attnums",
+            )
+            .map(|value| {
+                parse_covering_payload_attnums(&value)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"))
+            });
+        if covering_payload_attnums.is_some() && !reloptions.distributed_control {
+            pgrx::error!(
+                "invalid ec_distann covering_payload_attnums reloption: a payload cover requires distributed_control=true"
+            );
+        }
 
         EcDistannOptions {
             graph_degree: reloptions.graph_degree,
@@ -1478,6 +1566,7 @@ impl EcDistannReloptionsView {
             source_identity,
             distributed_control: reloptions.distributed_control,
             head_construction,
+            covering_payload_attnums,
         }
     }
 }
@@ -1494,8 +1583,8 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcDistannOpt
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannSourceIdentityProvider, EcDistannOptions, NeighborCodeFormat,
-        ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        parse_covering_payload_attnums, DistannSourceIdentityProvider, EcDistannOptions,
+        NeighborCodeFormat, ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
     };
 
     #[test]
@@ -1515,6 +1604,28 @@ mod tests {
             defaults.source_identity,
             DistannSourceIdentityProvider::None
         );
+        assert!(defaults.covering_payload_attnums.is_none());
+    }
+
+    #[test]
+    fn covering_payload_attnums_requires_canonical_bounded_order() {
+        assert_eq!(
+            parse_covering_payload_attnums("1,3,16").unwrap(),
+            vec![1, 3, 16]
+        );
+        for invalid in [
+            "", "0", "01", "1,", ",1", "1, 2", "2,1", "1,1", "65536", "1,+2",
+        ] {
+            assert!(
+                parse_covering_payload_attnums(invalid).is_err(),
+                "{invalid:?} must be rejected"
+            );
+        }
+        let too_many = (1..=17)
+            .map(|attnum| attnum.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(parse_covering_payload_attnums(&too_many).is_err());
     }
 
     #[test]

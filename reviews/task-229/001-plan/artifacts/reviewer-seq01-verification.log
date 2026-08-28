@@ -1,0 +1,393 @@
+# Task 229 packet 001 reviewer verification log (seq 01)
+
+Agent: Agent IX (reviewer, claude-opus-5)
+Date: 2026-08-26
+Branch: task229-covering-payload-sidecar
+Head SHA at review: 961bb13ee5913fdcff3723baea2e33f637d05203
+Packet head SHA claimed by manifest: 3419c9c758bea7d9940b27d9afbcf9e627e84879
+Mode: read-only static inspection. No build, PostgreSQL, pgrx, test, fixture, or benchmark command was run.
+
+---
+
+## V1  git state
+
+$ git log --oneline -3
+961bb13ee reviews(task-229): clean plan artifact manifest
+6a2ad4d8e plan(task-229): request concrete sidecar design review
+3419c9c75 Merge pull request #89 from agent-ix/integrate/distann-campaign-ledger-v2
+
+$ git status --short
+?? reviews/task-229/001-plan/artifacts/reviewer-seq01-verification.log
+
+(The working tree was clean at review start; the only entry above is this log
+file, created by the command that generated it. No source, SQL, spec, task, or
+roadmap file was modified by this review.)
+
+---
+
+## V2  Same-identity replacement retains the old graph tuple and appends a NEW row-tier TID
+
+$ sed -n 510,530p src/am/ec_distann/physical_dml.rs
+
+    // Same vec_id means the stable identity survived an UPDATE.  Retain the
+    // old graph tuple and redirect the partial unique directory atomically.
+    if previous_version.is_some() {
+        Spi::connect_mut(|client| {
+            client.update(
+                &format!("UPDATE {graph_name} SET is_current = false WHERE vec_id = $1 AND is_current"),
+                None,
+                &[i64::from_le_bytes(vec_id.to_le_bytes()).into()],
+            ).map_err(|error| format!("EC_INSERT_PUBLISH: could not retire prior vec_id: {error}"))?;
+            Ok::<(), String>(())
+        })?;
+    }
+    insert_graph_record(
+        &graph_name,
+        vec_id,
+        &graph_record,
+        row_tid,
+        previous_version.unwrap_or(-1).saturating_add(1),
+    )?;
+    stage_counters::record_insert_work(DistannInsertWork::GraphRecordsAppended, 1);
+
+---
+
+## V3  Row-tier payload reads are TID-addressed (version-exact), not identity-addressed
+
+$ grep -n "typed_tids\|item_pointer_set_all\|row_tier_relid" src/am/ec_distann/generation_read.rs | sed -n 1,12p
+1518:            pgrx::itemptr::item_pointer_set_all(
+2268:        let row_relation = HeapRelationGuard::try_access_share(self.generation.row_tier_relid)
+2409:        let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
+2421:        let typed_tids = nodes
+2425:                pgrx::itemptr::item_pointer_set_all(
+2433:        let ctid_texts = typed_tids
+2472:                        client.select(&entry.statement, None, &[typed_tids.clone().into()])
+2488:                        client.select(&statement, None, &[typed_tids.clone().into()])
+2504:                    client.select(&sql, None, &[typed_tids.into()])
+2513:                    client.select(&sql, None, &[typed_tids.into()])
+6670:        pgrx::itemptr::item_pointer_set_all(
+6691:                pgrx::itemptr::item_pointer_set_all(
+
+$ sed -n 1248,1272p src/am/ec_distann/custom_scan.rs
+            CustomScanOutputRow::Frozen(tid) => {
+                let context = state.physical_generation.as_ref().unwrap_or_else(|| {
+                    pgrx::error!("EcDistannDistributedScan lost its physical generation context")
+                });
+                let mut item = pg_sys::ItemPointerData::default();
+                pgrx::itemptr::item_pointer_set_all(&mut item, tid.block_number, tid.offset_number);
+                let estate = (*scan_state).ps.state;
+                pg_sys::ExecClearTuple(state.frozen_row_slot);
+                let mut visible = pg_sys::table_tuple_fetch_row_version(
+                    context.row_relation().unwrap_or_else(|| {
+                        pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
+                    }),
+                    &mut item,
+                    (*estate).es_snapshot,
+                    state.frozen_row_slot,
+                );
+                // A concurrent physical replacement can retire the row-TID
+                // after traversal has ranked the immutable graph record but
+                // before the executor consumes the result.  Refresh once
+                // against the latest registered snapshot; the generation
+                // reader already treats this as a bounded visibility race.
+                if !visible {
+                    if let Some(latest) =
+                        crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
+                    {
+
+---
+
+## V4  A missing/invisible row-tier tuple is a SKIP today, not an error
+
+$ grep -n "__ec_distann_found\|tuple_payload_missing" src/am/ec_distann/remote_endpoint.rs | sed -n 1,10p
+743:        name!(tuple_payload_missing, bool),
+804:            let tuple_payload_missing = row["tuple_payload_missing"]
+840:                tuple_payload_missing,
+922:            "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
+925:            "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
+930:        "true AS __ec_distann_found".to_owned()
+932:        format!("true AS __ec_distann_found, {}", projected.join(", "))
+950:        "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
+982:            "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
+986:            "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
+
+$ sed -n 1400,1414p src/am/ec_distann/custom_scan.rs
+    for index in window_start..window_end {
+        let vec_id = match &state.outputs[index] {
+            CustomScanOutputRow::RemotePending { vec_id, .. } => *vec_id,
+            _ => continue,
+        };
+        state.outputs[index] = match payloads.get(&vec_id) {
+            Some(payload) => CustomScanOutputRow::Remote {
+                vec_id,
+                payload_nulls: payload.payload_nulls.clone(),
+                payload_offsets: payload.payload_offsets.clone(),
+                payload_values: payload.payload_values.clone(),
+            },
+            None => CustomScanOutputRow::RemoteSkipped { vec_id },
+        };
+    }
+
+---
+
+## V5  Established same-generation GUC A/B precedent (Tasks 220 / 221 / 222)
+
+$ sed -n 515,541p src/am/ec_distann/options.rs
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_packed_payload",
+        c"Task 220 benchmark-only packed owner payload arm.",
+        c"Pack owner payload bytes into one flat buffer instead of constructing a bytea[] per row.",
+        &ECDISTANN_BENCHMARK_PACKED_PAYLOAD_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_expanded_locator",
+        c"Task 221 benchmark-only expanded owner locator arm.",
+        c"Carry the owner row-tier TID from physical expansion to payload materialization, skipping the owner directory lookup.",
+        &ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_payload_projection",
+        c"Task 222 benchmark-only payload projection arm.",
+        c"On uses the production exact/fail-closed attribute mask. Off forces the historical all-column payload control. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+
+$ grep -n "payload_projection\|materialization_correctness requires an isolated" crates/ecaz-cli/src/commands/bench/suite.rs | sed -n 1,14p
+541:    payload_projection: bool,
+4942:                                    && candidate.payload_projection == control.payload_projection
+4955:                                    && candidate.payload_projection == control.payload_projection
+4970:                                    && candidate.payload_projection == control.payload_projection
+4992:                                        && candidate.payload_projection
+4993:                                            == control.payload_projection
+5013:                    let has_payload_projection_pair =
+5015:                            !control.payload_projection
+5017:                                    candidate.payload_projection
+5034:                        && !has_payload_projection_pair
+5037:                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, or payload-projection pair",
+6302:            if variant.payload_projection {
+
+---
+
+## V6  distann-local-multinode cannot declare index reloptions today
+
+$ grep -n "reloptions" crates/ecaz-cli/src/commands/bench/suite.rs | sed -n 1,10p
+300:    table_reloptions: Vec<String>,
+302:    reloptions: Vec<String>,
+462:    reloptions: Vec<String>,
+464:    coord_reloptions: Vec<String>,
+466:    remote_reloptions: Vec<String>,
+4143:                validate_reloption_list("spire-local-multinode reloptions", &step.reloptions)?;
+4145:                    "spire-local-multinode coord_reloptions",
+4146:                    &step.coord_reloptions,
+4149:                    "spire-local-multinode remote_reloptions",
+4150:                    &step.remote_reloptions,
+
+$ grep -n "WITH (distributed_control\|WITH (graph_degree" crates/ecaz-cli/src/commands/dev/distann_multicluster.rs
+1837:           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+1861:           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+2070:            WITH (distributed_control = true, source_identity = 'include',
+3631:                  WITH (graph_degree = 32, head_index_cap = 128,
+4127:               WITH (distributed_control = false, graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
+7023:                     WITH (graph_degree = {}, head_index_cap = {},
+11252:                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {divergent_degree});",
+11267:                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
+11294:                "CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
+11752:         CREATE INDEX md_idx ON md USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});",
+11835:           INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
+13529:               USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});"
+
+---
+
+## V7  Optional-version precedent already exists (DistannBuildOptions V1/V2/V3 under an unchanged outer domain)
+
+$ grep -n "DISTANN_BUILD_OPTIONS_V2_VERSION\|DISTANN_BUILD_OPTIONS_V3_VERSION\|GENERATION_DESCRIPTOR_DOMAIN" src/am/ec_distann/generation_descriptor.rs
+38:const GENERATION_DESCRIPTOR_DOMAIN: &[u8] = b"ec_distann_generation_descriptor_v2\0";
+60:const DISTANN_BUILD_OPTIONS_V2_VERSION: u16 = 2;
+62:const DISTANN_BUILD_OPTIONS_V3_VERSION: u16 = 3;
+578:        Ok(domain_digest(GENERATION_DESCRIPTOR_DOMAIN, &self.encode()?))
+734:            encoder.put_u16(DISTANN_BUILD_OPTIONS_V3_VERSION);
+736:            encoder.put_u16(DISTANN_BUILD_OPTIONS_V2_VERSION);
+793:        if version != DISTANN_BUILD_OPTIONS_V2_VERSION
+794:            && version != DISTANN_BUILD_OPTIONS_V3_VERSION
+800:        let is_v3 = version == DISTANN_BUILD_OPTIONS_V3_VERSION;
+
+$ grep -n "EPOCH_MANIFEST_DOMAIN\|READY_RECEIPT_DOMAIN\|DISTANN_EPOCH_MANIFEST_VERSION: \|DISTANN_READY_RECEIPT_VERSION: " src/am/ec_distann/manifest_v2.rs
+27:pub const DISTANN_READY_RECEIPT_VERSION: u16 = 1;
+28:pub const DISTANN_EPOCH_MANIFEST_VERSION: u16 = 2;
+43:const READY_RECEIPT_DOMAIN: &[u8] = b"ec_distann_ready_receipt_v1\0";
+44:const EPOCH_MANIFEST_DOMAIN: &[u8] = b"ec_distann_epoch_manifest_v2\0";
+491:            READY_RECEIPT_DOMAIN,
+498:        encoded.extend_from_slice(&domain_digest(READY_RECEIPT_DOMAIN, &encoded));
+508:        if supplied_digest != domain_digest(READY_RECEIPT_DOMAIN, canonical) {
+779:        Ok(domain_digest(EPOCH_MANIFEST_DOMAIN, &self.encode()?))
+
+---
+
+## V8  Every 303-byte Ready-receipt assumption (incl. the cross-node wire the plan omits)
+
+$ grep -rn "DISTANN_READY_RECEIPT_BYTES" src/ --include=*.rs
+src/tests/ec_distann_physical_lifecycle.rs:6116:        crate::am::ec_distann::DISTANN_READY_RECEIPT_BYTES
+src/am/ec_distann/handoff.rs:33:    DistannReadyReceipt, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+src/am/ec_distann/handoff.rs:1686:        let fixed: [u8; DISTANN_READY_RECEIPT_BYTES] =
+src/am/ec_distann/lifecycle_wire.rs:17:    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_READY_RECEIPT_BYTES,
+src/am/ec_distann/lifecycle_wire.rs:132:            .saturating_mul(DISTANN_READY_RECEIPT_BYTES + 4),
+src/am/ec_distann/lifecycle_wire.rs:147:    let minimum_entry = DISTANN_READY_RECEIPT_BYTES + 4;
+src/am/mod.rs:112:    DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+src/am/ec_distann/generation_catalog.rs:12:use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
+src/am/ec_distann/generation_catalog.rs:131:    pub(crate) ready_receipt: Option<[u8; DISTANN_READY_RECEIPT_BYTES]>,
+src/am/ec_distann/generation_catalog.rs:703:    ready_receipt: [u8; DISTANN_READY_RECEIPT_BYTES],
+src/am/ec_distann/mod.rs:167:    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_READY_RECEIPT_BYTES,
+src/am/ec_distann/manifest_v2.rs:38:pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
+src/lib.rs:480:        DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+
+$ grep -n "ready_receipt\b\|ready_receipt_set" sql/bootstrap.sql
+355:    ready_receipt bytea CHECK (
+357:            octet_length(ready_receipt) = 303
+562:    ready_receipt_set bytea NOT NULL CHECK (octet_length(ready_receipt_set) > 0),
+
+---
+
+## V9  Every site that enumerates the three generation relation OIDs as a fixed tuple
+
+$ sed -n 612,621p src/am/ec_distann/generation_store.rs
+pub(crate) fn drop_generation_relations(
+    control_oid: pg_sys::Oid,
+    relations: GenerationRelations,
+) -> Result<(), String> {
+    drop_relation_internal(relations.directory_relid, control_oid)?;
+    drop_relation_internal(relations.graph_store_relid, control_oid)?;
+    drop_relation_internal(relations.row_tier_relid, control_oid)?;
+    unsafe { pg_sys::CommandCounterIncrement() };
+    Ok(())
+}
+
+$ sed -n 666,679p src/am/ec_distann/generation_store.rs
+        ));
+    }
+    for relation_oid in [
+        row.row_tier_relid,
+        row.graph_store_relid,
+        row.directory_relid,
+    ] {
+        if !relation_exists(relation_oid) {
+            return Err(
+                "EC_GENERATION_MISSING: cataloged generation relation is missing".to_owned(),
+            );
+        }
+    }
+    Ok(())
+
+$ sed -n 1041,1053p src/am/ec_distann/generation_store.rs
+    for (row_tier_relid, graph_store_relid, directory_relid) in
+        generation_catalog::generation_relations_for_index(index_oid)?
+    {
+        drop_generation_relations(
+            index_oid,
+            GenerationRelations {
+                row_tier_relid,
+                graph_store_relid,
+                directory_relid,
+            },
+        )?;
+    }
+    generation_catalog::delete_index_catalog_rows(index_oid)?;
+
+$ sed -n 630,640p src/am/ec_distann/generation_read.rs
+            return;
+        };
+        cache.retain(|entry| {
+            let generation_relation = entry.generation.row_tier_relid == relation_oid
+                || entry.generation.graph_store_relid == relation_oid
+                || entry.generation.directory_relid == relation_oid;
+            let matches = relation_oid == pg_sys::InvalidOid
+                || entry.index_oid == relation_oid
+                || generation_relation;
+            if matches {
+                removed.push((entry.index_oid, entry.fingerprint));
+
+$ grep -n "row_tier_relid, graph_store_relid, directory_relid" src/am/ec_distann/generation_catalog.rs sql/bootstrap.sql
+src/am/ec_distann/generation_catalog.rs:18:    row_tier_relid, graph_store_relid, directory_relid, next_batch_seq,
+src/am/ec_distann/generation_catalog.rs:756:        "SELECT row_tier_relid, graph_store_relid, directory_relid
+
+$ grep -n "UNIQUE (row_tier_relid)\|UNIQUE (graph_store_relid)\|UNIQUE (directory_relid)\|row_tier_relid oid" sql/bootstrap.sql
+340:    row_tier_relid oid NOT NULL CHECK (row_tier_relid <> '0'::oid),
+392:    UNIQUE (row_tier_relid),
+393:    UNIQUE (graph_store_relid),
+394:    UNIQUE (directory_relid)
+1085:    UNIQUE (directory_relid),
+
+---
+
+## V10  Generation relation naming convention (sidecar name must follow it and stay under NAMEDATALEN)
+
+$ sed -n 317,333p src/am/ec_distann/generation_store.rs
+fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String, String) {
+    let suffix = hex::encode(build_id.as_bytes());
+    let oid = u32::from(index_oid);
+    (
+        format!("_ecdz_row_{oid}_{suffix}"),
+        format!("_ecdz_graph_{oid}_{suffix}"),
+        format!("_ecdz_dir_{oid}_{suffix}"),
+    )
+}
+
+fn traversal_replica_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String) {
+    let suffix = hex::encode(build_id.as_bytes());
+    let oid = u32::from(index_oid);
+    (
+        format!("_ecdz_replica_{oid}_{suffix}"),
+        format!("_ecdz_replica_dir_{oid}_{suffix}"),
+    )
+
+---
+
+## V11  String reloption precedent exists
+
+$ grep -n "add_local_string_reloption" src/am/ec_distann/options.rs
+1288:        pg_sys::add_local_string_reloption(
+1299:        pg_sys::add_local_string_reloption(
+1310:        pg_sys::add_local_string_reloption(
+
+---
+
+## V12  Frozen row schema models dropped + generated attributes and binary send/receive identity
+
+$ grep -n "pub attnum\|pub dropped\|pub generated_kind\|pub send_function\|pub receive_function\|DISTANN_MAX_PHYSICAL_ATTRIBUTES" src/am/ec_distann/row_schema.rs
+10:const DISTANN_MAX_PHYSICAL_ATTRIBUTES: usize = 1664;
+14:    pub attnum: u16,
+21:    pub dropped: bool,
+23:    pub generated_kind: u8,
+26:    pub send_function: String,
+29:    pub receive_function: String,
+175:        if self.attributes.len() > DISTANN_MAX_PHYSICAL_ATTRIBUTES {
+177:                "EC_GENERATION_DESCRIPTOR: row schema has {} physical attributes, maximum is {DISTANN_MAX_PHYSICAL_ATTRIBUTES}",
+291:        if attribute_count > DISTANN_MAX_PHYSICAL_ATTRIBUTES {
+
+---
+
+## V13  Entry conditions and ledger rows
+
+$ head -5 plan/tasks/222-ec-distann-qual-aware-payload-projection.md
+# Task 222: ec_distann Qual-Aware Payload Projection
+
+Status: **complete — review-closed ACCEPT; production default retained**
+(2026-08-25; final verdict:
+`reviews/task-222/005-main-integration/feedback/2026-08-25-01-reviewer.md`).
+
+$ grep -n "^| 229 \|^| MAT-27 \|^| ARCH-06 " plan/design/ec-distann-recall-latency-roadmap.md
+134:| 229 | Covering scalar payload sidecar | implementation pending — packet 001 concrete plan review-open on exact current main; Tasks 222–224 and 239 entry conditions review-closed | one owner-local heap/B-tree generation sidecar keyed by vec_id for a bounded declared scalar cover; typed exact-mask selection, complete fallback, Task 167 lifecycle, and counterbalanced full 10k/50k/100k evidence required |
+355:| MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype — packet 001 concrete plan review-open |
+509:| ARCH-06 | Covering payload sidecars for common projections | active Task 229 — mandatory prototype; packet 001 concrete plan review-open; owner-local only |
+
+---
+
+End of log.

@@ -487,6 +487,7 @@ fn distann_generation_descriptor_v2_fixture_decodes_independently_and_rejects_sw
     assert_eq!(descriptor.roster[1].node_id, 20);
     assert_eq!(descriptor.dimensions, 8);
     assert_eq!(descriptor.coordinator_logical_index_uuid, coordinator_uuid);
+    assert_eq!(descriptor.encode().unwrap(), bytes);
 
     let mut swapped = bytes;
     swapped.swap(0, 1);
@@ -578,10 +579,12 @@ fn distann_build_candidate_v1_fixture_decodes_independently_and_rejects_version_
     assert!(!independent.len_bytes().is_empty()); // epoch manifest
     let manifest_digest = independent.take(32);
     let fingerprint = independent.take(DISTANN_EPOCH_FINGERPRINT_BYTES);
+    assert_eq!(&fingerprint[..2], &[2, 0]);
     assert_eq!(&fingerprint[2..], manifest_digest);
     independent.finish();
 
     let candidate = DistannBuildCandidateV1::decode(&bytes).unwrap();
+    assert_eq!(candidate.encode().unwrap(), bytes);
     assert_distann_domain_digest(
         &bytes,
         b"ec_distann_build_candidate_v1\0",
@@ -1010,6 +1013,7 @@ fn distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap() {
     let receipt = DistannReadyReceipt::decode(&bytes).unwrap();
     assert_eq!(receipt.node_id, 10);
     assert_eq!(receipt.owned_record_count, receipt.row_count);
+    assert_eq!(receipt.encode().unwrap(), bytes);
 
     let mut swapped = bytes;
     swapped.swap(0, 1);
@@ -1090,6 +1094,7 @@ fn distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap() {
     independent.finish();
 
     let manifest = DistannEpochManifestV2::decode(&bytes).unwrap();
+    assert_eq!(manifest.encode().unwrap(), bytes);
     assert_eq!(manifest.roster.len(), 2);
     assert_eq!(manifest.participant_receipts.len(), 2);
     let fingerprint = manifest.fingerprint().unwrap();

@@ -1,0 +1,10 @@
+Script started on 2026-08-26 06:35:33-07:00 [<not executed on terminal>]
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 794)         if self.head_sizing.is_some() {
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 795)             encoder.put_u8(self.head_policy as u8);
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 796)             encoder.put_u32(self.training_query_count);
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 797)             encoder.put_fixed(&self.training_query_digest);
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 798)             let attestation = self.head_sizing.expect("checked above");
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 799)             encoder.put_u32(attestation.resolved_capacity);
+4fe5d5c53a (Agent IX 2026-08-01 11:05:24 -0700 800)             encoder.put_u64(attestation.sample_count);
+
+Script done on 2026-08-26 06:35:33-07:00 [COMMAND_EXIT_CODE="0"]

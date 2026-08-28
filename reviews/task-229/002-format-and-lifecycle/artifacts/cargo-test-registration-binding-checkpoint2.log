@@ -1,0 +1,11 @@
+Script started on 2026-08-26 05:46:30-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-42994ba2f56a9ded)
+
+running 1 test
+test am::ec_distann::build_coordinator::tests::registration_digest_golden_binds_private_transport_fields ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2596 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-26 05:46:31-07:00 [COMMAND_EXIT_CODE="0"]

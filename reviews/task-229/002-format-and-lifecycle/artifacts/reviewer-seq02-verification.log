@@ -1,0 +1,440 @@
+Task 229 packet 002 checkpoint 2 — reviewer seq-02 verification log
+====================================================================
+
+Reviewer: Agent IX (role reviewer, model claude-opus-5)
+Date: 2026-08-26
+Worktree: /home/peter/dev/ecaz/.worktrees/task229-covering-payload-sidecar
+Branch: task229-covering-payload-sidecar
+HEAD at review: cd7ab0baa761ae860d76c6a092dd6455bea6b205
+Source commit reviewed: 255081d74aa6ce430a2a21ee5555e9569c0a0fa7
+Declared base: 3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+Method: read-only static inspection via `git log`, `git show`, `git diff`,
+`git merge-base`, `git rev-parse`, `grep`, `sed`, and file reads. No
+PostgreSQL, `cargo`, `cargo pgrx`, build, test, corpus, fixture, or benchmark
+command was executed by the reviewer. No source, `request.md`, or `plan/**`
+file was edited.
+
+
+X1 — scope and base confirmation
+--------------------------------
+`git show --stat 255081d74` touches exactly four files, all under
+`src/am/ec_distann/`:
+
+    src/am/ec_distann/build_coordinator/mod.rs |  38 ++-
+    src/am/ec_distann/build_coordinator/t1.rs  |   8 +-
+    src/am/ec_distann/build_coordinator/t2.rs  |   7 +-
+    src/am/ec_distann/payload_sidecar.rs       | 429 ++++++++++++++++++++++++++++-
+    4 files changed, 463 insertions(+), 19 deletions(-)
+
+No SQL, spec, plan, suite, fixture, or benchmark file is touched. No file
+outside `src/am/ec_distann/` is touched.
+
+`git merge-base HEAD origin/main` -> 3419c9c758bea7d9940b27d9afbcf9e627e84879
+`git rev-parse origin/main`       -> 3419c9c758bea7d9940b27d9afbcf9e627e84879
+
+The declared base IS the real merge-base and IS current `origin/main`, so the
+diff read here is the diff `request.md` cites.
+
+Branch-wide `git diff 3419c9c75 HEAD --stat`: 34 files, of which the source
+files are only `build_coordinator/{mod,t1,t2}.rs`, `mod.rs` (+1 module line),
+`options.rs`, and `payload_sidecar.rs`. Everything else is `plan/**` bookkeeping
+and `reviews/task-229/**` packet material. No unrelated campaign code is in the
+branch diff.
+
+`request.md` "Implemented" list vs the diff: item-for-item match. Nothing landed
+that the request does not claim; nothing claimed is missing from the diff.
+
+
+X2 — descriptor canonical bytes are unambiguous and self-terminating
+--------------------------------------------------------------------
+`DistannPayloadCoverDescriptorV1::encode` (`payload_sidecar.rs:146-167`) emits,
+in order:
+
+    u16 entry_format_version
+    u16 maximum_attribute_count
+    u16 attribute_count
+    [u8;32] row_schema_fingerprint
+    per attribute:
+      u16 attnum
+      u16 binary_width
+      len-prefixed type_namespace
+      len-prefixed type_name
+      i32 typmod
+      len-prefixed collation_namespace
+      len-prefixed collation_name
+      len-prefixed send_function
+      len-prefixed receive_function
+
+Every string is `CanonicalEncoder::put_string` = `put_len_prefixed` = u32 length
++ bytes (`canonical_wire.rs:114-124`). There is no delimiter-based or
+implicit-length field, so no two distinct field tuples can produce the same byte
+string. `finish()` (`canonical_wire.rs:130-139`) caps total length at
+`DISTANN_MAX_CANONICAL_BYTES`.
+
+`decode` (`:169-203`) mirrors the layout exactly, bounds `attribute_count` to
+1..=16 BEFORE `Vec::with_capacity` (`:174-178`, so a hostile count cannot drive
+an allocation), calls `decoder.finish("payload cover descriptor v1")` (`:194`)
+which rejects trailing bytes, and then calls `validate()` (`:201`).
+
+Round-trip canonicity: `attribute_count` is written from `attributes.len()` and
+consumed as the exact loop bound, and `finish()` rejects any residue, so a
+successfully decoded descriptor re-encodes byte-for-byte. `validate()` pins
+`entry_format_version == 1` and `maximum_attribute_count == 16`, so those two
+header fields cannot vary. Result: encode(decode(b)) == b for every accepted b.
+
+
+X3 — digest domain is new; no existing domain changes
+------------------------------------------------------
+`DISTANN_PAYLOAD_COVER_DESCRIPTOR_DOMAIN = b"ec_distann_payload_cover_descriptor_v1\0"`
+(`payload_sidecar.rs:16`) is introduced by this commit and used only by
+`DistannPayloadCoverDescriptorV1::digest` (`:205-210`), which is
+`domain_digest(DOMAIN, &self.encode()?)`.
+
+`BUILD_REGISTRATION_DOMAIN` in `build_coordinator/mod.rs:41` is
+`b"ec_distann_build_registration_v1\0"` and is UNCHANGED by the diff. Grep over
+the diff shows no other `_DOMAIN` constant added, removed, or edited. This
+matches plan 001 §4 ("Existing digest domain strings remain unchanged").
+
+
+X4 — descriptor validation gate inventory
+-------------------------------------------
+`validate()` (`payload_sidecar.rs:54-124`) rejection arms, in evaluation order:
+
+  V1  entry_format_version != 1                                     (:55)
+  V2  maximum_attribute_count != 16                                 (:56)
+  V3  attributes.is_empty()                                         (:57)
+  V4  attributes.len() > 16                                         (:58)
+  V5  attnum == 0                                                   (:67)
+  V6  attnum <= previous (non-increasing / duplicate)               (:67)
+  V7  interior NUL in any of six identity strings                   (:83)
+  V8  empty type_namespace / type_name / send_function /
+      receive_function                                              (:89-92)
+  V9  NON-empty collation_namespace / collation_name                (:93-94)
+  V10 fixed_binary_width(reconstructed) != declared binary_width    (:114)
+      (subsumes "type outside the eleven-name pg_catalog allowlist",
+       since fixed_binary_width returns None there)
+  V11 maximum_payload_bytes() bound                                 (:122)
+
+`maximum_payload_bytes()` (:126-144) uses `checked_add` for both the value sum
+and the value+bitmap sum, and compares against
+`MAX_VALUE_BYTES=256 / MAX_NULL_BYTES=2 / MAX_PAYLOAD_BYTES=258`. Every arm
+returns `Err(String)` with an `EC_GENERATION_DESCRIPTOR:` prefix. No `unwrap`,
+`expect`, `panic!`, `unsafe`, or silent skip anywhere in the module.
+
+V9 checked against reality rather than assumed: `resolve_relation_schema`
+(`row_schema.rs:63-64`) emits `''` for both collation fields when
+`a.attcollation = 0`. All eleven allowlist types are non-collatable
+(`typcollation = 0`), so `attcollation` is 0 and the strings ARE empty for every
+resolvable cover. V9 is therefore a fail-closed gate that no legitimate cover
+can trip, not a latent breakage of the feature.
+
+
+X5 — schema binding is the fingerprint plus per-attribute identity
+-------------------------------------------------------------------
+`validate_row_schema` (`payload_sidecar.rs:212-251`):
+  - re-validates the supplied row schema (`:216`) rather than trusting its
+    provenance — correct now that decoded descriptors will be fed in;
+  - requires `self.row_schema_fingerprint == row_schema.fingerprint()?` (`:217`);
+  - for each covered attnum, requires the attribute to exist and to agree on
+    dropped / generated_kind / type_namespace / type_name / typmod /
+    collation_namespace / collation_name / send_function / receive_function /
+    fixed_binary_width (`:222-249`).
+
+The indexed-vector attribute cannot be smuggled into a decoded descriptor even
+though `validate_row_schema` does not know the vector attnum: an `ecvector`
+column is not one of the eleven `pg_catalog` names, so V10 rejects it first.
+The exclusion is structural, not a denylist.
+
+Note recorded for the feedback file: because SHA-256 fingerprint equality is
+effectively injective over the same canonical row-schema bytes, the
+per-attribute loop at `:222-249` is redundant defense-in-depth given `:217`.
+The unit test `cover_descriptor_round_trips_and_binds_the_exact_row_schema`
+mutates `typmod`, which moves the fingerprint, so the test exercises `:217`
+only; the per-attribute divergence arm has no test and is not reachable without
+hand-forged bytes.
+
+
+X6 — compact entry codec is exactly bitmap | concatenated non-null values
+--------------------------------------------------------------------------
+`encode_payload` (`:253-284`):
+  - requires `values.len() == attributes.len()`                     (:255)
+  - `null_bytes = len.div_ceil(8)`, bitmap pre-zeroed               (:262-263)
+  - NULL sets bit `1 << (index % 8)` in byte `index / 8`, appends
+    no value bytes                                                  (:266)
+  - non-NULL requires `value.len() == binary_width` exactly         (:268)
+  - appends raw value bytes with no per-entry metadata              (:276)
+
+`decode_payload` (`:286-328`):
+  - `payload.len() < null_bytes` -> truncated-bitmap error          (:292)
+  - `validate_null_bitmap(bitmap, count, ...)` enforces exact bitmap
+    length AND zero padding bits                                    (:296-301)
+  - walks the same bit order, `checked_add` on each offset          (:309-311)
+  - `end > payload.len()` -> per-attnum truncation error            (:312)
+  - `position != payload.len()` -> trailing-bytes error             (:321)
+
+Bit order is identical on both sides (`index / 8`, `1 << (index % 8)`), so the
+codec is self-inverse. `validate_null_bitmap` (`canonical_wire.rs:32-56`)
+skips the padding check when `attribute_count % 8 == 0`, which is correct: at
+8 or 16 attributes the bitmap has no padding bits. At 16 attributes the bitmap
+is exactly 2 bytes, fully used.
+
+No per-entry cover digest, column count, offset array, or checksum is written.
+The payload is exactly what plan 001 §2 "Compact canonical entry" specifies.
+
+258-byte arithmetic: 16 attributes x 16-byte `uuid` = 256 value bytes,
+`16.div_ceil(8)` = 2 bitmap bytes, total 258 == `MAX_PAYLOAD_BYTES`
+(`payload_sidecar.rs:12-15`). Attained exactly by
+`resolution_binds_schema_and_attains_the_258_byte_bound`.
+
+
+X7 — TID / vec_id echo corruption checks
+------------------------------------------
+`decode_row` (`:331-353`) rejects, in order and BEFORE any value is exposed:
+  1. requested TID with `block_number == pg_sys::InvalidBlockNumber` or
+     `offset_number == pg_sys::InvalidOffsetNumber`                 (:339-345)
+  2. `returned_row_tid != requested_row_tid`                        (:346)
+  3. `returned_vec_id != requested_vec_id`                          (:349)
+then delegates to `decode_payload`. `ItemPointer` derives `PartialEq`
+(`src/storage/page.rs:31`), so check 2 is a full (block, offset) comparison.
+`ItemPointer::INVALID` (`page.rs:38-41`) is `(u32::MAX, u16::MAX)` and is caught
+by the `InvalidBlockNumber` arm.
+
+Because the returned TID must equal the requested TID, validating only the
+requested TID is sufficient — a returned invalid TID implies a mismatch.
+
+Gap recorded for the feedback file: arm 1 has NO test. The unit test covers
+arms 2 and 3 only (`:609-621`). Separately, `decode_row` does not bound
+`offset_number` by `MaxOffsetNumber`, unlike the repo's existing TID-validity
+idiom at `src/am/ec_diskann/routine.rs:2268` and `src/storage/wal.rs:153`.
+
+
+X8 — conditional V1/V2 registration identity
+----------------------------------------------
+`encode_registration` (`build_coordinator/mod.rs:633-...`) now writes
+`BUILD_REGISTRATION_V2_VERSION` (2) instead of `BUILD_REGISTRATION_V1_VERSION`
+(1) iff `payload_cover_descriptor_digest.is_some()`, and inserts that 32-byte
+digest between `row_schema_fingerprint` and `compatibility_digest`.
+
+No-cover path: version byte is still 1 and no digest is inserted, so the byte
+string is identical to main's. Confirmed two ways:
+  - the diff inserts only `if let Some(digest) { put_fixed }`, unreachable when
+    None;
+  - the golden constant
+    `c5a90122402eb68d6f443d63fe3e5744c07ff902a27e02d02125494c290f25ab`
+    at `mod.rs:1365` is byte-identical to `3419c9c75:.../mod.rs:1351`
+    (verified with `git show 3419c9c75:... | grep`), and the golden test passes
+    (`cargo-test-registration-binding-checkpoint2.log`: 1 passed).
+
+Digest ambiguity: none. The version discriminator is the first field, so V1 and
+V2 byte strings can never collide even though V2 is a strict insertion.
+
+Storage: `encode_registration` output is NEVER persisted. `t1.rs:387-419`
+inserts only the 32-byte `registration_digest` into
+`ec_distann_build_registration`; the canonical bytes exist solely as digest
+input. Grep over `src/**` for `encode_registration` shows two callers, both
+inside `registration_digest`. Therefore no decoder exists and no dual-version
+decode surface is owed for registration bytes.
+
+
+X9 — carry-in 1 (reloption drift between T1 and T2) is genuinely closed
+-------------------------------------------------------------------------
+Call graph, verified by grep over `src/**`:
+  `replay_registration` callers: `t1.rs:335`, `t2.rs:241` — those two only.
+  `registration_digest` callers: `t1.rs:371`, `mod.rs:935` (inside
+  `replay_registration`), plus the unit test.
+
+`replay_registration` (`mod.rs:731-956`) now takes
+`current_payload_cover_descriptor_digest`, folds it into `expected_digest`
+(`:935-948`), and errors on `expected_digest != stored.registration_digest`
+(`:949-951`).
+
+Both preflight sites resolve the cover from the CURRENT reloptions under the
+retained control-relation lock plus the registry revision row lock, before any
+capture:
+  T1 (`t1.rs:323-331`) -> `replay_registration` (`:335`) -> registration INSERT
+     (`:387`); `ensure_build_slot_available` (`:353`) and
+     `desired_participants` (`:355`) come after.
+  T2 (`t2.rs:228-236`) -> `replay_registration` (`:241`) -> and only then
+     `load_build_candidate` (`:262`), `capture_source_snapshot` (`:313`),
+     `desired_participants` (`:317`).
+
+Drift matrix, all three directions closed:
+  cover changed  T1->T2 : D' != D  -> digest mismatch -> error before capture
+  cover removed  T1->T2 : V2 -> V1 -> digest mismatch -> error before capture
+  cover added    T1->T2 : V1 -> V2 -> digest mismatch -> error before capture
+Same for a T1 replay under a mutated reloption.
+
+`replay_registration` also still checks
+`stored.row_schema_fingerprint != current_row_schema_fingerprint` (`:842`), and
+the cover descriptor embeds that same fingerprint, so the two bindings agree.
+
+Residual (post-T2) window: nothing after `replay_registration` re-reads
+`covering_payload_attnums` in this checkpoint — `resolved_payload_cover` is
+consumed only for its digest and then dropped. Once the descriptor is persisted
+the persisted copy is authoritative per plan 001 §1, so no further window
+exists today. Recorded as a forward carry-in: checkpoint 3/4 must thread the
+already-resolved descriptor forward rather than re-resolving from reloptions.
+
+Error-message note: cover drift surfaces as the generic
+`EC_BUILD_STATE: durable registration digest is inconsistent` (`mod.rs:950`),
+which conflates reloption drift with genuine catalog corruption. Diagnostic
+only, not a correctness defect.
+
+
+X10 — coder evidence cross-check, and the dead_code caveat
+------------------------------------------------------------
+Every artifact `request.md` cites was read in full:
+
+  cargo-fmt-checkpoint2.log                     exit 0 (stable-rustfmt
+                                                nightly-option warnings only)
+  cargo-check-pg18-checkpoint2.log              exit 0, no warnings, 13.73s
+  cargo-test-payload-sidecar-checkpoint2.log    exit 0, 5 passed / 0 failed /
+                                                2592 filtered out
+  cargo-test-registration-binding-checkpoint2.log
+                                                exit 0, 1 passed / 0 failed /
+                                                2596 filtered out
+  cargo-clippy-pg18-checkpoint2.log             exit 101, exactly four errors:
+                                                collapsible_if ambuild.rs:139,
+                                                unnecessary_unwrap
+                                                generation_descriptor.rs:748,
+                                                needless_range_loop
+                                                head_sample.rs:1818,
+                                                items_after_test_module
+                                                remote_endpoint.rs:1052.
+                                                No Task 229 file named.
+  clippy-inherited-files-diff-checkpoint2.log   exit 0, empty diff -> the four
+                                                files are identical to
+                                                origin/main
+  cargo-clippy-pg18-checkpoint2-task-clean.log  exit 0 with only those four
+                                                lint names allowed
+
+Timestamps 05:43:51 .. 05:49:06, all before the 05:49:35 commit time of
+255081d74; the four files listed in the inherited-lint diff are confirmed
+unchanged from `origin/main` by the log's own exit-0 result. The
+`request.md` Validation section is accurate on every point.
+
+CAVEAT on the dead-code half of carry-in 4: `src/lib.rs:57` is
+`#[allow(dead_code)] mod am;`, which suppresses `dead_code` across the entire
+access-method tree. `grep "allow(dead_code)"` finds no other suppression in the
+`ec_distann` module chain, and `src/lib.rs` has no crate-level
+`#![allow(dead_code)]`. So the clean `cargo check --lib` does NOT demonstrate
+that the new codec surface is wired to a caller. In fact `decode`, `decode_row`,
+`encode_payload`, and `decode_payload` currently have no non-test caller — which
+is expected for a codec landing ahead of its consumers, and which `request.md`
+states. The clippy claim itself stands; only the "no dead-code lint" inference
+is unsupported by the toolchain.
+
+The seq-01 carry-in 4 concern is moot on its own terms: the diff replaced
+`ResolvedPayloadCoverAttribute { schema_attribute, binary_width }` and
+`ResolvedPayloadCover { maximum_payload_bytes: u16 }` outright with
+`DistannPayloadCoverAttributeV1` / `DistannPayloadCoverDescriptorV1` and a
+computed `maximum_payload_bytes()` method, so the previously-dead fields no
+longer exist.
+
+
+X11 — checkpoint-1 carry-in disposition audit (artifacts/seq01-disposition.md)
+-------------------------------------------------------------------------------
+  1 registration identity  CLOSED — verified at X8 + X9. Accurate.
+  2 bound test name        CLOSED — renamed
+                           `resolution_binds_schema_and_enforces_the_258_byte_bound`
+                           -> `..._attains_the_258_byte_bound`
+                           (`payload_sidecar.rs:510`). Accurate.
+                           Same overstatement now exists one level down:
+                           `encode_payload`'s `payload.len() >
+                           maximum_payload_bytes()?` guard (`:280`) is
+                           unreachable, since a payload with any NULL is
+                           strictly shorter than the all-non-null maximum and
+                           `maximum_payload_bytes()` itself already enforced
+                           258. `request.md:37-38` says "Encoding and decoding
+                           enforce ... the 258-byte ceiling"; only the derived-
+                           length equality is reachable.
+  3 unconditional attnum   DELIBERATE — retained. Seq-01 already proved
+                           non-regressive; one code shape for covered and
+                           uncovered builds is the better call. Accepted.
+  4 clippy                 CLOSED for clippy; see the X10 dead_code caveat.
+  5 identity INCLUDE       NOT EXCLUDED — a contract decision, and the stated
+                           reason (a projected source-identity result is
+                           legitimate; narrowing the declared contract without
+                           a correctness reason is worse) is sound. Accepted.
+
+
+X12 — test coverage inventory against the codec's rejection arms
+------------------------------------------------------------------
+Covered by the 5 passing unit tests:
+  allowlist widths for all eleven types + `text` + non-pg_catalog namespace
+  258-byte maximum attained exactly at 16 x uuid
+  resolution exclusions: indexed vector, generated, dropped, variable-width,
+    and the `None` -> `Ok(None)` no-cover path
+  descriptor encode/decode round trip and digest non-zero
+  descriptor decode: trailing byte, wrong entry_format_version
+  validate_row_schema: fingerprint mismatch (via typmod mutation)
+  encode_payload: value-count mismatch, value-width mismatch
+  decode_payload: non-zero padding bit, value truncation, trailing byte
+  decode_row: row-TID echo mismatch, vec_id echo mismatch
+
+NOT covered by any test:
+  validate() V2  maximum_attribute_count != 16
+  validate() V3  attributes.is_empty()      (decode's own count==0 arm too)
+  validate() V4  attributes.len() > 16      (decode's own count>16 arm too)
+  validate() V5  attnum == 0
+  validate() V6  attnum non-increasing / duplicate
+  validate() V7  interior NUL in an identity string
+  validate() V8  empty type_namespace / type_name / send / receive
+  validate() V9  non-empty collation on the non-collatable allowlist
+  validate() V10 declared binary_width disagrees with the type
+  decode()       truncated input (short buffer)
+  decode()       non-UTF-8 identity string
+  decode_payload truncated null bitmap (payload.len() < null_bytes) — the
+                 existing `&payload[..len-1]` case has 8 bytes >= 1 bitmap byte
+                 and therefore lands on the value-truncation arm instead
+  decode_row     invalid requested TID (arm 1 of X7)
+  validate_row_schema per-attribute divergence and absent-attnum arms
+
+V7-V10 and the decode() arms are exactly the gates that guard a descriptor read
+BACK from disk, which is the capability checkpoint 3 introduces.
+
+
+X13 — hot-path allocation in validate()
+-----------------------------------------
+`validate()` (`:101-113`) constructs a throwaway `DistannRowSchemaAttribute` per
+attribute purely to call `fixed_binary_width(&schema_attribute)`. That
+construction clones `type_namespace`, `type_name`, `collation_namespace`,
+`collation_name`, `send_function`, `receive_function` and allocates
+`"covered".to_owned()` — roughly five heap allocations per attribute per call
+(the two collation clones are empty and do not allocate).
+
+`validate()` is called by `encode()` (`:147`), `encode_payload()` (`:254`), and
+`decode_payload()` (`:290`). So it runs once per encoded row and once per
+decoded row. For the preregistered bench cover (`covering_payload_attnums='1'`,
+one attribute) over a lazy-10 window that is ~50 allocations per window of pure
+validation overhead; at the 16-attribute maximum it is ~800 per window.
+
+`fixed_binary_width` (`:39-51`) reads only `type_namespace` and `type_name`, so
+the whole construction is avoidable by changing its signature to
+`fn fixed_binary_width(type_namespace: &str, type_name: &str) -> Option<u16>`.
+Not a correctness defect and not on any measured path yet — but it sits
+directly on the path whose PROMOTE gate is ">= 5.0% and >= 0.50 ms" at 100k
+(plan 001 §6).
+
+
+Scope statement
+---------------
+This log covers ONLY checkpoint 2 as the request scopes it: descriptor
+canonical bytes / digest / schema binding, the compact null/value entry codec,
+TID and vec_id echo checks, conditional no-cover-V1 / covered-V2 registration
+identity, and the checkpoint-1 carry-in dispositions. Generation-descriptor
+V2/V3, receipt V1/V2, manifest V2/V3, fingerprint and lifecycle-wire dual
+decode, catalog OIDs, physical relation ownership, read path, DML, and
+telemetry were NOT required to exist and were NOT reviewed.
+
+Files created or edited by this review:
+  reviews/task-229/002-format-and-lifecycle/feedback/2026-08-26-02-reviewer.md
+  reviews/task-229/002-format-and-lifecycle/artifacts/reviewer-seq02-verification.log
+  reviews/task-229/002-format-and-lifecycle/artifacts/manifest.md (appended
+    provenance section only)
+
+No measurement claim is made by this checkpoint, so there is no number to trace
+to a results artifact. Task 229's closeout benchmark obligation (10k/50k/100k
+recall + latency + storage, cover-on vs cover-off, per AGENTS.md and
+NFR-007) is untouched by this verdict.

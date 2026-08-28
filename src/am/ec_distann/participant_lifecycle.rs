@@ -128,6 +128,15 @@ fn local_ready_receipt(
     if manifest.row_schema_fingerprint != descriptor.row_schema.fingerprint()? {
         return Err("EC_PUBLISH_DIGEST: manifest row schema disagrees with descriptor".to_owned());
     }
+    let descriptor_cover_digest = descriptor
+        .payload_cover()
+        .map(|cover| cover.digest())
+        .transpose()?;
+    if manifest.payload_cover_descriptor_digest != descriptor_cover_digest {
+        return Err(
+            "EC_PUBLISH_DIGEST: manifest payload cover disagrees with descriptor".to_owned(),
+        );
+    }
 
     let ordinal = usize::try_from(row.owner_ordinal)
         .map_err(|_| "EC_PUBLISH_INCOMPLETE: local owner ordinal is invalid".to_owned())?;
@@ -156,8 +165,9 @@ fn local_ready_receipt(
     }
     let stored = row
         .ready_receipt
+        .as_ref()
         .ok_or_else(|| "EC_PUBLISH_INCOMPLETE: local Ready receipt is not durable".to_owned())?;
-    if receipt.encode()?.as_slice() != stored {
+    if receipt.encode()?.as_slice() != stored.as_slice() {
         return Err(
             "EC_PUBLISH_DIGEST: manifest does not contain the exact local Ready receipt".to_owned(),
         );
@@ -190,7 +200,7 @@ fn ec_distann_publish_generation(
                 "EC_EPOCH_STATE: manifest build id differs from requested build".to_owned(),
             );
         }
-        let fingerprint = DistannEpochFingerprint::from_manifest_digest(manifest_digest);
+        let fingerprint = manifest.fingerprint()?;
         let index_oid = index_regclass.oid();
         let (_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
@@ -826,6 +836,8 @@ fn ec_distann_apply_epoch_retire(
                 row_tier_relid: row.row_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
+                payload_sidecar_relid: row.payload_sidecar_relid,
+                payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
             },
         )?;
         let deleted = Spi::connect_mut(|client| {
@@ -1112,6 +1124,8 @@ fn ec_distann_reclaim_cancelled_generation(
                 row_tier_relid: row.row_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
+                payload_sidecar_relid: row.payload_sidecar_relid,
+                payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
             },
         )?;
         let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;

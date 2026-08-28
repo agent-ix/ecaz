@@ -30,8 +30,10 @@ use super::handoff_wire::{
 use super::identity::vec_id_from_source_identity;
 use super::lifecycle_state::GenerationState;
 use super::manifest_v2::{
-    DistannReadyReceipt, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+    DistannEpochFingerprint, DistannReadyReceipt, DistannReadyReceiptPayloadSidecar,
+    DISTANN_READY_RECEIPT_STATE,
 };
+use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::placement::owning_node;
 use super::quote_ident;
 use super::row_schema::resolve_relation_schema;
@@ -52,6 +54,7 @@ struct RowAttributeIo {
 
 struct PreparedEntry {
     datums: Vec<Option<pg_sys::Datum>>,
+    payload_sidecar: Option<Vec<u8>>,
     node: DistannNodeTuple,
 }
 
@@ -59,6 +62,8 @@ const PERSISTED_GRAPH_DOMAIN: &[u8] = b"ec_distann_persisted_graph_v1\0";
 const PERSISTED_ROW_TIER_DOMAIN: &[u8] = b"ec_distann_persisted_row_tier_v1\0";
 const LOCAL_DIRECTORY_DOMAIN: &[u8] = b"ec_distann_local_directory_v1\0";
 const OWNED_VEC_IDS_DOMAIN: &[u8] = b"ec_distann_owned_vec_ids_v1\0";
+const PAYLOAD_SIDECAR_INITIAL_CONTENT_DOMAIN: &[u8] =
+    b"ec_distann_payload_sidecar_initial_content_v1\0";
 
 /// Execute caller-controlled type I/O with the privileges of the control
 /// owner, never the SECURITY DEFINER endpoint owner.  PostgreSQL uses the
@@ -287,6 +292,112 @@ fn validate_generation_relations(
                 .to_owned(),
         );
     }
+    let sidecar_pair = match (
+        row.payload_sidecar_relid,
+        row.payload_sidecar_directory_relid,
+        descriptor.payload_cover.as_ref(),
+    ) {
+        (None, None, None) => return Ok(()),
+        (Some(sidecar_relid), Some(directory_relid), Some(cover)) => {
+            cover.validate_row_schema(&descriptor.row_schema)?;
+            (sidecar_relid, directory_relid)
+        }
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: payload sidecar relation pair disagrees with the generation descriptor"
+                    .to_owned(),
+            );
+        }
+    };
+    let sidecar_valid = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT
+                    EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_class c
+                         WHERE c.oid = $1::oid AND c.relkind = 'r'
+                           AND c.relowner = $3::oid AND c.relpersistence = 'p'
+                           AND NOT c.relrowsecurity AND NOT c.relforcerowsecurity
+                           AND c.reltablespace = (
+                               SELECT reltablespace FROM pg_catalog.pg_class WHERE oid = $4::oid
+                           )
+                           AND COALESCE(c.reloptions, ARRAY[]::text[]) @> ARRAY['fillfactor=100']
+                    )
+                    AND (
+                        SELECT count(*) = 3
+                           AND bool_and(
+                               attnotnull AND NOT atthasdef
+                               AND attidentity = '' AND attgenerated = ''
+                               AND CASE attnum
+                                     WHEN 1 THEN attname = 'row_tid' AND atttypid = 'tid'::regtype
+                                     WHEN 2 THEN attname = 'vec_id' AND atttypid = 'bigint'::regtype
+                                     WHEN 3 THEN attname = 'payload' AND atttypid = 'bytea'::regtype
+                                                 AND attstorage = 'p'
+                                     ELSE false
+                                   END
+                           )
+                          FROM pg_catalog.pg_attribute
+                         WHERE attrelid = $1::oid AND attnum > 0 AND NOT attisdropped
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_constraint
+                         WHERE conrelid = $1::oid AND contype <> 'n'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_trigger
+                         WHERE tgrelid = $1::oid AND NOT tgisinternal
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_rewrite WHERE ev_class = $1::oid
+                    )
+                    AND (
+                        SELECT count(*) = 1
+                           AND bool_and(indexrelid = $2::oid AND indisunique
+                                        AND indisvalid AND indisready AND indislive
+                                        AND indnkeyatts = 1 AND indnatts = 1
+                                        AND indkey[0] = 1 AND indpred IS NULL)
+                          FROM pg_catalog.pg_index WHERE indrelid = $1::oid
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_class c
+                        JOIN pg_catalog.pg_am am ON am.oid = c.relam
+                         WHERE c.oid = $2::oid AND c.relkind = 'i'
+                           AND c.relowner = $3::oid AND am.amname = 'btree'
+                           AND c.reltablespace = (
+                               SELECT reltablespace FROM pg_catalog.pg_class WHERE oid = $4::oid
+                           )
+                    ) AS valid",
+                None,
+                &[
+                    sidecar_pair.0.into(),
+                    sidecar_pair.1.into(),
+                    control_owner.into(),
+                    row.row_tier_relid.into(),
+                ],
+            )
+            .map_err(|error| {
+                format!("EC_GENERATION_MISSING: payload sidecar validation failed: {error}")
+            })?
+            .map(|result| {
+                result["valid"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        format!("EC_GENERATION_MISSING: payload sidecar validation decode failed: {error}")
+                    })?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: payload sidecar validation returned NULL".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or(false))
+    })?;
+    if !sidecar_valid {
+        return Err(
+            "EC_GENERATION_MISSING: payload sidecar relations violate their immutable physical shape"
+                .to_owned(),
+        );
+    }
     Ok(())
 }
 
@@ -391,10 +502,12 @@ fn prepare_entries(
     shape: DistannHandoffShape,
     identity_attnum: u16,
     row_io: &mut [Option<RowAttributeIo>],
+    payload_cover: Option<&DistannPayloadCoverDescriptorV1>,
 ) -> Result<Vec<PreparedEntry>, String> {
     let mut prepared = Vec::with_capacity(entries.len());
     for entry in entries {
         let mut datums = Vec::with_capacity(row_io.len());
+        let mut payload_values = payload_cover.map(|cover| vec![None; cover.attributes.len()]);
         let mut non_dropped_position = 0_usize;
         let mut value_position = 0_usize;
         for (attribute_index, io) in row_io.iter_mut().enumerate() {
@@ -423,6 +536,14 @@ fn prepare_entries(
                     "EC_SOURCE_IDENTITY: row-tier identity differs from the handoff identity"
                         .to_owned(),
                 );
+            }
+            if let (Some(cover), Some(payload_values)) = (payload_cover, &mut payload_values) {
+                if let Ok(position) = cover
+                    .attributes
+                    .binary_search_by_key(&(attnum as u16), |attribute| attribute.attnum)
+                {
+                    payload_values[position] = Some(bytes.as_slice());
+                }
             }
             let datum = unsafe { receive_and_verify(bytes, io, attnum)? };
             datums.push(Some(datum));
@@ -456,7 +577,15 @@ fn prepare_entries(
                 .map_err(|_| "EC_HANDOFF_FORMAT: graph degree exceeds u16".to_owned())?,
             shape.code_stride,
         )?;
-        prepared.push(PreparedEntry { datums, node });
+        let payload_sidecar = payload_cover
+            .zip(payload_values)
+            .map(|(cover, values)| cover.encode_payload(&values))
+            .transpose()?;
+        prepared.push(PreparedEntry {
+            datums,
+            payload_sidecar,
+            node,
+        });
     }
     Ok(prepared)
 }
@@ -503,6 +632,7 @@ fn reject_existing_vec_ids(
 fn insert_prepared_entries(
     row_relation: &HeapRelationGuard,
     graph_relation: &str,
+    payload_sidecar_relation: Option<&str>,
     entries: &mut [PreparedEntry],
     shape: DistannHandoffShape,
 ) -> Result<(), String> {
@@ -514,6 +644,7 @@ fn insert_prepared_entries(
     let mut graph_vec_ids = Vec::with_capacity(entries.len());
     let mut graph_records = Vec::with_capacity(entries.len());
     let mut graph_row_tids = Vec::with_capacity(entries.len());
+    let mut payloads = payload_sidecar_relation.map(|_| Vec::with_capacity(entries.len()));
     for entry in entries {
         let mut writer = unsafe {
             TupleSlotWriter::from_raw_slot(slot.as_ptr(), "ec_distann row-tier handoff")?
@@ -546,12 +677,63 @@ fn insert_prepared_entries(
         graph_vec_ids.push(i64::from_le_bytes(entry.node.vec_id.to_le_bytes()));
         graph_records.push(graph_record);
         graph_row_tids.push(row_tid);
+        match (&mut payloads, entry.payload_sidecar.take()) {
+            (Some(payloads), Some(payload)) => payloads.push(payload),
+            (None, None) => {}
+            _ => {
+                return Err(
+                    "EC_GENERATION_CORRUPT: payload sidecar relation and prepared entry disagree"
+                        .to_owned(),
+                );
+            }
+        }
     }
     if graph_vec_ids.is_empty() {
         return Ok(());
     }
     let expected = i64::try_from(graph_vec_ids.len())
         .map_err(|_| "EC_BATCH_CONFLICT: graph insert batch is too large".to_owned())?;
+    if let (Some(payload_sidecar_relation), Some(payloads)) = (payload_sidecar_relation, payloads) {
+        let inserted = Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!(
+                        "WITH inserted AS (
+                             INSERT INTO {payload_sidecar_relation} (row_tid, vec_id, payload)
+                             SELECT row_tid, vec_id, payload
+                               FROM unnest($1::tid[], $2::bigint[], $3::bytea[])
+                                    AS batch(row_tid, vec_id, payload)
+                             RETURNING 1
+                         ) SELECT count(*)::bigint AS inserted_count FROM inserted"
+                    ),
+                    None,
+                    &[
+                        graph_row_tids.clone().into(),
+                        graph_vec_ids.clone().into(),
+                        payloads.into(),
+                    ],
+                )
+                .map_err(|error| {
+                    format!("EC_BATCH_CONFLICT: payload sidecar batch insert failed: {error}")
+                })?
+                .next()
+                .ok_or_else(|| {
+                    "EC_BATCH_CONFLICT: payload sidecar batch insert returned no count".to_owned()
+                })?["inserted_count"]
+                .value::<i64>()
+                .map_err(|error| {
+                    format!(
+                        "EC_BATCH_CONFLICT: payload sidecar insert count decode failed: {error}"
+                    )
+                })?
+                .ok_or_else(|| "EC_BATCH_CONFLICT: payload sidecar insert count is NULL".to_owned())
+        })?;
+        if inserted != expected {
+            return Err(format!(
+                "EC_BATCH_CONFLICT: payload sidecar batch inserted {inserted} rows, expected {expected}"
+            ));
+        }
+    }
     let inserted = Spi::connect_mut(|client| {
         client
             .update(
@@ -676,6 +858,124 @@ fn update_length_prefixed(hasher: &mut Sha256, bytes: &[u8]) -> Result<(), Strin
     hasher.update(length.to_le_bytes());
     hasher.update(bytes);
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PhysicalPayloadSidecarSummary {
+    row_count: u64,
+    content_digest: [u8; 32],
+}
+
+fn scan_payload_sidecar(
+    payload_sidecar_relation: &str,
+    graph_relation: &str,
+    cover: &DistannPayloadCoverDescriptorV1,
+    require_current_graph_match: bool,
+) -> Result<PhysicalPayloadSidecarSummary, String> {
+    let mut hasher = Sha256::new();
+    hasher.update(PAYLOAD_SIDECAR_INITIAL_CONTENT_DOMAIN);
+    let mut row_count = 0_u64;
+    let mut previous_identity = None;
+    let sql = format!(
+        "SELECT s.row_tid, s.vec_id, s.payload,
+                EXISTS (
+                    SELECT 1 FROM {graph_relation} g
+                     WHERE g.is_current AND g.vec_id = s.vec_id
+                       AND g.row_tid = s.row_tid
+                ) AS graph_match
+           FROM {payload_sidecar_relation} s
+          ORDER BY (s.vec_id < 0), s.vec_id, s.row_tid"
+    );
+    Spi::connect(|client| -> Result<(), String> {
+        let mut cursor = client.try_open_cursor(&sql, &[]).map_err(|error| {
+            format!("EC_GENERATION_MISSING: payload sidecar cursor failed: {error}")
+        })?;
+        loop {
+            let rows = cursor.fetch(256).map_err(|error| {
+                format!("EC_GENERATION_MISSING: payload sidecar fetch failed: {error}")
+            })?;
+            if rows.is_empty() {
+                break;
+            }
+            for row in rows {
+                let row_tid = row["row_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| {
+                        format!(
+                            "EC_BUILD_INCOMPLETE: payload sidecar row TID decode failed: {error}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "EC_BUILD_INCOMPLETE: payload sidecar row TID is NULL".to_owned()
+                    })?;
+                let signed_vec_id = row["vec_id"]
+                    .value::<i64>()
+                    .map_err(|error| {
+                        format!(
+                            "EC_BUILD_INCOMPLETE: payload sidecar vec_id decode failed: {error}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "EC_BUILD_INCOMPLETE: payload sidecar vec_id is NULL".to_owned()
+                    })?;
+                let vec_id = u64::from_le_bytes(signed_vec_id.to_le_bytes());
+                let payload = row["payload"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| {
+                        format!("EC_BUILD_INCOMPLETE: payload sidecar value decode failed: {error}")
+                    })?
+                    .ok_or_else(|| {
+                        "EC_BUILD_INCOMPLETE: payload sidecar value is NULL".to_owned()
+                    })?;
+                let graph_match = row["graph_match"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        format!("EC_BUILD_INCOMPLETE: payload sidecar graph match decode failed: {error}")
+                    })?
+                    .ok_or_else(|| {
+                        "EC_BUILD_INCOMPLETE: payload sidecar graph match is NULL".to_owned()
+                    })?;
+                let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(row_tid);
+                let canonical_tid = ItemPointer {
+                    block_number,
+                    offset_number,
+                };
+                let identity = (vec_id, block_number, offset_number);
+                if previous_identity.is_some_and(|previous| identity <= previous)
+                    || (require_current_graph_match
+                        && previous_identity.is_some_and(|previous| vec_id == previous.0))
+                {
+                    return Err(
+                        "EC_BUILD_INCOMPLETE: payload sidecar identity order is not canonical"
+                            .to_owned(),
+                    );
+                }
+                if (require_current_graph_match && !graph_match)
+                    || block_number == pg_sys::InvalidBlockNumber
+                    || offset_number == pg_sys::InvalidOffsetNumber
+                {
+                    return Err(
+                        "EC_BUILD_INCOMPLETE: payload sidecar identity has no current graph match"
+                            .to_owned(),
+                    );
+                }
+                cover.decode_row(canonical_tid, vec_id, canonical_tid, vec_id, &payload)?;
+                hasher.update(vec_id.to_le_bytes());
+                hasher.update(block_number.to_le_bytes());
+                hasher.update(offset_number.to_le_bytes());
+                update_length_prefixed(&mut hasher, &payload)?;
+                row_count = row_count.checked_add(1).ok_or_else(|| {
+                    "EC_BUILD_INCOMPLETE: payload sidecar row count overflow".to_owned()
+                })?;
+                previous_identity = Some(identity);
+            }
+        }
+        Ok(())
+    })?;
+    Ok(PhysicalPayloadSidecarSummary {
+        row_count,
+        content_digest: hasher.finalize().into(),
+    })
 }
 
 #[derive(Debug)]
@@ -838,19 +1138,36 @@ fn scan_physical_generation(
     })
 }
 
-fn generation_sizes(generation: &GenerationCatalogRow) -> Result<(u64, u64, u64), String> {
+#[derive(Debug, Clone, Copy)]
+struct GenerationSizes {
+    graph_bytes: u64,
+    row_tier_bytes: u64,
+    directory_bytes: u64,
+    payload_sidecar_heap_bytes: Option<u64>,
+    payload_sidecar_index_bytes: Option<u64>,
+}
+
+fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes, String> {
     Spi::connect(|client| {
         client
             .select(
                 "SELECT pg_catalog.pg_table_size($1::oid::regclass)::bigint AS graph_bytes,
                         pg_catalog.pg_table_size($2::oid::regclass)::bigint AS row_tier_bytes,
                         pg_catalog.pg_total_relation_size($3::oid::regclass)::bigint
-                            AS directory_bytes",
+                            AS directory_bytes,
+                        CASE WHEN $4::oid IS NULL THEN NULL
+                             ELSE pg_catalog.pg_table_size($4::oid::regclass)::bigint
+                         END AS payload_sidecar_heap_bytes,
+                        CASE WHEN $5::oid IS NULL THEN NULL
+                             ELSE pg_catalog.pg_total_relation_size($5::oid::regclass)::bigint
+                         END AS payload_sidecar_index_bytes",
                 None,
                 &[
                     generation.graph_store_relid.into(),
                     generation.row_tier_relid.into(),
                     generation.directory_relid.into(),
+                    generation.payload_sidecar_relid.into(),
+                    generation.payload_sidecar_directory_relid.into(),
                 ],
             )
             .map_err(|error| format!("EC_BUILD_INCOMPLETE: size lookup failed: {error}"))?
@@ -865,11 +1182,25 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<(u64, u64, u64)
                     u64::try_from(value)
                         .map_err(|_| format!("EC_BUILD_INCOMPLETE: {name} is negative"))
                 };
-                Ok::<(u64, u64, u64), String>((
-                    required("graph_bytes")?,
-                    required("row_tier_bytes")?,
-                    required("directory_bytes")?,
-                ))
+                let optional = |name: &str| -> Result<Option<u64>, String> {
+                    row[name]
+                        .value::<i64>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: {name} decode failed: {error}")
+                        })?
+                        .map(|value| {
+                            u64::try_from(value)
+                                .map_err(|_| format!("EC_BUILD_INCOMPLETE: {name} is negative"))
+                        })
+                        .transpose()
+                };
+                Ok::<GenerationSizes, String>(GenerationSizes {
+                    graph_bytes: required("graph_bytes")?,
+                    row_tier_bytes: required("row_tier_bytes")?,
+                    directory_bytes: required("directory_bytes")?,
+                    payload_sidecar_heap_bytes: optional("payload_sidecar_heap_bytes")?,
+                    payload_sidecar_index_bytes: optional("payload_sidecar_index_bytes")?,
+                })
             })
             .next()
             .transpose()?
@@ -1075,7 +1406,7 @@ fn diagnose_physical_generation(
     })
 }
 
-/// The 15-column physical topology row shared by the by-build-id and
+/// The 19-column physical topology row shared by the by-build-id and
 /// by-fingerprint inspection endpoints.
 type DistannTopologyRow = (
     i32,
@@ -1093,9 +1424,13 @@ type DistannTopologyRow = (
     i64,
     i64,
     i64,
+    Option<i64>,
+    Option<Vec<u8>>,
+    Option<i64>,
+    Option<i64>,
 );
 
-/// Diagnose one already-resolved physical generation and emit its 15-column
+/// Diagnose one already-resolved physical generation and emit its 19-column
 /// topology row. Decodes and identity-checks the descriptor, locks the physical
 /// relations against concurrent reclaim, recomputes the counts/digests from
 /// storage, and reads the exact relation sizes.
@@ -1135,11 +1470,43 @@ fn build_topology_row(
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         )
     };
+    let _payload_sidecar_guard = generation
+        .payload_sidecar_relid
+        .map(|relation_oid| {
+            HeapRelationGuard::try_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: payload-sidecar relation is absent".to_owned()
+                })
+        })
+        .transpose()?;
+    if let Some(directory_relid) = generation.payload_sidecar_directory_relid {
+        unsafe {
+            pg_sys::LockRelationOid(directory_relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+        };
+    }
     validate_generation_relations(generation, &descriptor, control_owner)?;
     let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
     let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
     let identity_attnum = identity_attnum(index_oid)?;
     let row_count = relation_row_count(&row_relation_name)?;
+    let payload_sidecar = match (
+        generation.payload_sidecar_relid,
+        descriptor.payload_cover.as_ref(),
+    ) {
+        (Some(relation_oid), Some(cover)) => Some(scan_payload_sidecar(
+            &qualified_relation_name(relation_oid)?,
+            &graph_relation,
+            cover,
+            false,
+        )?),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: payload sidecar relation disagrees with descriptor"
+                    .to_owned(),
+            );
+        }
+    };
     let summary = with_restricted_type_io_owner(control_owner, || {
         diagnose_physical_generation(
             generation,
@@ -1151,7 +1518,7 @@ fn build_topology_row(
             row_count,
         )
     })?;
-    let (graph_bytes, row_tier_bytes, directory_bytes) = generation_sizes(generation)?;
+    let sizes = generation_sizes(generation)?;
     let control_index_bytes = control_index_total_bytes(index_oid)?;
     let to_i64 = |value: u64, field: &str| -> Result<i64, String> {
         i64::try_from(value).map_err(|_| format!("EC_BUILD_INCOMPLETE: {field} exceeds bigint"))
@@ -1172,10 +1539,22 @@ fn build_topology_row(
         )?,
         to_i64(summary.orphan_record_count, "orphan_record_count")?,
         to_i64(summary.orphan_row_count, "orphan_row_count")?,
-        to_i64(graph_bytes, "graph_bytes")?,
-        to_i64(row_tier_bytes, "row_tier_bytes")?,
-        to_i64(directory_bytes, "directory_bytes")?,
+        to_i64(sizes.graph_bytes, "graph_bytes")?,
+        to_i64(sizes.row_tier_bytes, "row_tier_bytes")?,
+        to_i64(sizes.directory_bytes, "directory_bytes")?,
         to_i64(control_index_bytes, "control_index_bytes")?,
+        payload_sidecar
+            .map(|sidecar| to_i64(sidecar.row_count, "payload_sidecar_row_count"))
+            .transpose()?,
+        payload_sidecar.map(|sidecar| sidecar.content_digest.to_vec()),
+        sizes
+            .payload_sidecar_heap_bytes
+            .map(|bytes| to_i64(bytes, "payload_sidecar_heap_bytes"))
+            .transpose()?,
+        sizes
+            .payload_sidecar_index_bytes
+            .map(|bytes| to_i64(bytes, "payload_sidecar_index_bytes"))
+            .transpose()?,
     ))
 }
 
@@ -1184,7 +1563,9 @@ fn build_topology_row(
 /// Published and retained Retired generations are inspected by fingerprint
 /// through `ec_distann_epoch_topology`, and Reclaimed/Aborted/absent build ids
 /// carry no physical generation and yield no rows. All counts and digests are
-/// recomputed from the physical relations, never from expected manifest fields.
+/// recomputed from the live physical relations, never from expected manifest
+/// fields. The sidecar digest therefore diverges from the immutable Ready
+/// receipt's initial-content digest after any valid post-Ready DML.
 #[pg_extern(stable, strict, parallel_restricted)]
 #[allow(clippy::type_complexity)]
 fn ec_distann_generation_topology(
@@ -1208,6 +1589,10 @@ fn ec_distann_generation_topology(
         name!(row_tier_bytes, i64),
         name!(directory_bytes, i64),
         name!(control_index_bytes, i64),
+        name!(payload_sidecar_row_count, Option<i64>),
+        name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
+        name!(payload_sidecar_heap_bytes, Option<i64>),
+        name!(payload_sidecar_index_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
@@ -1246,7 +1631,7 @@ fn ec_distann_generation_topology(
 }
 
 /// Report the physical topology of a Published or retained Retired generation
-/// selected by its 34-byte epoch fingerprint (`u16_le(2) || manifest digest`).
+/// selected by its 34-byte versioned epoch fingerprint.
 /// Building/Ready generations are selectable only by build id; an unknown
 /// fingerprint version fails `EC_EPOCH_FINGERPRINT_VERSION`, and a fingerprint
 /// that resolves to no retained generation (unknown, in-progress, or Reclaimed)
@@ -1275,14 +1660,14 @@ fn ec_distann_epoch_topology(
         name!(row_tier_bytes, i64),
         name!(directory_bytes, i64),
         name!(control_index_bytes, i64),
+        name!(payload_sidecar_row_count, Option<i64>),
+        name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
+        name!(payload_sidecar_heap_bytes, Option<i64>),
+        name!(payload_sidecar_index_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
-        if epoch_fingerprint.len() != 34 || epoch_fingerprint[0] != 2 || epoch_fingerprint[1] != 0 {
-            return Err(
-                "EC_EPOCH_FINGERPRINT_VERSION: unsupported epoch fingerprint version".to_owned(),
-            );
-        }
+        DistannEpochFingerprint::decode(&epoch_fingerprint)?;
         let index_oid = index_regclass.oid();
         let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
@@ -1491,13 +1876,35 @@ fn ec_distann_stage_epoch_batch(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+        let _payload_sidecar_guard = generation
+            .payload_sidecar_relid
+            .map(|relation_oid| {
+                HeapRelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: payload-sidecar relation is absent".to_owned()
+                })
+            })
+            .transpose()?;
         validate_generation_relations(&generation, &descriptor, control_owner)?;
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
+        let payload_sidecar_relation = generation
+            .payload_sidecar_relid
+            .map(qualified_relation_name)
+            .transpose()?;
         reject_existing_vec_ids(&graph_relation, &batch.entries)?;
         let identity_attnum = identity_attnum(index_oid)?;
         let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
         let mut prepared = with_restricted_type_io_owner(control_owner, || {
-            prepare_entries(&batch.entries, shape, identity_attnum, &mut row_io)
+            prepare_entries(
+                &batch.entries,
+                shape,
+                identity_attnum,
+                &mut row_io,
+                descriptor.payload_cover.as_ref(),
+            )
         })?;
         if super::options::debug_fail_handoff_after_prepare() {
             return Err(
@@ -1505,7 +1912,13 @@ fn ec_distann_stage_epoch_batch(
             );
         }
 
-        insert_prepared_entries(&row_relation, &graph_relation, &mut prepared, shape)?;
+        insert_prepared_entries(
+            &row_relation,
+            &graph_relation,
+            payload_sidecar_relation.as_deref(),
+            &mut prepared,
+            shape,
+        )?;
         let journal = GenerationBatchCatalogRow {
             batch_seq,
             batch_digest: supplied_digest,
@@ -1582,12 +1995,9 @@ fn ec_distann_seal_epoch_handoff(
             generation.state,
             GenerationState::Ready | GenerationState::Published | GenerationState::Retired
         ) {
-            return generation
-                .ready_receipt
-                .map(|receipt| receipt.to_vec())
-                .ok_or_else(|| {
-                    "EC_BUILD_STATE: non-Building generation has no Ready receipt".to_owned()
-                });
+            return generation.ready_receipt.clone().ok_or_else(|| {
+                "EC_BUILD_STATE: non-Building generation has no Ready receipt".to_owned()
+            });
         }
         if generation.state != GenerationState::Building {
             return Err(format!(
@@ -1639,9 +2049,39 @@ fn ec_distann_seal_epoch_handoff(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+        unsafe {
+            pg_sys::LockRelationOid(
+                generation.directory_relid,
+                pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            )
+        };
+        let _payload_sidecar_guard = generation
+            .payload_sidecar_relid
+            .map(|relation_oid| {
+                HeapRelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: payload-sidecar relation is absent".to_owned()
+                })
+            })
+            .transpose()?;
+        if let Some(directory_relid) = generation.payload_sidecar_directory_relid {
+            unsafe {
+                pg_sys::LockRelationOid(
+                    directory_relid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+            };
+        }
         validate_generation_relations(&generation, &descriptor, control_owner)?;
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
         let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
+        let payload_sidecar_relation = generation
+            .payload_sidecar_relid
+            .map(qualified_relation_name)
+            .transpose()?;
         let identity_attnum = identity_attnum(index_oid)?;
         let physical = with_restricted_type_io_owner(control_owner, || {
             scan_physical_generation(
@@ -1654,16 +2094,54 @@ fn ec_distann_seal_epoch_handoff(
             )
         })?;
         let row_count = relation_row_count(&row_relation_name)?;
+        let payload_sidecar = match (
+            payload_sidecar_relation.as_deref(),
+            descriptor.payload_cover.as_ref(),
+        ) {
+            (Some(relation), Some(cover)) => Some(scan_payload_sidecar(
+                relation,
+                &graph_relation,
+                cover,
+                true,
+            )?),
+            (None, None) => None,
+            _ => {
+                return Err(
+                    "EC_GENERATION_MISSING: payload sidecar relation disagrees with descriptor"
+                        .to_owned(),
+                );
+            }
+        };
         if physical.record_count != expected_owner_count
             || row_count != expected_owner_count
             || physical.owner_stream_digest != expected_owner_digest
+            || payload_sidecar.is_some_and(|sidecar| sidecar.row_count != expected_owner_count)
         {
             return Err(
                 "EC_BUILD_INCOMPLETE: physical row/record count or owner digest mismatch"
                     .to_owned(),
             );
         }
-        let (graph_bytes, row_tier_bytes, directory_bytes) = generation_sizes(&generation)?;
+        let sizes = generation_sizes(&generation)?;
+        let payload_sidecar = match (
+            payload_sidecar,
+            sizes.payload_sidecar_heap_bytes,
+            sizes.payload_sidecar_index_bytes,
+        ) {
+            (Some(sidecar), Some(heap_bytes), Some(index_bytes)) => {
+                Some(DistannReadyReceiptPayloadSidecar {
+                    initial_content_digest: sidecar.content_digest,
+                    heap_bytes,
+                    index_bytes,
+                })
+            }
+            (None, None, None) => None,
+            _ => {
+                return Err(
+                    "EC_BUILD_INCOMPLETE: payload sidecar relation sizes are incomplete".to_owned(),
+                );
+            }
+        };
         let receipt = DistannReadyReceipt {
             node_id: generation.node_id,
             epoch: generation.epoch,
@@ -1677,16 +2155,13 @@ fn ec_distann_seal_epoch_handoff(
             persisted_graph_digest: physical.graph_digest,
             persisted_row_tier_digest: physical.row_tier_digest,
             local_directory_digest: physical.directory_digest,
-            graph_bytes,
-            row_tier_bytes,
-            directory_bytes,
+            graph_bytes: sizes.graph_bytes,
+            row_tier_bytes: sizes.row_tier_bytes,
+            directory_bytes: sizes.directory_bytes,
             state: DISTANN_READY_RECEIPT_STATE,
+            payload_sidecar,
         };
         let encoded = receipt.encode()?;
-        let fixed: [u8; DISTANN_READY_RECEIPT_BYTES] =
-            encoded.as_slice().try_into().map_err(|_| {
-                "EC_READY_RECEIPT: encoded receipt has the wrong fixed length".to_owned()
-            })?;
         generation_catalog::mark_generation_ready(
             index_oid,
             logical_index_uuid,
@@ -1694,7 +2169,7 @@ fn ec_distann_seal_epoch_handoff(
             generation.next_batch_seq,
             generation.cumulative_record_count,
             generation.cumulative_owner_digest,
-            fixed,
+            &encoded,
         )?;
         Ok(encoded)
     })()

@@ -539,6 +539,10 @@ struct DistannBenchmarkSeedVariant {
     /// configs default to the production projected path.
     #[serde(default = "default_true")]
     payload_projection: bool,
+    /// Task 229 same-generation covered sidecar/read-tier A/B. Existing
+    /// configs default to the production sidecar-enabled path.
+    #[serde(default = "default_true")]
+    covering_sidecar: bool,
     /// NFR-022 pre-registration for a decision-bearing arm. Repeated
     /// registrations use the same id across the 10k/50k/100k steps.
     #[serde(default)]
@@ -671,6 +675,17 @@ struct DistannLocalMultinodeStep {
     coordinator_outside_roster: bool,
     #[serde(default)]
     physical_benchmark: bool,
+    /// Canonical comma-separated physical attnums captured into the Task 229
+    /// generation-owned payload cover.
+    #[serde(default)]
+    covering_payload_attnums: Option<String>,
+    /// Preregistered fresh-build position in a counterbalanced format pair.
+    #[serde(default)]
+    counterbalance_position: Option<String>,
+    /// Measure Task 229 single-row replacement/delete latency on this fresh
+    /// covered or no-cover fixture.
+    #[serde(default)]
+    task229_dml_benchmark: bool,
     #[serde(default)]
     benchmark_iterations: Option<u32>,
     /// Concurrent latency levels for the physical benchmark throughput curve.
@@ -3598,6 +3613,14 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_insert_work".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_sidecar_insert_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_sidecar_insert_work".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_dml_latency ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_dml_latency".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_paired_recall".into(), values));
@@ -5178,6 +5201,32 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step
+                    .counterbalance_position
+                    .as_deref()
+                    .is_some_and(|label| {
+                        label.is_empty()
+                            || label.len() > 64
+                            || !label.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+                            })
+                    })
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} counterbalance_position must be a 1-to-64-byte ASCII identifier",
+                        step.name
+                    )
+                }
+                if step.task229_dml_benchmark
+                    && (!step.physical_benchmark
+                        || step.stage_counter_only
+                        || step.skip_single_control)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} task229_dml_benchmark requires physical_benchmark with the single control enabled",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only && step.materialization_correctness {
                     bail!(
                         "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
@@ -5218,6 +5267,7 @@ impl SuiteStep {
                                     && candidate.packed_payload == control.packed_payload
                                     && candidate.expanded_locator == control.expanded_locator
                                     && candidate.payload_projection == control.payload_projection
+                                    && candidate.covering_sidecar == control.covering_sidecar
                                     && same_search(control, candidate)
                             })
                     });
@@ -5231,6 +5281,7 @@ impl SuiteStep {
                                     && candidate.packed_payload == control.packed_payload
                                     && candidate.expanded_locator == control.expanded_locator
                                     && candidate.payload_projection == control.payload_projection
+                                    && candidate.covering_sidecar == control.covering_sidecar
                                     && same_search(control, candidate)
                             })
                     });
@@ -5246,6 +5297,7 @@ impl SuiteStep {
                                     && candidate.packed_payload == control.packed_payload
                                     && candidate.expanded_locator == control.expanded_locator
                                     && candidate.payload_projection == control.payload_projection
+                                    && candidate.covering_sidecar == control.covering_sidecar
                                     && candidate.seed_strategy == control.seed_strategy
                                     && candidate.head_search_width == control.head_search_width
                                     && candidate.head_seed_count == control.head_seed_count
@@ -5269,6 +5321,7 @@ impl SuiteStep {
                                         && candidate.expanded_locator == control.expanded_locator
                                         && candidate.payload_projection
                                             == control.payload_projection
+                                        && candidate.covering_sidecar == control.covering_sidecar
                                         && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
@@ -5285,6 +5338,9 @@ impl SuiteStep {
                                         && candidate.typed_locator == control.typed_locator
                                         && candidate.packed_payload == control.packed_payload
                                         && candidate.traversal_replica == control.traversal_replica
+                                        && candidate.payload_projection
+                                            == control.payload_projection
+                                        && candidate.covering_sidecar == control.covering_sidecar
                                         && same_search(control, candidate)
                                 })
                         });
@@ -5301,6 +5357,25 @@ impl SuiteStep {
                                         && candidate.packed_payload == control.packed_payload
                                         && candidate.expanded_locator == control.expanded_locator
                                         && candidate.traversal_replica == control.traversal_replica
+                                        && candidate.covering_sidecar == control.covering_sidecar
+                                        && same_search(control, candidate)
+                                })
+                        });
+                    let has_covering_sidecar_pair =
+                        step.benchmark_seed_variants.iter().any(|control| {
+                            !control.covering_sidecar
+                                && step.benchmark_seed_variants.iter().any(|candidate| {
+                                    candidate.covering_sidecar
+                                        && candidate.materialization_batch_size
+                                            == control.materialization_batch_size
+                                        && candidate.owner_payload_plan_cache
+                                            == control.owner_payload_plan_cache
+                                        && candidate.typed_locator == control.typed_locator
+                                        && candidate.packed_payload == control.packed_payload
+                                        && candidate.expanded_locator == control.expanded_locator
+                                        && candidate.payload_projection
+                                            == control.payload_projection
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -5310,9 +5385,16 @@ impl SuiteStep {
                         && !has_packed_payload_pair
                         && !has_expanded_locator_pair
                         && !has_payload_projection_pair
+                        && !has_covering_sidecar_pair
                     {
                         bail!(
-                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, or payload-projection pair",
+                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, payload-projection, or covering-sidecar pair",
+                            step.name
+                        )
+                    }
+                    if has_covering_sidecar_pair && step.covering_payload_attnums.is_none() {
+                        bail!(
+                            "distann-local-multinode step {:?} covering-sidecar pair requires covering_payload_attnums",
                             step.name
                         )
                     }
@@ -6296,6 +6378,19 @@ fn expand_distann_local_multinode(
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
     }
+    push_opt_arg(
+        &mut args,
+        "--covering-payload-attnums",
+        step.covering_payload_attnums.as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-position-label",
+        step.counterbalance_position.as_deref(),
+    );
+    if step.task229_dml_benchmark {
+        args.push("--task229-dml-benchmark".into());
+    }
     if step.gateway_trace {
         args.push("--gateway-trace".into());
     }
@@ -6551,7 +6646,7 @@ fn expand_distann_local_multinode(
     }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             variant.name,
             variant.seed_strategy,
             variant.head_search_width,
@@ -6578,6 +6673,11 @@ fn expand_distann_local_multinode(
                 "off"
             },
             if variant.payload_projection {
+                "on"
+            } else {
+                "off"
+            },
+            if variant.covering_sidecar {
                 "on"
             } else {
                 "off"
@@ -7570,6 +7670,23 @@ psql header noise\n\
             Some("false")
         );
         assert_eq!(exact.1.get("pass").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn distann_task229_dml_metrics_are_structured() {
+        let raw = "\
+[distann-multicluster] physical_benchmark_sidecar_insert_work scale=100k node=cluster covered_generation=true statements=160 record_rows_appended=160 row_tier_rows_appended=160 sidecar_rows_appended=160 sidecar_heap_growth_bytes=8192 sidecar_index_growth_bytes=8192 pass=true\n\
+[distann-multicluster] physical_benchmark_dml_latency scale=100k operation=replacement statements=32 mean_ms=4.1 p50_ms=4.0 p95_ms=5.0 p99_ms=5.4 max_ms=5.4 pass=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        for metric in [
+            "physical_benchmark_sidecar_insert_work",
+            "physical_benchmark_dml_latency",
+        ] {
+            assert!(
+                rows.iter().any(|(candidate, _)| candidate == metric),
+                "missing Task 229 metric {metric}: {rows:?}"
+            );
+        }
     }
 
     #[test]
@@ -8836,14 +8953,14 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "persisted-w32-s32:persisted_head:32:32:rabitq:0:off:4:100:off",
+                    "persisted-w32-s32:persisted_head:32:32:rabitq:0:off:4:100:off:off:off:off:on:on",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "owner-oracle:owner_scan:32:32:rabitq:10:off:4:100:off",
+                    "owner-oracle:owner_scan:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
                 ]
         }));
     }
@@ -9150,14 +9267,14 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-off:persisted_head:32:32:rabitq:10:off:4:100:off",
+                    "plan-off:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-on:persisted_head:32:32:rabitq:10:on:4:100:off",
+                    "plan-on:persisted_head:32:32:rabitq:10:on:4:100:off:off:off:off:on:on",
                 ]
         }));
     }
@@ -9208,9 +9325,74 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "production:persisted_head:32:32:rabitq:10:off:4:100:off",
+                    "production:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_covering_sidecar_pair_requires_cover_and_expands_full_axis() {
+        let raw = r#"{
+          "name": "task229-covering-sidecar",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "task229-10k",
+            "physical_benchmark": true,
+            "materialization_correctness": true,
+            "corpus_prefix": "ec_real_10k",
+            "benchmark_seed_variants": [
+              {
+                "name": "row-tier",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10,
+                "covering_sidecar": false
+              },
+              {
+                "name": "covered",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10,
+                "covering_sidecar": true
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("covering pair requires declared cover");
+        assert!(error
+            .to_string()
+            .contains("requires covering_payload_attnums"));
+
+        let raw = raw.replace(
+            "\"physical_benchmark\": true,",
+            "\"physical_benchmark\": true,\n            \"covering_payload_attnums\": \"1\",\n            \"counterbalance_position\": \"pair-a-first\",\n            \"task229_dml_benchmark\": true,",
+        );
+        let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
+        validate_config(&config).expect("isolated covering pair validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--covering-payload-attnums", "1"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--benchmark-position-label", "pair-a-first"]));
+        assert!(command.contains(&"--task229-dml-benchmark".into()));
+        for expected in [
+            "row-tier:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:off",
+            "covered:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
+        ] {
+            assert!(command
+                .windows(2)
+                .any(|window| window == ["--benchmark-seed-variant", expected]));
+        }
     }
 
     #[test]
@@ -9251,8 +9433,8 @@ psql header noise\n\
             .expand(&config.defaults, &conn())
             .expect("step expands");
         for expected in [
-            "owner:persisted_head:32:32:rabitq:10:off:4:100:off",
-            "replica:persisted_head:32:32:rabitq:10:off:4:100:on",
+            "owner:persisted_head:32:32:rabitq:10:off:4:100:off:off:off:off:on:on",
+            "replica:persisted_head:32:32:rabitq:10:off:4:100:on:off:off:off:on:on",
         ] {
             assert!(command
                 .windows(2)

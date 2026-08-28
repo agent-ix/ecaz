@@ -60,7 +60,14 @@ mod options;
 pub mod page;
 mod participant_lifecycle;
 mod payload_projection;
+mod payload_sidecar;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::payload_sidecar::resolve_payload_cover as resolve_payload_cover_for_test;
 mod physical_dml;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::physical_dml::{
+    insert_from_owner_payload_for_test, tombstone_owner_record as tombstone_owner_record_for_test,
+};
 pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
@@ -102,7 +109,7 @@ pub use self::generation_descriptor::{
     DistannOwnerExpectation, DistannRosterEntry, DISTANN_BUILD_SPEC_VERSION,
     DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
     DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
-    DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
+    DISTANN_GENERATION_DESCRIPTOR_COVER_VERSION, DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET,
@@ -159,16 +166,18 @@ pub use self::lifecycle_wire::{
 };
 pub use self::manifest_v2::{
     DistannEpochFingerprint, DistannEpochManifestV2, DistannManifestBuildOptions,
-    DistannManifestCodecParameters, DistannReadyReceipt, DistannSourceSnapshot,
-    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_EPOCH_MANIFEST_VERSION,
-    DISTANN_EPOCH_MANIFEST_VERSION_OFFSET, DISTANN_MANIFEST_BUILD_OPTIONS_BYTES,
-    DISTANN_MANIFEST_BUILD_OPTIONS_VERSION, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET,
-    DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES, DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
-    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_READY_RECEIPT_BYTES,
-    DISTANN_READY_RECEIPT_STATE, DISTANN_READY_RECEIPT_VERSION,
+    DistannManifestCodecParameters, DistannReadyReceipt, DistannReadyReceiptPayloadSidecar,
+    DistannSourceSnapshot, DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_EPOCH_MANIFEST_COVER_VERSION,
+    DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+    DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+    DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION, DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET,
+    DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_COVER_VERSION,
+    DISTANN_READY_RECEIPT_MAX_BYTES, DISTANN_READY_RECEIPT_STATE, DISTANN_READY_RECEIPT_VERSION,
     DISTANN_READY_RECEIPT_VERSION_OFFSET, DISTANN_SOURCE_SNAPSHOT_VERSION,
     DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
 };
+pub use self::payload_sidecar::DistannPayloadCoverDescriptorV1;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::row_schema::resolve_relation_schema;
 pub use self::row_schema::{
