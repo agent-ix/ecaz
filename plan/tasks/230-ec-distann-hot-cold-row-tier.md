@@ -1,18 +1,15 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 reviewed NOT DONE (seq-01); packet 002
+Status: **planning packet 001 seq-03 revised; outside re-review open; packet 002
 persisted-format implementation remains gated** (updated 2026-08-28; Task 229 is
-review-closed STOP; `reviews/task-230/001-plan/`, verdict
-`reviews/task-230/001-plan/feedback/2026-08-28-01-reviewer.md`). Five items block
-authorization: hot-tier `ecvector` `STORAGE = external` leaves the exact-vector
-TOAST fetch unchanged so the plan's mechanism is unstated; §2/§3 disagree on
-whether the hot tuple stores `cold_tid`; §2/§4 disagree on the visibility
-authority; the mandatory-explicit hot identity attnum is unbuildable for the
-supported `bytea(16)` identity; and graph record V2's header growth invalidates
-the compile-time node offset constants. Two further items (heap-derived byte
-bounds; primary-gate projection shape against Task 229's measured 100k
-regression) are required before packet 004 preregistration. Priority: P1
-storage/retrieval latency.
+review-closed STOP; request `reviews/task-230/001-plan/request.md`; prior verdict
+`reviews/task-230/001-plan/feedback/2026-08-28-01-reviewer.md`; disposition
+`reviews/task-230/001-plan/artifacts/seq-01-disposition.md`). Seq-03 resolves the
+five authorization blockers and both preregistration findings with an inline
+PLAIN vector contract, 1,536-dimension build boundary, sole graph locator pair,
+graph-gated visibility, implicit UUID/bytea(16) identity, trailing V2 cold TID,
+heap-derived accounting, and an id-only primary gate. Priority: P1 storage/
+retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
