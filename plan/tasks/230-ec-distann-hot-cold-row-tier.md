@@ -62,9 +62,9 @@ are required.
 
 ### P1 — Vertical format
 
-- Define a generation-owned hot tier containing vec_id, tombstone/visibility
-  metadata, the full-precision exact vector, and an explicitly bounded scalar
-  cover.
+- Define a generation-owned hot tier containing vec_id, the full-precision
+  exact vector, implicit source identity, and an explicitly bounded optional
+  scalar cover. Graph current/tombstone state is the sole visibility gate.
 - Define a cold tier containing every remaining source attribute with enough
   attnum/type metadata to reconstruct the original row descriptor exactly.
 - Store each logical attribute in exactly one authoritative tier. Do not keep a

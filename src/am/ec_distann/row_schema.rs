@@ -9,6 +9,23 @@ pub const DISTANN_ROW_SCHEMA_DOMAIN: &[u8] = b"ec_distann_row_schema_v1\0";
 pub const DISTANN_ROW_SCHEMA_VERSION_OFFSET: usize = 0;
 const DISTANN_MAX_PHYSICAL_ATTRIBUTES: usize = 1664;
 
+/// Closed PG18 binary-I/O-stable scalar set shared by compact generation
+/// layouts. Variable-width, collatable, domain, array, and user-defined types
+/// deliberately return `None`.
+pub(crate) fn fixed_binary_width(type_namespace: &str, type_name: &str) -> Option<u16> {
+    if type_namespace != "pg_catalog" {
+        return None;
+    }
+    match type_name {
+        "bool" => Some(1),
+        "int2" => Some(2),
+        "int4" | "float4" | "date" => Some(4),
+        "int8" | "float8" | "time" | "timestamp" | "timestamptz" => Some(8),
+        "uuid" => Some(16),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannRowSchemaAttribute {
     pub attnum: u16,

@@ -79,6 +79,7 @@ pub(crate) use self::remote_transport::read_transport_snapshot_for_test;
 pub(crate) use self::remote_transport::remote_timeout_probe_for_test;
 mod roster;
 mod routine;
+mod row_layout;
 mod row_schema;
 mod scan_registry;
 #[cfg(any(test, feature = "pg_test"))]

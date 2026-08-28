@@ -3,6 +3,7 @@
 use super::canonical_wire::{
     domain_digest, validate_null_bitmap, CanonicalDecoder, CanonicalEncoder,
 };
+use super::row_schema::fixed_binary_width;
 #[cfg(test)]
 use super::row_schema::DistannRowSchemaAttribute;
 use super::row_schema::DistannRowSchemaDescriptor;
@@ -36,20 +37,6 @@ pub struct DistannPayloadCoverDescriptorV1 {
     pub(crate) maximum_attribute_count: u16,
     pub(crate) row_schema_fingerprint: [u8; 32],
     pub(crate) attributes: Vec<DistannPayloadCoverAttributeV1>,
-}
-
-fn fixed_binary_width(type_namespace: &str, type_name: &str) -> Option<u16> {
-    if type_namespace != "pg_catalog" {
-        return None;
-    }
-    match type_name {
-        "bool" => Some(1),
-        "int2" => Some(2),
-        "int4" | "float4" | "date" => Some(4),
-        "int8" | "float8" | "time" | "timestamp" | "timestamptz" => Some(8),
-        "uuid" => Some(16),
-        _ => None,
-    }
 }
 
 impl DistannPayloadCoverDescriptorV1 {

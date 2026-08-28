@@ -217,6 +217,8 @@ struct EcDistannReloptions {
     source_identity_offset: i32,
     head_construction_offset: i32,
     covering_payload_attnums_offset: i32,
+    row_tier_layout_offset: i32,
+    hot_payload_attnums_offset: i32,
 }
 
 /// Task 207 construction A/B. The graph topology (`build_shards`) and the
@@ -244,6 +246,35 @@ impl HeadConstruction {
             "partition_union" => Ok(Self::PartitionUnion),
             other => Err(format!(
                 "invalid ec_distann head_construction reloption: expected 'stitched_bfs' or 'partition_union', got {other:?}"
+            )),
+        }
+    }
+}
+
+/// Task 230 persisted row-tier selection. The default preserves the complete
+/// legacy row heap; `HotCold` is legal only for distributed generations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowTierLayout {
+    RowHeap,
+    HotCold,
+}
+
+impl RowTierLayout {
+    pub(crate) const DEFAULT: Self = Self::RowHeap;
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::RowHeap => "row_heap",
+            Self::HotCold => "hot_cold",
+        }
+    }
+
+    fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "row_heap" => Ok(Self::RowHeap),
+            "hot_cold" => Ok(Self::HotCold),
+            other => Err(format!(
+                "invalid ec_distann row_tier_layout reloption: expected 'row_heap' or 'hot_cold', got {other:?}"
             )),
         }
     }
@@ -355,6 +386,10 @@ pub(super) struct EcDistannOptions {
     /// Task 229 opt-in physical row-tier cover. `None` preserves the legacy
     /// descriptor and relation set byte-for-byte.
     pub(super) covering_payload_attnums: Option<Vec<u16>>,
+    /// Task 230 opt-in authoritative vertical partition. The layout descriptor
+    /// is resolved and frozen during distributed build registration.
+    pub(super) row_tier_layout: RowTierLayout,
+    pub(super) hot_payload_attnums: Option<Vec<u16>>,
 }
 
 impl EcDistannOptions {
@@ -373,6 +408,8 @@ impl EcDistannOptions {
         distributed_control: false,
         head_construction: HeadConstruction::DEFAULT,
         covering_payload_attnums: None,
+        row_tier_layout: RowTierLayout::DEFAULT,
+        hot_payload_attnums: None,
     };
 
     pub(super) fn validate_head_sizing_inputs(&self) -> Result<(), String> {
@@ -441,18 +478,21 @@ impl EcDistannOptions {
     }
 }
 
-fn parse_covering_payload_attnums(raw: &str) -> Result<Vec<u16>, String> {
+fn parse_bounded_attnums(
+    raw: &str,
+    option_name: &str,
+    maximum_attributes: usize,
+) -> Result<Vec<u16>, String> {
     let invalid = |reason: &str| {
         format!(
-            "invalid ec_distann covering_payload_attnums reloption: {reason}; expected 1 to {} strictly increasing positive physical attnums in canonical comma-separated form",
-            super::payload_sidecar::DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES
+            "invalid ec_distann {option_name} reloption: {reason}; expected 1 to {maximum_attributes} strictly increasing positive physical attnums in canonical comma-separated form"
         )
     };
     if raw.is_empty() {
         return Err(invalid("value is empty"));
     }
     let tokens = raw.split(',').collect::<Vec<_>>();
-    if tokens.len() > super::payload_sidecar::DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES {
+    if tokens.len() > maximum_attributes {
         return Err(invalid("attribute count exceeds the format bound"));
     }
     let mut attnums = Vec::with_capacity(tokens.len());
@@ -477,6 +517,25 @@ fn parse_covering_payload_attnums(raw: &str) -> Result<Vec<u16>, String> {
         previous = attnum;
     }
     Ok(attnums)
+}
+
+fn parse_covering_payload_attnums(raw: &str) -> Result<Vec<u16>, String> {
+    parse_bounded_attnums(
+        raw,
+        "covering_payload_attnums",
+        super::payload_sidecar::DISTANN_PAYLOAD_COVER_MAX_ATTRIBUTES,
+    )
+}
+
+fn parse_hot_payload_attnums(raw: &str) -> Result<Vec<u16>, String> {
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    parse_bounded_attnums(
+        raw,
+        "hot_payload_attnums",
+        super::row_layout::DISTANN_HOT_SCALAR_MAX_ATTRIBUTES,
+    )
 }
 
 pub(super) fn register_gucs() {
@@ -1482,6 +1541,28 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             None,
             offset_of!(EcDistannReloptions, covering_payload_attnums_offset) as i32,
         );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"row_tier_layout\0".as_ptr().cast(),
+            b"Task 230 authoritative row-tier layout: 'row_heap' (default) or opt-in 'hot_cold'.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcDistannReloptions, row_tier_layout_offset) as i32,
+        );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"hot_payload_attnums\0".as_ptr().cast(),
+            b"Task 230 optional additional hot scalars as canonical, strictly increasing physical attnums (maximum 16); vector and source identity are implicit and must not appear.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcDistannReloptions, hot_payload_attnums_offset) as i32,
+        );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     })
 }
@@ -1546,9 +1627,37 @@ impl EcDistannReloptionsView {
                 parse_covering_payload_attnums(&value)
                     .unwrap_or_else(|error| pgrx::error!("{error}"))
             });
+        let row_tier_layout = match self
+            .read_string_reloption(reloptions.row_tier_layout_offset, "row_tier_layout")
+        {
+            Some(value) => RowTierLayout::parse_reloption(&value)
+                .unwrap_or_else(|error| pgrx::error!("{error}")),
+            None => RowTierLayout::DEFAULT,
+        };
+        let hot_payload_attnums = self
+            .read_string_reloption(reloptions.hot_payload_attnums_offset, "hot_payload_attnums")
+            .map(|value| {
+                parse_hot_payload_attnums(&value).unwrap_or_else(|error| pgrx::error!("{error}"))
+            });
         if covering_payload_attnums.is_some() && !reloptions.distributed_control {
             pgrx::error!(
                 "invalid ec_distann covering_payload_attnums reloption: a payload cover requires distributed_control=true"
+            );
+        }
+        if row_tier_layout == RowTierLayout::HotCold && !reloptions.distributed_control {
+            pgrx::error!(
+                "invalid ec_distann row_tier_layout reloption: hot_cold requires distributed_control=true"
+            );
+        }
+        match (row_tier_layout, hot_payload_attnums.as_ref()) {
+            (RowTierLayout::RowHeap, Some(_)) => pgrx::error!(
+                "invalid ec_distann hot_payload_attnums reloption: hot scalars require row_tier_layout='hot_cold'"
+            ),
+            _ => {}
+        }
+        if row_tier_layout == RowTierLayout::HotCold && covering_payload_attnums.is_some() {
+            pgrx::error!(
+                "invalid ec_distann row-tier reloptions: Task 229 payload cover and Task 230 hot_cold layout are mutually exclusive"
             );
         }
 
@@ -1567,6 +1676,8 @@ impl EcDistannReloptionsView {
             distributed_control: reloptions.distributed_control,
             head_construction,
             covering_payload_attnums,
+            row_tier_layout,
+            hot_payload_attnums,
         }
     }
 }
@@ -1583,8 +1694,8 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcDistannOpt
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_covering_payload_attnums, DistannSourceIdentityProvider, EcDistannOptions,
-        NeighborCodeFormat, ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        parse_covering_payload_attnums, parse_hot_payload_attnums, DistannSourceIdentityProvider,
+        EcDistannOptions, NeighborCodeFormat, RowTierLayout, ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
     };
 
     #[test]
@@ -1605,6 +1716,8 @@ mod tests {
             DistannSourceIdentityProvider::None
         );
         assert!(defaults.covering_payload_attnums.is_none());
+        assert_eq!(defaults.row_tier_layout, RowTierLayout::RowHeap);
+        assert!(defaults.hot_payload_attnums.is_none());
     }
 
     #[test]
@@ -1626,6 +1739,28 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         assert!(parse_covering_payload_attnums(&too_many).is_err());
+    }
+
+    #[test]
+    fn hot_payload_attnums_and_layout_are_canonical() {
+        assert_eq!(parse_hot_payload_attnums("1,2,16").unwrap(), vec![1, 2, 16]);
+        assert!(parse_hot_payload_attnums("").unwrap().is_empty());
+        for invalid in ["0", "01", "1,", ",1", "1, 2", "2,1", "1,1"] {
+            assert!(
+                parse_hot_payload_attnums(invalid).is_err(),
+                "{invalid:?} must be rejected"
+            );
+        }
+        assert_eq!(
+            RowTierLayout::parse_reloption("row_heap").unwrap(),
+            RowTierLayout::RowHeap
+        );
+        assert_eq!(
+            RowTierLayout::parse_reloption("hot_cold").unwrap(),
+            RowTierLayout::HotCold
+        );
+        assert!(RowTierLayout::parse_reloption("columnar").is_err());
+        assert_eq!(RowTierLayout::HotCold.as_str(), "hot_cold");
     }
 
     #[test]
