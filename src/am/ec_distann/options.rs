@@ -485,7 +485,7 @@ fn parse_bounded_attnums(
 ) -> Result<Vec<u16>, String> {
     let invalid = |reason: &str| {
         format!(
-            "invalid ec_distann {option_name} reloption: {reason}; expected 1 to {maximum_attributes} strictly increasing positive physical attnums in canonical comma-separated form"
+            "invalid ec_distann {option_name} reloption: {reason}; expected at most {maximum_attributes} strictly increasing positive physical attnums in canonical comma-separated form"
         )
     };
     if raw.is_empty() {
@@ -1649,11 +1649,10 @@ impl EcDistannReloptionsView {
                 "invalid ec_distann row_tier_layout reloption: hot_cold requires distributed_control=true"
             );
         }
-        match (row_tier_layout, hot_payload_attnums.as_ref()) {
-            (RowTierLayout::RowHeap, Some(_)) => pgrx::error!(
+        if row_tier_layout == RowTierLayout::RowHeap && hot_payload_attnums.is_some() {
+            pgrx::error!(
                 "invalid ec_distann hot_payload_attnums reloption: hot scalars require row_tier_layout='hot_cold'"
-            ),
-            _ => {}
+            );
         }
         if row_tier_layout == RowTierLayout::HotCold && covering_payload_attnums.is_some() {
             pgrx::error!(

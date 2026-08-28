@@ -7,7 +7,7 @@ use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
 pub const DISTANN_ROW_SCHEMA_VERSION: u16 = 1;
 pub const DISTANN_ROW_SCHEMA_DOMAIN: &[u8] = b"ec_distann_row_schema_v1\0";
 pub const DISTANN_ROW_SCHEMA_VERSION_OFFSET: usize = 0;
-const DISTANN_MAX_PHYSICAL_ATTRIBUTES: usize = 1664;
+pub(crate) const DISTANN_MAX_PHYSICAL_ATTRIBUTES: usize = 1664;
 
 /// Closed PG18 binary-I/O-stable scalar set shared by compact generation
 /// layouts. Variable-width, collatable, domain, array, and user-defined types

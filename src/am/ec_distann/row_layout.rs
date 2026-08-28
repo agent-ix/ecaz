@@ -6,6 +6,7 @@
 use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
 use super::row_schema::{
     fixed_binary_width, DistannRowSchemaAttribute, DistannRowSchemaDescriptor,
+    DISTANN_MAX_PHYSICAL_ATTRIBUTES,
 };
 
 pub(crate) const DISTANN_ROW_TIER_LAYOUT_VERSION: u16 = 1;
@@ -16,10 +17,13 @@ pub(crate) const DISTANN_HOT_INTERNAL_COLUMNS: u16 = 1;
 pub(crate) const DISTANN_COLD_INTERNAL_COLUMNS: u16 = 1;
 
 const DISTANN_ROW_TIER_LAYOUT_DOMAIN: &[u8] = b"ec_distann_row_tier_layout_v1\0";
-const DISTANN_MAX_LAYOUT_ATTRIBUTES: usize = 1664;
 const POSTGRES_MAX_HEAP_ATTRIBUTES: usize = 1600;
+const POSTGRES_HEAP_TUPLE_HEADER_BYTES: usize = 23;
+const POSTGRES_MAXIMUM_ALIGNMENT: usize = 8;
+const POSTGRES_VARLENA_HEADER_BYTES: usize = 4;
 const DISTANN_SOURCE_IDENTITY_VALUE_BYTES: usize = 16;
 const POSTGRES_SHORT_VARLENA_HEADER_BYTES: usize = 1;
+const DISTANN_HOT_VEC_ID_BYTES: usize = 8;
 
 fn identity_maximum_inline_bytes(attribute: &DistannRowSchemaAttribute) -> Option<usize> {
     match (
@@ -32,6 +36,38 @@ fn identity_maximum_inline_bytes(attribute: &DistannRowSchemaAttribute) -> Optio
         }
         _ => None,
     }
+}
+
+fn minimum_hot_tuple_bytes(
+    exact_vector_dimensions: u16,
+    identity_inline_bytes: usize,
+    hot_scalars: &[DistannHotScalarAttributeV1],
+) -> Result<u32, String> {
+    let hot_attribute_count = DISTANN_HOT_INTERNAL_COLUMNS as usize + 2 + hot_scalars.len();
+    let null_bitmap_bytes = hot_attribute_count.div_ceil(8);
+    let unaligned_header_bytes = POSTGRES_HEAP_TUPLE_HEADER_BYTES
+        .checked_add(null_bitmap_bytes)
+        .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot tuple header overflow".to_owned())?;
+    let aligned_header_bytes = unaligned_header_bytes
+        .checked_add(POSTGRES_MAXIMUM_ALIGNMENT - 1)
+        .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot tuple header overflow".to_owned())?
+        & !(POSTGRES_MAXIMUM_ALIGNMENT - 1);
+    let vector_datum_bytes = usize::from(exact_vector_dimensions)
+        .checked_mul(std::mem::size_of::<f32>())
+        .and_then(|bytes| bytes.checked_add(POSTGRES_VARLENA_HEADER_BYTES))
+        .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot vector width overflow".to_owned())?;
+    let scalar_bytes = hot_scalars.iter().try_fold(0_usize, |sum, scalar| {
+        sum.checked_add(usize::from(scalar.binary_width))
+            .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot scalar width overflow".to_owned())
+    })?;
+    let minimum = aligned_header_bytes
+        .checked_add(DISTANN_HOT_VEC_ID_BYTES)
+        .and_then(|bytes| bytes.checked_add(vector_datum_bytes))
+        .and_then(|bytes| bytes.checked_add(identity_inline_bytes))
+        .and_then(|bytes| bytes.checked_add(scalar_bytes))
+        .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot tuple width overflow".to_owned())?;
+    u32::try_from(minimum)
+        .map_err(|_| "EC_GENERATION_DESCRIPTOR: hot tuple width exceeds u32".to_owned())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +189,7 @@ pub(crate) struct DistannRowTierLayoutDescriptorV1 {
     pub(crate) maximum_hot_scalar_count: u16,
     pub(crate) exact_vector_dimensions: u16,
     pub(crate) maximum_hot_tuple_bytes: u32,
+    pub(crate) source_identity_maximum_inline_bytes: u16,
     pub(crate) row_schema_fingerprint: [u8; 32],
     pub(crate) indexed_vector_attnum: u16,
     pub(crate) source_identity_attnum: u16,
@@ -173,11 +210,32 @@ impl DistannRowTierLayoutDescriptorV1 {
             || self.indexed_vector_attnum == self.source_identity_attnum
             || self.hot_scalars.len() > DISTANN_HOT_SCALAR_MAX_ATTRIBUTES
             || self.placements.is_empty()
-            || self.placements.len() > DISTANN_MAX_LAYOUT_ATTRIBUTES
+            || self.placements.len() > DISTANN_MAX_PHYSICAL_ATTRIBUTES
         {
             return Err(
                 "EC_GENERATION_DESCRIPTOR: invalid hot/cold row-tier version or shape".to_owned(),
             );
+        }
+
+        let identity_inline_bytes = usize::from(self.source_identity_maximum_inline_bytes);
+        if identity_inline_bytes != DISTANN_SOURCE_IDENTITY_VALUE_BYTES
+            && identity_inline_bytes
+                != DISTANN_SOURCE_IDENTITY_VALUE_BYTES + POSTGRES_SHORT_VARLENA_HEADER_BYTES
+        {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: invalid source identity inline width".to_owned(),
+            );
+        }
+        let minimum_hot_tuple_bytes = minimum_hot_tuple_bytes(
+            self.exact_vector_dimensions,
+            usize::from(self.source_identity_maximum_inline_bytes),
+            &self.hot_scalars,
+        )?;
+        if self.maximum_hot_tuple_bytes < minimum_hot_tuple_bytes {
+            return Err(format!(
+                "EC_GENERATION_DESCRIPTOR: maximum hot tuple bytes {} is below descriptor-derived minimum {minimum_hot_tuple_bytes}",
+                self.maximum_hot_tuple_bytes
+            ));
         }
 
         let mut previous_hot = 0_u16;
@@ -241,14 +299,26 @@ impl DistannRowTierLayoutDescriptorV1 {
             }
             previous_attnum = placement.attnum;
         }
-        if !vector_is_hot
-            || !identity_is_hot
-            || self.hot_scalars.iter().any(|scalar| {
-                self.placements.iter().all(|placement| {
-                    placement.attnum != scalar.attnum || placement.tier != DistannRowTierV1::Hot
-                })
+        if !vector_is_hot {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: indexed vector is not in the hot tier".to_owned(),
+            );
+        }
+        if !identity_is_hot {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: source identity is not in the hot tier".to_owned(),
+            );
+        }
+        if self.hot_scalars.iter().any(|scalar| {
+            self.placements.iter().all(|placement| {
+                placement.attnum != scalar.attnum || placement.tier != DistannRowTierV1::Hot
             })
-            || usize::from(next_hot - 1) > POSTGRES_MAX_HEAP_ATTRIBUTES
+        }) {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: declared hot scalar is not in the hot tier".to_owned(),
+            );
+        }
+        if usize::from(next_hot - 1) > POSTGRES_MAX_HEAP_ATTRIBUTES
             || usize::from(next_cold - 1) > POSTGRES_MAX_HEAP_ATTRIBUTES
         {
             return Err(
@@ -289,20 +359,35 @@ impl DistannRowTierLayoutDescriptorV1 {
                 );
             }
         }
-        live.iter()
+        let vector = live
+            .iter()
             .find(|attribute| attribute.attnum == self.indexed_vector_attnum)
             .ok_or_else(|| {
                 "EC_SCHEMA_MISMATCH: indexed vector is absent from the hot/cold schema".to_owned()
             })?;
+        if vector.generated_kind != 0 || vector.type_name != "ecvector" {
+            return Err(
+                "EC_SCHEMA_MISMATCH: indexed vector is not a non-generated ecvector".to_owned(),
+            );
+        }
         let identity = live
             .iter()
             .find(|attribute| attribute.attnum == self.source_identity_attnum)
             .ok_or_else(|| {
                 "EC_SCHEMA_MISMATCH: source identity is absent from the hot/cold schema".to_owned()
             })?;
-        identity_maximum_inline_bytes(identity).ok_or_else(|| {
+        let identity_inline_bytes = identity_maximum_inline_bytes(identity).ok_or_else(|| {
             "EC_SCHEMA_MISMATCH: source identity is not UUID or bytea(16)".to_owned()
         })?;
+        if identity.generated_kind != 0 {
+            return Err("EC_SCHEMA_MISMATCH: source identity must not be generated".to_owned());
+        }
+        if usize::from(self.source_identity_maximum_inline_bytes) != identity_inline_bytes {
+            return Err(
+                "EC_SCHEMA_MISMATCH: source identity inline width differs from the row schema"
+                    .to_owned(),
+            );
+        }
         for scalar in &self.hot_scalars {
             let attribute = live
                 .iter()
@@ -330,6 +415,7 @@ impl DistannRowTierLayoutDescriptorV1 {
         encoder.put_u16(self.maximum_hot_scalar_count);
         encoder.put_u16(self.exact_vector_dimensions);
         encoder.put_u32(self.maximum_hot_tuple_bytes);
+        encoder.put_u16(self.source_identity_maximum_inline_bytes);
         encoder.put_fixed(&self.row_schema_fingerprint);
         encoder.put_u16(self.indexed_vector_attnum);
         encoder.put_u16(self.source_identity_attnum);
@@ -365,6 +451,8 @@ impl DistannRowTierLayoutDescriptorV1 {
         let maximum_hot_scalar_count = decoder.get_u16("maximum hot scalar count")?;
         let exact_vector_dimensions = decoder.get_u16("exact vector dimensions")?;
         let maximum_hot_tuple_bytes = decoder.get_u32("maximum hot tuple bytes")?;
+        let source_identity_maximum_inline_bytes =
+            decoder.get_u16("source identity maximum inline bytes")?;
         let row_schema_fingerprint = decoder.get_fixed("row schema fingerprint")?;
         let indexed_vector_attnum = decoder.get_u16("indexed vector attnum")?;
         let source_identity_attnum = decoder.get_u16("source identity attnum")?;
@@ -390,7 +478,7 @@ impl DistannRowTierLayoutDescriptorV1 {
             });
         }
         let placement_count = decoder.get_u16("row-tier placement count")? as usize;
-        if placement_count == 0 || placement_count > DISTANN_MAX_LAYOUT_ATTRIBUTES {
+        if placement_count == 0 || placement_count > DISTANN_MAX_PHYSICAL_ATTRIBUTES {
             return Err("EC_GENERATION_DESCRIPTOR: invalid row-tier placement count".to_owned());
         }
         let mut placements = Vec::with_capacity(placement_count);
@@ -407,6 +495,7 @@ impl DistannRowTierLayoutDescriptorV1 {
             maximum_hot_scalar_count,
             exact_vector_dimensions,
             maximum_hot_tuple_bytes,
+            source_identity_maximum_inline_bytes,
             row_schema_fingerprint,
             indexed_vector_attnum,
             source_identity_attnum,
@@ -495,6 +584,35 @@ pub(crate) fn resolve_hot_cold_layout(
         hot_scalars.push(DistannHotScalarAttributeV1::from_schema(attribute)?);
         previous = attnum;
     }
+    let vector = row_schema
+        .attributes
+        .iter()
+        .find(|attribute| attribute.attnum == indexed_vector_attnum)
+        .ok_or_else(|| {
+            "EC_SCHEMA_UNSUPPORTED: indexed vector is absent from the frozen row schema".to_owned()
+        })?;
+    if vector.dropped || vector.generated_kind != 0 || vector.type_name != "ecvector" {
+        return Err(
+            "EC_SCHEMA_UNSUPPORTED: indexed vector must be a live, non-generated ecvector"
+                .to_owned(),
+        );
+    }
+    let identity = row_schema
+        .attributes
+        .iter()
+        .find(|attribute| attribute.attnum == source_identity_attnum)
+        .ok_or_else(|| {
+            "EC_SCHEMA_UNSUPPORTED: source identity is absent from the frozen row schema".to_owned()
+        })?;
+    if identity.dropped || identity.generated_kind != 0 {
+        return Err(
+            "EC_SCHEMA_UNSUPPORTED: source identity must be live and non-generated".to_owned(),
+        );
+    }
+    let source_identity_maximum_inline_bytes =
+        identity_maximum_inline_bytes(identity).ok_or_else(|| {
+            "EC_SCHEMA_UNSUPPORTED: source identity is not UUID or bytea(16)".to_owned()
+        })?;
     let mut placements = Vec::with_capacity(row_schema.non_dropped_count());
     let mut next_hot = DISTANN_HOT_INTERNAL_COLUMNS + 1;
     let mut next_cold = DISTANN_COLD_INTERNAL_COLUMNS + 1;
@@ -541,6 +659,10 @@ pub(crate) fn resolve_hot_cold_layout(
         maximum_hot_scalar_count: DISTANN_HOT_SCALAR_MAX_ATTRIBUTES as u16,
         exact_vector_dimensions,
         maximum_hot_tuple_bytes,
+        source_identity_maximum_inline_bytes: u16::try_from(source_identity_maximum_inline_bytes)
+            .map_err(|_| {
+            "EC_SCHEMA_UNSUPPORTED: source identity width exceeds u16".to_owned()
+        })?,
         row_schema_fingerprint: row_schema.fingerprint()?,
         indexed_vector_attnum,
         source_identity_attnum,
@@ -626,12 +748,44 @@ mod tests {
         }
     }
 
+    fn derived_hot_tuple_bound(
+        row_schema: &DistannRowSchemaDescriptor,
+        exact_vector_dimensions: u16,
+        source_identity_attnum: u16,
+        requested_hot_attnums: &[u16],
+    ) -> u32 {
+        let identity = row_schema
+            .attributes
+            .iter()
+            .find(|attribute| attribute.attnum == source_identity_attnum)
+            .unwrap();
+        let hot_scalars = requested_hot_attnums
+            .iter()
+            .map(|attnum| {
+                let attribute = row_schema
+                    .attributes
+                    .iter()
+                    .find(|attribute| attribute.attnum == *attnum)
+                    .unwrap();
+                DistannHotScalarAttributeV1::from_schema(attribute).unwrap()
+            })
+            .collect::<Vec<_>>();
+        minimum_hot_tuple_bytes(
+            exact_vector_dimensions,
+            identity_maximum_inline_bytes(identity).unwrap(),
+            &hot_scalars,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn layout_round_trip_partitions_every_attribute_once() {
         let schema = schema();
-        let descriptor = resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[1]).unwrap();
+        let maximum_hot_tuple_bytes = derived_hot_tuple_bound(&schema, 1_536, 2, &[1]);
+        let descriptor =
+            resolve_hot_cold_layout(&schema, 4, 2, 1_536, maximum_hot_tuple_bytes, &[1]).unwrap();
         assert_eq!(descriptor.exact_vector_dimensions, 1_536);
-        assert_eq!(descriptor.maximum_hot_tuple_bytes, 6_400);
+        assert_eq!(descriptor.maximum_hot_tuple_bytes, maximum_hot_tuple_bytes);
         assert_eq!(
             descriptor
                 .placements
@@ -656,20 +810,23 @@ mod tests {
     #[test]
     fn layout_keeps_identity_implicit_and_rejects_implicit_or_variable_hot_values() {
         let schema = schema();
-        let no_additional = resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[]).unwrap();
+        let no_additional_bound = derived_hot_tuple_bound(&schema, 1_536, 2, &[]);
+        let scalar_bound = derived_hot_tuple_bound(&schema, 1_536, 2, &[1]);
+        let no_additional =
+            resolve_hot_cold_layout(&schema, 4, 2, 1_536, no_additional_bound, &[]).unwrap();
         assert!(no_additional.hot_scalars.is_empty());
         assert!(
-            resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[1, 2])
+            resolve_hot_cold_layout(&schema, 4, 2, 1_536, scalar_bound, &[1, 2])
                 .unwrap_err()
                 .contains("implicit hot")
         );
         assert!(
-            resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[1, 4])
+            resolve_hot_cold_layout(&schema, 4, 2, 1_536, scalar_bound, &[1, 4])
                 .unwrap_err()
                 .contains("implicit hot")
         );
         assert!(
-            resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[1, 5])
+            resolve_hot_cold_layout(&schema, 4, 2, 1_536, scalar_bound, &[1, 5])
                 .unwrap_err()
                 .contains("unsupported type")
         );
@@ -678,23 +835,36 @@ mod tests {
     #[test]
     fn layout_pins_dimension_tuple_and_bytea_identity_bounds() {
         let schema = schema();
-        assert!(resolve_hot_cold_layout(&schema, 4, 2, 1_537, 6_400, &[1]).is_err());
+        let uuid_bound = derived_hot_tuple_bound(&schema, 1_536, 2, &[1]);
+        assert!(resolve_hot_cold_layout(&schema, 4, 2, 1_537, uuid_bound, &[1]).is_err());
         assert!(resolve_hot_cold_layout(&schema, 4, 2, 1_536, 8_161, &[1]).is_err());
+        let descriptor = resolve_hot_cold_layout(&schema, 4, 2, 1_536, uuid_bound, &[1]).unwrap();
+        let mut impossible = descriptor.clone();
+        impossible.maximum_hot_tuple_bytes = 1;
+        assert!(impossible
+            .validate()
+            .unwrap_err()
+            .contains("descriptor-derived minimum"));
 
         let mut bytea_schema = schema;
         bytea_schema.attributes[1].type_name = "bytea".to_owned();
         bytea_schema.attributes[1].send_function = "pg_catalog.byteasend".to_owned();
         bytea_schema.attributes[1].receive_function = "pg_catalog.bytearecv".to_owned();
-        assert_eq!(
-            identity_maximum_inline_bytes(&bytea_schema.attributes[1]),
-            Some(17)
+        let bytea_bound = derived_hot_tuple_bound(&bytea_schema, 1_536, 2, &[1]);
+        assert_eq!(bytea_bound, uuid_bound + 1);
+        assert!(
+            resolve_hot_cold_layout(&bytea_schema, 4, 2, 1_536, uuid_bound, &[1])
+                .unwrap_err()
+                .contains("descriptor-derived minimum")
         );
-        resolve_hot_cold_layout(&bytea_schema, 4, 2, 1_536, 6_400, &[1]).unwrap();
+        resolve_hot_cold_layout(&bytea_schema, 4, 2, 1_536, bytea_bound, &[1]).unwrap();
     }
 
     #[test]
     fn layout_decode_rejects_unknown_version_tier_and_trailing_bytes() {
-        let descriptor = resolve_hot_cold_layout(&schema(), 4, 2, 1_536, 6_400, &[1]).unwrap();
+        let schema = schema();
+        let bound = derived_hot_tuple_bound(&schema, 1_536, 2, &[1]);
+        let descriptor = resolve_hot_cold_layout(&schema, 4, 2, 1_536, bound, &[1]).unwrap();
         let mut unknown_version = descriptor.encode().unwrap();
         unknown_version[0..2].copy_from_slice(&99_u16.to_le_bytes());
         assert!(DistannRowTierLayoutDescriptorV1::decode(&unknown_version).is_err());
@@ -713,7 +883,8 @@ mod tests {
     #[test]
     fn layout_schema_validation_detects_partition_and_type_drift() {
         let schema = schema();
-        let descriptor = resolve_hot_cold_layout(&schema, 4, 2, 1_536, 6_400, &[1]).unwrap();
+        let bound = derived_hot_tuple_bound(&schema, 1_536, 2, &[1]);
+        let descriptor = resolve_hot_cold_layout(&schema, 4, 2, 1_536, bound, &[1]).unwrap();
 
         let mut missing = descriptor.clone();
         missing.placements.pop();
@@ -722,5 +893,30 @@ mod tests {
         let mut drifted = schema.clone();
         drifted.attributes[1].type_name = "int8".to_owned();
         assert!(descriptor.validate_row_schema(&drifted).is_err());
+
+        let mut wrong_vector_schema = schema.clone();
+        wrong_vector_schema.attributes[3].type_name = "text".to_owned();
+        wrong_vector_schema.attributes[3].send_function = "pg_catalog.textsend".to_owned();
+        wrong_vector_schema.attributes[3].receive_function = "pg_catalog.textrecv".to_owned();
+        let mut wrong_vector = descriptor.clone();
+        wrong_vector.row_schema_fingerprint = wrong_vector_schema.fingerprint().unwrap();
+        assert!(wrong_vector
+            .validate_row_schema(&wrong_vector_schema)
+            .unwrap_err()
+            .contains("non-generated ecvector"));
+
+        let mut generated_vector_schema = schema.clone();
+        generated_vector_schema.attributes[3].generated_kind = b's';
+        let generated_bound = derived_hot_tuple_bound(&generated_vector_schema, 1_536, 2, &[1]);
+        assert!(resolve_hot_cold_layout(
+            &generated_vector_schema,
+            4,
+            2,
+            1_536,
+            generated_bound,
+            &[1]
+        )
+        .unwrap_err()
+        .contains("non-generated ecvector"));
     }
 }
