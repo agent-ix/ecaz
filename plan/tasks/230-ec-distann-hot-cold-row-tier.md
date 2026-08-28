@@ -1,9 +1,9 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-02
-descriptor foundation reviewed DONE (seq-02) with packet 002 still open for
-format/read-path coverage; persisted-format implementation authorized; entry
-condition 3 satisfied**
+Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
+descriptor slice review-closed DONE (seq-02), Graph V2 seq-03 implemented and
+review-open; persisted-format implementation authorized; entry condition 3
+satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -67,6 +67,14 @@ indexed-vector check is name-only and should pin send/receive function identity
 the way hot scalars do; and the two new `validate_row_schema` branches
 (generated identity, persisted-inline-width drift) need corrupt-fixture
 coverage.
+
+Packet 002 seq-03 Graph V2 checkpoint: code `3102e28ef` plus MSRV fix
+`9b13d2aca`; request `reviews/task-230/002-format-and-read-path/request.md` at
+seq-03. V2 appends the six-byte cold TID after every V1 byte, uses
+version-before-version-sized-length dispatch, rejects missing locators, leaves
+legacy/tagged and physical-V1 bytes unchanged, and has an independent frozen
+fixture. Three focused format tests and two fixture tests pass; formatting
+passes; clippy has only the five known pre-existing failures.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's

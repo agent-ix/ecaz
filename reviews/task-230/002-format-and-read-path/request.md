@@ -5,32 +5,44 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 02
+seq: 03
 ---
 
-# Task 230 packet 002 — row-layout descriptor foundation, seq-01 fixes
+# Task 230 packet 002 — Graph V2 locator trailer
 
-Review code checkpoint `8faac4bad` against reviewer seq-01 and the review-closed
-packet-001 contract at `reviews/task-230/001-plan/request.md` seq-04. This
-revision resolves all three blocking findings and the substantive non-blocking
-findings. It remains the first narrow packet-002 slice: opt-in plus canonical
-logical layout, without persisted hot/cold relation creation yet.
+Review code checkpoints `3102e28ef` and `9b13d2aca` against the review-closed
+packet-001 contract and reviewer seq-02, which accepted the descriptor
+foundation and authorized this Graph V2 slice. This remains a narrow
+packet-002 checkpoint: it defines the versioned graph bytes and dispatch API,
+but does not yet create hot/cold relations or switch generation callers to V2.
 
-## Scope
+## Graph V2 scope
 
-- `row_tier_layout='row_heap'|'hot_cold'`, default preserving row heap;
-- optional/empty `hot_payload_attnums` containing only additional fixed-width
-  scalar attnums, legal only for distributed hot/cold generations;
-- mutual exclusion with Task 229's covering sidecar;
-- `DistannRowTierLayoutDescriptorV1`, including canonical source placements,
-  implicit mandatory vector and UUID/`bytea(16)` identity, dimension and native
-  hot-tuple byte bounds, physical ordinals, encode/decode, digest, and frozen
-  row-schema validation;
-- the accepted one-column internal hot prefix (`vec_id` only), with no hot
-  tombstone field;
-- a 1,536-dimension maximum and 8,160-byte descriptor boundary; and
-- the `bytea(16)` identity contribution defined as 16 value bytes plus its
-  one-byte short-varlena header rather than `attlen=-1`.
+- Adds physical graph-record version 2 with `cold_tid` appended after the V1
+  search code, neighbor IDs, and neighbor codes. Every existing V1 field offset
+  and the complete V1 length remain unchanged.
+- Adds explicit version-sized length calculation plus versioned encode,
+  decode, and pooled-decode dispatch. The versioned path reads and admits the
+  first two bytes before applying the selected version's length check.
+- Leaves legacy tag/reserved `decode`/`decode_into` V1-sized and unchanged.
+  Existing legacy and physical-V1 writers must carry `cold_tid=None`; V1 cannot
+  silently discard a cold locator.
+- Requires valid hot and cold owner-local TIDs for V2 and preserves canonical
+  adjacency-padding validation.
+- Adds `distann_graph_record_v2.hex` plus an independent fixture decoder that
+  walks every field, compares the bytes after the version through the V1 end
+  with the frozen V1 fixture, and reads the six-byte trailer.
+- Exports the V2 format constant, trailer size, and offset helper through the
+  existing benchmark/test API.
+
+The follow-up `9b13d2aca` replaces `Option::is_none_or` with an equivalent
+Rust-1.75-compatible expression after the exact clippy gate caught the MSRV
+violation. No history was rewritten.
+
+## Prior descriptor slice
+
+Reviewer seq-02 accepted code `8faac4bad` as DONE for the descriptor slice. Its
+seq-01 disposition below remains for history.
 
 ## Seq-01 disposition
 
@@ -63,14 +75,15 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local output and provenance are recorded in `artifacts/manifest.md`:
+Packet-local seq-03 output and provenance are recorded in
+`artifacts/manifest.md`:
 
-- five focused PG18 row-layout tests pass, including impossible-bound,
-  UUID/bytea boundary, and vector/generated-schema cases;
-- the focused reloption canonicalization test passes; and
+- three focused PG18 physical-node version tests pass;
+- two independent V1/V2 golden-fixture tests pass;
 - formatting passes (`cargo fmt --all -- --check`);
 - the all-target PG18 clippy command introduces no error in a touched file and
-  records the five pre-existing repository failures above.
+  records only the five pre-existing repository failures already identified in
+  seq-02.
 
 No PG relation or callback behavior changes in this slice, so no pgrx cluster
 test is claimed. Full format/read-path PG18 coverage remains required before
@@ -78,7 +91,8 @@ this packet closes.
 
 ## Review request
 
-Please re-review the seq-01 disposition, especially the persisted identity
-inline-width field and descriptor-derived minimum tuple calculation. Once this
-foundation is DONE, the next implementation slice is graph-record V2 with
-trailing `cold_tid` and strict separation from legacy tag-guarded decoders.
+Please review V1 byte/offset preservation, V2 trailer placement, version-before-
+length dispatch, locator validation, the public version dispatch surface, and
+the independent golden fixture. If DONE, the next slice will bind descriptor
+V4/layout identity and switch only version-aware generation callers to V2;
+legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.

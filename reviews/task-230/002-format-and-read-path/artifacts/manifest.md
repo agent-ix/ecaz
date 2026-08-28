@@ -1,15 +1,41 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `8faac4bad`
+- Head SHA: `9b13d2aca`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: descriptor/reloption foundation checkpoint
+- Packet: Graph V2 locator-trailer checkpoint (descriptor foundation retained)
 - Timestamp: 2026-08-28 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: not applicable (pure format
   descriptor and reloption unit tests)
 - Isolation: not applicable; no index, table, corpus, or benchmark fixture was
   created
 
-## Artifacts
+## Seq-03 Graph V2 artifacts
+
+### `graph-v2-tests-seq-03.log`
+
+- Command: `cargo test --no-default-features --features pg18 distann_physical_node`
+- Expected cited result: `3 passed; 0 failed`
+
+### `graph-v2-fixtures-seq-03.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test on_disk_fixtures distann_physical_graph_record`
+- Expected cited result: `2 passed; 0 failed`
+
+### `format-check-seq-03.log`
+
+- Command: `cargo fmt --all -- --check`
+- Expected cited result: exit status 0 (stable-rustfmt nightly-option warnings
+  are non-failures)
+
+### `clippy-seq-03.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Expected cited result: nonzero only for the same five pre-existing failures
+  recorded under seq-02; no failure in a Graph V2 touched line. The first local
+  attempt found an MSRV error in `Option::is_none_or`; code `9b13d2aca` fixed it
+  before these artifacts were regenerated.
+
+## Seq-02 descriptor artifacts
 
 ### `row-layout-tests-seq-02.log`
 
@@ -41,4 +67,4 @@ All commands use the host's shared `CARGO_TARGET_DIR`; no runtime output is
 written under the repository `target/` directory.
 
 The seq-01 logs without a suffix remain the immutable validation artifacts for
-code checkpoint `ef558a669`.
+code checkpoint `ef558a669`; seq-02 artifacts belong to `8faac4bad`.
