@@ -1,8 +1,8 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
-descriptor slice review-closed DONE (seq-02), Graph V2 seq-04 test-gap fixes
-implemented at `7b8edce68` and rereview open after seq-03 NOT DONE;
+descriptor slice review-closed DONE (seq-02), Graph V2 slice review-closed DONE
+(seq-04) at `7b8edce68`; packet 002 still open for format/read-path coverage;
 persisted-format implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
@@ -90,6 +90,20 @@ Noted for the next slice: `distann_node_cold_tid_offset` is V2-only but
 unnamed as such, `validate_physical_v2` duplicates the padding block, and
 `DISTANN_NODE_HOT_COLD_FORMAT_VERSION` must become the source for
 `generation_descriptor.rs`'s graph-record version rather than a second literal.
+
+Packet 002 seq-04 test-only checkpoint: code `7b8edce68`; request at seq-04;
+verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-04-reviewer.md`
+— **DONE for the Graph V2 slice**. Both seq-03 gaps closed with tests that fail
+if the pinned code is removed: `distann_physical_node_v1_writers_reject_cold_
+locator` reaches both the `tuple.rs:172` and `tuple.rs:257` guards, and
+`distann_physical_node_decode_into_reuse_clears_v2_cold_locator_for_v1`
+exercises `decode_into_physical_version` on both versions and pins the
+`tuple.rs:445` reuse clearing. Reviewer independently ran the focused tests and
+the clippy gate (same five pre-existing errors, nothing in `tuple.rs`). The next
+slice — descriptor V4 / layout identity binding with only version-aware
+generation callers switched to V2 — is authorized. Packet 002 remains open for
+full format/read-path PG18 coverage.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
