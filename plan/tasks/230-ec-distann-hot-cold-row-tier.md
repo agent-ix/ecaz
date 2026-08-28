@@ -1,7 +1,7 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-01
-descriptor foundation implemented and outside review open; persisted-format
+descriptor foundation reviewed NOT DONE (seq-01); persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
@@ -27,7 +27,24 @@ cost gates, and shared-buffer hit ratio as an explicit metric. Priority: P1
 storage/retrieval latency.
 
 Packet 002 checkpoint: code `ef558a669`; review request
-`reviews/task-230/002-format-and-read-path/request.md`.
+`reviews/task-230/002-format-and-read-path/request.md`; verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-01-reviewer.md`
+— **NOT DONE**, three blocking items: `maximum_hot_tuple_bytes` is a
+caller-supplied parameter validated only against the 8,160 ceiling with no
+relation to `exact_vector_dimensions`, so a descriptor declaring 1,536
+dimensions and a 1-byte hot tuple validates, encodes, and digests clean;
+`identity_maximum_inline_bytes` computes the accepted `bytea(16)` 17-byte
+short-varlena contribution but discards it at `row_layout.rs:303`, leaving a
+type gate and a test that asserts the helper's own constant; and the
+`cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+gate was not run and fails, with `options.rs:1652` introduced by this commit
+(the other five errors are pre-existing on main and outside the touched files).
+Non-blocking: `row_layout.rs:244-258` reports four distinct failures under one
+relation-bounds message, and the indexed vector's type is unvalidated while the
+identity's is. Accepted as correct: canonical partition/ordinal validation in
+both directions, implicit-identity contract, no hot tombstone, Task 229
+byte-for-byte compatibility, reloption mutual exclusion, and version/tier/
+trailing-byte decode rejection.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
