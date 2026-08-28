@@ -1,8 +1,9 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-02
-descriptor-foundation fixes implemented and rereview open after seq-01 NOT
-DONE; persisted-format implementation authorized; entry condition 3 satisfied**
+descriptor foundation reviewed DONE (seq-02) with packet 002 still open for
+format/read-path coverage; persisted-format implementation authorized; entry
+condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -54,7 +55,18 @@ schema-pins the 16-byte UUID versus 17-byte `bytea(16)` identity contribution;
 fixes the checkpoint-owned clippy error; splits corrupt placement diagnostics;
 and validates indexed-vector/generated-column identity. Focused PG18 tests and
 formatting pass. The all-target PG18 clippy gate has only the five pre-existing
-failures recorded in the packet manifest.
+failures recorded in the packet manifest. Verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-02-reviewer.md`
+— **DONE for this slice**; all three blocking and both substantive non-blocking
+seq-01 findings closed, with the reviewer independently reproducing the clippy
+result. Packet 002 stays open: full format/read-path PG18 coverage is still
+owed. Carried into the next slice: the preflight must set
+`maximum_hot_tuple_bytes` from the catalog-exact maximal formed tuple, not from
+`minimum_hot_tuple_bytes`, which omits inter-attribute alignment padding; the
+indexed-vector check is name-only and should pin send/receive function identity
+the way hot scalars do; and the two new `validate_row_schema` branches
+(generated identity, persisted-inline-width drift) need corrupt-fixture
+coverage.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
