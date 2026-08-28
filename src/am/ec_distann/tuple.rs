@@ -773,6 +773,18 @@ mod tests {
     }
 
     #[test]
+    fn distann_physical_node_v1_writers_reject_cold_locator() {
+        let mut tuple = sample();
+        tuple.cold_tid = Some(ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        });
+
+        assert!(tuple.encode_physical_v1(R, CODE_LEN).is_err());
+        assert!(tuple.encode(R, CODE_LEN).is_err());
+    }
+
+    #[test]
     fn distann_physical_node_v2_appends_cold_tid_without_moving_v1_fields() {
         let v1_tuple = sample();
         let v1 = v1_tuple.encode_physical_v1(R, CODE_LEN).unwrap();
@@ -895,6 +907,41 @@ mod tests {
             search_code_ptr,
             "pooled decode should not reallocate the search-code buffer"
         );
+    }
+
+    #[test]
+    fn distann_physical_node_decode_into_reuse_clears_v2_cold_locator_for_v1() {
+        let cold_tid = ItemPointer {
+            block_number: 29,
+            offset_number: 7,
+        };
+        let mut v2_tuple = sample();
+        v2_tuple.cold_tid = Some(cold_tid);
+        let v2 = v2_tuple.encode_physical_v2(R, CODE_LEN).unwrap();
+        let v1_tuple = sample();
+        let v1 = v1_tuple.encode_physical_v1(R, CODE_LEN).unwrap();
+        let mut pooled = DistannNodeTuple::placeholder(R, CODE_LEN);
+
+        DistannNodeTuple::decode_into_physical_version(
+            &v2,
+            DISTANN_NODE_HOT_COLD_FORMAT_VERSION,
+            R,
+            CODE_LEN,
+            &mut pooled,
+        )
+        .expect("pooled V2 decode should succeed");
+        assert_eq!(pooled.cold_tid, Some(cold_tid));
+
+        DistannNodeTuple::decode_into_physical_version(
+            &v1,
+            DISTANN_NODE_FORMAT_VERSION,
+            R,
+            CODE_LEN,
+            &mut pooled,
+        )
+        .expect("pooled V1 decode should succeed");
+        assert_eq!(pooled.cold_tid, None);
+        assert_eq!(pooled, v1_tuple);
     }
 
     #[test]
