@@ -1,9 +1,9 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
-descriptor slice review-closed DONE (seq-02), Graph V2 seq-03 implemented and
-review-open; persisted-format implementation authorized; entry condition 3
-satisfied**
+descriptor slice review-closed DONE (seq-02), Graph V2 seq-03 reviewed NOT DONE
+(seq-03) on two test gaps; persisted-format implementation authorized; entry
+condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -74,7 +74,22 @@ seq-03. V2 appends the six-byte cold TID after every V1 byte, uses
 version-before-version-sized-length dispatch, rejects missing locators, leaves
 legacy/tagged and physical-V1 bytes unchanged, and has an independent frozen
 fixture. Three focused format tests and two fixture tests pass; formatting
-passes; clippy has only the five known pre-existing failures.
+passes; clippy has only the five known pre-existing failures. Verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-03-reviewer.md`
+— **NOT DONE** on two narrow test gaps, with the format work verified correct
+(V1 bytes 2..62 confirmed identical between the frozen V1/V2 fixtures by hand,
+version-before-length ordering pinned by an error-kind assertion, legacy branch
+correctly untouched, MSRV fix correct against `clippy.toml` `msrv = "1.75"`, and
+the clippy result independently reproduced). Blocking: the request's "V1 cannot
+silently discard a cold locator" guarantee has no test — the guards at
+`tuple.rs:172` and `tuple.rs:257` are never reached, since no test sets a valid
+`cold_tid` and calls `encode_physical_v1` or the legacy `encode`; and
+`decode_into_physical_version` is new public API with zero exercise, leaving the
+pooled V2→V1 `cold_tid`-clearing reuse path untested on the traversal hot path.
+Noted for the next slice: `distann_node_cold_tid_offset` is V2-only but
+unnamed as such, `validate_physical_v2` duplicates the padding block, and
+`DISTANN_NODE_HOT_COLD_FORMAT_VERSION` must become the source for
+`generation_descriptor.rs`'s graph-record version rather than a second literal.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
