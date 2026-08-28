@@ -5,12 +5,13 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 03
+seq: 04
 ---
 
 # Task 230 packet 002 — Graph V2 locator trailer
 
-Review code checkpoints `3102e28ef` and `9b13d2aca` against the review-closed
+Review code checkpoints `3102e28ef`, `9b13d2aca`, and test-only follow-up
+`7b8edce68` against the review-closed
 packet-001 contract and reviewer seq-02, which accepted the descriptor
 foundation and authorized this Graph V2 slice. This remains a narrow
 packet-002 checkpoint: it defines the versioned graph bytes and dispatch API,
@@ -38,6 +39,16 @@ but does not yet create hot/cold relations or switch generation callers to V2.
 The follow-up `9b13d2aca` replaces `Option::is_none_or` with an equivalent
 Rust-1.75-compatible expression after the exact clippy gate caught the MSRV
 violation. No history was rewritten.
+
+## Seq-03 disposition
+
+- A valid `cold_tid` is now explicitly rejected by both the physical-V1 writer
+  and the legacy writer. Deleting either guard makes the new test fail.
+- The public pooled physical-version decoder is now exercised by decoding V2
+  into a reused tuple, observing its cold locator, then decoding V1 into the
+  same tuple and proving the locator is cleared rather than retained.
+- Both tests share the `distann_physical_node` prefix, so the packet's focused
+  command executes all five Graph V2 tests.
 
 ## Prior descriptor slice
 
@@ -75,10 +86,10 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-03 output and provenance are recorded in
+Packet-local seq-04 output and provenance are recorded in
 `artifacts/manifest.md`:
 
-- three focused PG18 physical-node version tests pass;
+- five focused PG18 physical-node version tests pass;
 - two independent V1/V2 golden-fixture tests pass;
 - formatting passes (`cargo fmt --all -- --check`);
 - the all-target PG18 clippy command introduces no error in a touched file and
@@ -91,8 +102,8 @@ this packet closes.
 
 ## Review request
 
-Please review V1 byte/offset preservation, V2 trailer placement, version-before-
-length dispatch, locator validation, the public version dispatch surface, and
-the independent golden fixture. If DONE, the next slice will bind descriptor
+Please rereview the two seq-03 test gaps at `7b8edce68`: V1 and legacy writers
+reject a valid cold locator, and pooled physical-version decode populates a V2
+locator then clears it on V1 reuse. If DONE, the next slice will bind descriptor
 V4/layout identity and switch only version-aware generation callers to V2;
 legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.

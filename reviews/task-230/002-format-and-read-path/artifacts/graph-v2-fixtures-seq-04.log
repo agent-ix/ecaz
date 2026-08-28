@@ -1,0 +1,12 @@
+Script started on 2026-08-28 15:35:53-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 2 tests
+test distann_physical_graph_record_v2_fixture_appends_cold_tid ... [32mok(B[m
+test distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap ... [32mok(B[m
+
+test result: [32mok(B[m. 2 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 15:35:54-07:00 [COMMAND_EXIT_CODE="0"]

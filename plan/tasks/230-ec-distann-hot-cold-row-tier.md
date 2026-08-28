@@ -1,9 +1,9 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
-descriptor slice review-closed DONE (seq-02), Graph V2 seq-03 reviewed NOT DONE
-(seq-03) on two test gaps; persisted-format implementation authorized; entry
-condition 3 satisfied**
+descriptor slice review-closed DONE (seq-02), Graph V2 seq-04 test-gap fixes
+implemented at `7b8edce68` and rereview open after seq-03 NOT DONE;
+persisted-format implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
