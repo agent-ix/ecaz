@@ -1,7 +1,8 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
-persisted-format implementation AUTHORIZED; entry condition 3 satisfied**
+Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002 seq-01
+descriptor foundation implemented and outside review open; persisted-format
+implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -24,6 +25,9 @@ accepted contract removes; scope version-first decoding to
 packet 004 preregistration: a failure condition for the cold/mixed secondary
 cost gates, and shared-buffer hit ratio as an explicit metric. Priority: P1
 storage/retrieval latency.
+
+Packet 002 checkpoint: code `ef558a669`; review request
+`reviews/task-230/002-format-and-read-path/request.md`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
