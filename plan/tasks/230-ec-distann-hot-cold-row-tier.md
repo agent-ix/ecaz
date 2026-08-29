@@ -5,8 +5,8 @@ descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 (seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
-`885b86be0`; receipt V3 / manifest V4 sealing checkpoint review-open (seq-08)
-at `5214b6d98`; packet 002 remains open for production read admission; seq-07
+`885b86be0`; receipt V3 / manifest V4 sealing review-closed DONE (seq-08) at
+`5214b6d98`; packet 002 remains open for production read admission; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
@@ -186,6 +186,32 @@ packet evidence. Notes: a NULL indexed vector is not rejected at handoff (an
 inherited gap — `prepare_legacy_entries` has it too), and `pg_test` reinstalled a
 debug `.so` for the third time, so reinstall release before any packet-004
 latency run.
+
+Packet 002 seq-08 receipt V3 / manifest V4 sealing checkpoint: code
+`5214b6d98`; request at seq-08; verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-08-reviewer.md`
+— **DONE**. Receipt V3 appends hot/cold content digests and per-tier heap bytes
+to the V1 shape for an exact 383 bytes (303 + 32 + 32 + 8 + 8), leaving V1 303
+and Task 229 V2 351 byte-identical; the legacy `row_tier_bytes` field becomes the
+checked sum of both heaps so legacy readers still see true total row storage
+while attribution is preserved in the appended fields. Manifest V4 and
+fingerprint V4 bind the layout digest plus roster-ordered global hot/cold content
+digests, with `validate()` a total five-tuple admitting exactly three shapes and
+rejecting wrong-kind participant receipts, and `graph_record_version` now sourced
+from `DISTANN_NODE_HOT_COLD_FORMAT_VERSION`. Sealing dispatches on a total
+five-tuple and validates both locators and both internal `vec_id` echoes per
+tier. Reviewer seq-07's NULL indexed-vector carry-in is closed on **both** the
+legacy and hot/cold paths, wider than requested. Both gate artifacts are present,
+closing the seq-07 debt and holding the discipline. **Reviewer methodology
+disclosure:** the shared checkout was dirty with the coder's in-flight next
+slice, so the reviewer's own clippy run measured HEAD plus uncommitted work and
+returned zero errors; the packet's checkpoint `clippy-seq-08.log` is the correct
+evidence and shows the usual five pre-existing errors, none in a touched file.
+The coder's uncommitted work appears to fix all five pre-existing lints — if that
+lands, the standing caveat retires. Note: `DistannEpochManifestV2::version()`
+uses OR over the three hot/cold fields while `validate()` requires all-or-none;
+`encode()` validates first so nothing can be emitted wrong, but the two
+predicates should agree.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
