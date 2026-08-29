@@ -19,8 +19,10 @@ checkpoint 2 review-closed DONE (seq-02) at `760ed15a7` (verdict
 closing the seq-01 topology carry-in with version-dispatched Graph V2
 diagnostics, logical hot/cold reconstruction, and explicit cold
 row/orphan/byte accounting; retained-history and destructive-lifecycle
-checkpoint 3 implementation complete / review-open at `7ff55c0a3`, documenting
-raw orphan semantics and covering hot/cold DROP, REINDEX, and rollback;
+checkpoint 3 review-closed DONE (seq-03) at `7ff55c0a3` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-03-reviewer.md`),
+documenting raw orphan semantics and covering hot/cold DROP, REINDEX, and
+aborted-REINDEX rollback;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -349,6 +351,26 @@ same-identity replacement — which packet-001 §5 requires to retain predecesso
 tuples until reclaim — both orphan columns report non-zero for a perfectly
 healthy generation. Document that semantic where the columns are defined, or
 exclude retained predecessors, before packet 004 reads these numbers per arm.
+
+Packet 003 seq-03 retained-history and destructive-lifecycle checkpoint: code
+`7ff55c0a3`; request at seq-03; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-03-reviewer.md`
+— **DONE**. The reviewer's seq-02 orphan-semantics note is closed by
+documentation (the stated preference) and goes further by pinning the behaviour:
+the DML callback proves a healthy same-identity replacement reports exactly one
+retained hot tuple and one retained cold tuple, so a later "fix" that excluded
+retained predecessors would fail the test rather than change the semantic
+silently. The destructive matrix is complete — `DROP INDEX` and successful
+`REINDEX` each remove all four relations plus the catalog row, `REINDEX` mints a
+fresh control UUID, and the aborted-`REINDEX` case restores all four relations,
+the original UUID, **and the cataloged cold relation binding**, which is the
+assertion that would catch a dangling `cold_tier_relid`. **Note carried into
+packet 004:** the new orphan sentence and the pre-existing "equals the Ready
+receipt exactly when the generation is clean" sentence are in tension, and
+packet-001 §5 fixes receipt digests as immutable initial content, so on a
+generation that has taken post-Ready DML neither the orphan columns nor digest
+equality is by itself a corruption signal. State which signal an operator should
+trust before packet 004 reads these columns per DML arm.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
