@@ -5,16 +5,36 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 06
+seq: 07
 ---
 
-# Task 230 packet 002 — generation-owned hot/cold relation creation
+# Task 230 packet 002 — generation-owned hot/cold handoff
 
-Review code checkpoint `775174659` against the review-closed packet-001
-contract and reviewer seq-05, which accepted descriptor V4/layout identity and
-authorized relation creation. This remains a narrow packet-002 checkpoint: it
-creates, catalogs, replays, invalidates, and removes the paired generation
-heaps, but does not yet hand off tier rows or read them.
+Review code checkpoint `885b86be0` against the review-closed packet-001
+contract and reviewer seq-06, which accepted paired relation creation. This
+remains a narrow packet-002 checkpoint: it partitions the unchanged handoff
+wire into the paired heaps and writes Graph V2 locators, but does not yet seal
+the generation into receipt V3/manifest V4 or admit it on production reads.
+
+## Seq-07 handoff scope
+
+- Preserves the existing handoff wire and its frozen source-schema ordering;
+  the receiver decodes each non-dropped source value once, then routes it by
+  the descriptor's compact physical ordinal into the hot or cold tuple.
+- Writes the cold tuple first, captures its CTID, writes the hot tuple second,
+  captures its CTID, and persists both locators in the version-dispatched Graph
+  V2 record. The graph row and directory remain the visibility authority.
+- Gives both compact heaps their internal `vec_id` and validates the actual
+  compact relation schemas against every frozen placement's type, typmod,
+  collation, and binary I/O identity before admitting a batch.
+- Retains the legacy full-row and Task 229 sidecar handoff paths unchanged and
+  dispatches graph encoding from the generation descriptor rather than
+  hard-coding V1.
+- Adds a focused PG18 callback test proving the hot vector/identity and cold
+  payload/generated value are materialized, the graph hot TID joins the hot
+  tuple, and the decoded V2 trailer exactly equals the cold tuple CTID.
+- Re-runs the legacy batch atomic-replay/directory callback as a regression
+  guard; both focused PG18 tests pass at the committed SHA.
 
 ## Seq-06 relation-creation scope
 
@@ -140,8 +160,13 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-06 output and provenance are recorded in
+Packet-local seq-07 output and provenance are recorded in
 `artifacts/manifest.md`:
+
+- the focused PG18 hot/cold handoff and Graph V2 locator test passes;
+- the focused legacy PG18 stage/replay/directory regression test passes.
+
+Prior seq-06 evidence remains recorded in the same manifest:
 
 - the focused PG18 1,536-D relation creation/replay/abort test passes;
 - the independent row-layout and descriptor V4 frozen fixtures pass;
@@ -160,14 +185,15 @@ Prior seq-05 evidence remains recorded in the same manifest:
   repository failures already identified in seq-02; none is in a seq-05
   touched line.
 
-No benchmark is claimed for this relation-creation slice. Handoff, read, DML,
-full lifecycle, and benchmark coverage remains required before Task 230 closes.
+No benchmark is claimed for this handoff slice. Receipt/manifest identity,
+production reads, DML, full lifecycle, and benchmark coverage remain required
+before Task 230 closes.
 
 ## Review request
 
-Please review the generation catalog migration, compact hot/cold relation DDL,
-PLAIN/fillfactor enforcement, lifecycle propagation, cache invalidation,
-Cold-placement fixture, and focused maximal-tuple PG18 coverage at
-`775174659`. If DONE, the next packet-002 slice will carry both tier identities
-through receipts/manifests and implement handoff/read admission. Legacy
-tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.
+Please review compact schema admission, unchanged-wire tier routing, cold-first
+tuple insertion, descriptor-versioned graph encoding, Graph V2 locator
+integrity, and legacy handoff preservation at `885b86be0`. If DONE, the next
+packet-002 slice will carry both tier identities through receipt V3/manifest V4
+and implement production read admission. Legacy tag-guarded `expand.rs`,
+`reader.rs`, and `insert.rs` paths remain unversioned V1.

@@ -1,13 +1,31 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `7751746599c0b100d137f92c2e13d3f65c194a1d`
+- Head SHA: `885b86be0ac9d86ccd840fa42b40921108c1f4e3`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Generation-owned hot/cold relation-creation checkpoint
+- Packet: Generation-owned hot/cold handoff checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 callback plus pure
-  format/descriptor tests; hot/cold relation creation only; rerank not applicable
+  format/descriptor tests; hot/cold handoff through Graph V2; rerank not applicable
 - Isolation: focused pgrx test creates transaction-scoped source/index fixtures;
   no corpus or benchmark fixture was created
+
+## Seq-07 hot/cold handoff artifacts
+
+All seq-07 artifacts below were produced at
+`885b86be0ac9d86ccd840fa42b40921108c1f4e3` on 2026-08-28 PDT.
+
+### `hot-cold-handoff-pg18-seq-07.log`
+
+- Command: `cargo pgrx test pg18 test_distann_hot_cold_handoff_v2_locator`
+- Cited result: focused callback test `1 passed; 0 failed`; unchanged wire
+  values are partitioned into compact hot/cold tuples, the graph hot TID joins
+  the hot tuple, and the decoded Graph V2 trailer equals the inserted cold CTID.
+
+### `legacy-handoff-pg18-seq-07.log`
+
+- Command: `cargo pgrx test pg18 test_distann_stage_batch_atomic_replay_and_directory`
+- Cited result: focused callback test `1 passed; 0 failed`; legacy full-row
+  staging, exact replay, graph/directory insertion, and atomicity are preserved.
 
 ## Seq-06 relation-creation artifacts
 
