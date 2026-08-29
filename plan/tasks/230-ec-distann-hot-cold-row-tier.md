@@ -75,16 +75,16 @@ the reviewer settled the arity at the production encoder
 (`remote_endpoint.rs:847-855` pushes one cumulative end offset per requested
 attribute, no terminal N+1), confirming the packet-002 pgrx assertions were right
 and the CLI's `= 3` was wrong; both root PG18 and `ecaz-cli` all-target clippy
-receipts are now recorded. **Packet 003's static and harness work is complete;
-only the three runtime evidence groups remain owed.**
-runtime checkpoint 10 implementation complete, packet 003 review-open (seq-10)
-at `ef0134501`: the suite-driven four-owner read matrix passed all 25 RPC/fault
-cells; the three-owner write/lifecycle matrix passed 23 scenarios and 110
-records with 12 balanced hot/cold write snapshots and three successful retained
-mixed-tier predecessor reads; restart/owner-failure, remote retry/intent,
-publication/recovery, and retained-generation obligations are all represented;
-both external cluster directories were removed after capture. Packet 003 is
-ready for review-close; packet 004 full-scale 10k/50k/100k A/B remains owed.
+receipts are now recorded. runtime checkpoint 10 review-closed DONE (seq-10) at `ef0134501` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-10-reviewer.md`) —
+**PACKET 003 REVIEW-CLOSED**, all three packet-001 §7 packet-003 checkpoints plus
+the carried packet-002 restart/owner-failure reads satisfied. The suite-driven
+four-owner read matrix passed all 25 RPC/fault cells, the three-owner
+write/lifecycle matrix passed 23 scenarios and 110 records with 12
+`cold_pair_balanced=true` snapshots and three successful retained mixed-tier
+predecessor reads, and both external cluster directories were removed after
+capture. **Only packet 004's full-scale 10k/50k/100k A/B remains — it decides
+PROMOTE or STOP.**
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -606,6 +606,32 @@ against a 77/78-warning pre-existing baseline with nothing at the seq-09 change.
 each run — a 77-warning list is too large to eyeball, so a future checkpoint's new
 warning would go unnoticed; a count comparison turns the receipt from a filed
 artifact into a check that can fail.
+
+Packet 003 seq-10 runtime fault and lifecycle evidence: code `ef0134501`;
+request at seq-10; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-10-reviewer.md`
+— **DONE, packet 003 review-closed**. Preregistration was done in the form that
+means something: `ef0134501` contains one file and nothing else — the 51-line
+suite config — pushed before any result existed. The reviewer verified every
+numeric claim against the artifacts rather than the request prose: 71 result
+rows, 25 read-matrix `pass=true` cells across five fault modes
+(`connection_reset`, `local_query_cancel`, `local_statement_timeout`,
+`remote_backend_termination`, `remote_statement_timeout`), 12
+`cold_pair_balanced=true` write snapshots, three retained-generation reads with
+`state=Retired tuple_payload_missing=false offsets_valid=true payload_bytes=156`
+one per owner, and both release preflights `unanimous=true
+extension_build_profile=release` at the preregistration SHA. Both arms used
+distinct `--run-dir` values under `~/.ecaz/clusters/` and the log records
+`removed run_dir ... after durable artifact capture` for each. **Must change for
+packet 004:** both steps pass `--allow-debug-extension` (`debug_override=true`).
+It did no harm here — the build genuinely was `--release` — but it disables the
+one guard that catches a debug `.so`, and `pg_test` has silently reinstalled a
+debug build four times on this task. Packet 004 must run without the flag so the
+release preflight is load-bearing. **Framing note:** this evidence ran at
+`--rows 2000 --dim 16`, which is right for a fault matrix and proves only
+dimension-independent invariants; at dim 16 the hot tuple is inline regardless of
+`attstorage='p'`, so packet 003 is *not* evidence about the storage regime — that
+lives in packet-002 seq-06's maximal-formed-tuple test.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
