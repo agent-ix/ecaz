@@ -1,14 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `428ae9b943b34374be015e8f613b1e33923521da`
+- Head SHA: `95448fa7530f35346c03e76f11e43307a9e49e3c`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: complete six-shape row-tier I/O attribution checkpoint, seq-06
+- Packet: projection-mirrored row-tier I/O attribution fix, seq-07
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
   row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
   corpus benchmark or rerank measurement
-- Isolation: pure CLI/suite validation; the dynamic fresh-fixture measurement
-  is intentionally deferred until this six-shape harness is reviewed
+- Isolation: pure CLI projection validation; the dynamic fresh-fixture
+  measurement remains deferred until this corrected harness is reviewed
+
+## Seq-07 projection-mirror fix artifacts
+
+All seq-07 artifacts were produced at
+`95448fa7530f35346c03e76f11e43307a9e49e3c` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-07.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `dd977680bc1bbbe23b5fcdc013a95b086e60b29962cd7335b69320adb9329c5c`
+
+### `cargo-clippy-seq-07.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 through seq-06; no new finding in the seq-07 changes.
+- SHA-256: `193c5e74eb9222c74b47dd228d761053ff32334d3f139efd7e03aac80088e35a`
+
+### `cargo-test-cli-seq-07.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: five passed, zero failed; 546 filtered out. The new table-driven test
+  pins both control and candidate projections for all six shapes and proves
+  cold-only has no hot projection.
+- SHA-256: `47997d88d06dcb33f5da45070a1b3c0edf915bb7939eca5d43800ac42be6d47e`
 
 ## Seq-06 complete six-shape attribution artifacts
 

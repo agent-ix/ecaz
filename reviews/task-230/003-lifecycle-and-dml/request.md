@@ -5,13 +5,43 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 6
+seq: 7
 ---
 
-# Task 230 packet 003 — complete six-shape I/O attribution checkpoint
+# Task 230 packet 003 — projection-mirrored I/O attribution fix
 
-Review code checkpoint `428ae9b94` against reviewer seq-05's six-shape
-preregistration carry-in.
+Review code checkpoint `95448fa75` against reviewer seq-06's cold-only
+projection finding.
+
+## Seq-07 projection-mirror fix
+
+- States and emits one rule for physical attribution:
+  `physical_projection_rule=mirrors_end_to_end_projection`. Traversal I/O is
+  already measured by the primary id-only end-to-end arm; the direct-relation
+  attribution query measures only the selected result projection.
+- Applies that rule to all six shapes in both layouts: id-only/hot-scalar read
+  `id` / `a_1`; exact-vector reads `embedding` / `a_4`; cold-only reads only
+  `payload_note` / cold `a_5`; mixed reads `id, payload_note` / hot `a_1` plus
+  cold `a_5`; select-all reads the full row / both tiers.
+- Cold-only now issues no hot-relation query at all. The row-heap control also
+  drops `embedding` from cold-only, so the A/B measures the §6 cold-scalar
+  prediction rather than a 6 KiB vector plus payload.
+- Adds a table-driven unit test that pins both the row-heap and hot/cold
+  mappings for all six shapes, preventing the mixed projection rule from
+  recurring.
+
+## Seq-07 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Five focused ecaz-cli tests pass, including exact all-six projection mapping.
+- Mandatory all-target PG18 clippy reproduces only the same five pre-existing
+  findings; no finding is in the seq-07 changes.
+
+## Seq-06 reviewed scope
+
+Reviewer seq-06 accepted both new shapes but returned NOT DONE because the
+pre-existing cold-only physical mapping also read the hot exact vector. The
+seq-07 scope above addresses that sole blocking finding.
 
 ## Seq-06 complete six-shape scope
 
@@ -191,13 +221,13 @@ below remains for packet history.
 
 ## Packet status
 
-This resolves the six-shape preregistration carry-in but is not packet-003
+This requests closure of the seq-06 projection finding but is not packet-003
 closure. Still owed are the actual remote retry/intent and fault run,
 publication/recovery and retained-generation reads, and restart/owner-failure
 reads carried from packet 002.
 
 ## Review request
 
-Please verify the hot-scalar and exact-vector physical/end-to-end projections,
-their hot-only TOAST-fixture exemption, and typed suite expansion. Leave
-feedback under this packet's `feedback/` directory.
+Please verify the stated projection-mirror rule, all six helper mappings, and
+especially that cold-only has no hot query and the control projects only
+`payload_note`. Leave feedback under this packet's `feedback/` directory.

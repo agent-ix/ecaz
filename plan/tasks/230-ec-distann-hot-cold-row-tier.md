@@ -44,7 +44,9 @@ gap, but the `cold-only` shape's physical attribution reads the **hot** relation
 counter assertion that a cold-only projection satisfies
 `HotTierRelationOpens == 0`, and not measuring what §6 predicted; the per-shape
 projection rule must be stated and applied consistently **before the packet-004
-matrix runs**;
+matrix runs**; projection-mirror fix checkpoint 7 review-open at `95448fa75`,
+making cold-only cold-only in both arms and pinning all six mappings in a
+table-driven test; no packet-004 result has been read;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -449,14 +451,27 @@ or narrow §6's prediction list before any full-scale result is read — freezin
 thresholds for four while predicting six leaves two predictions unfalsifiable.
 
 Packet 003 seq-06 complete six-shape attribution checkpoint: code `428ae9b94`;
-review request at seq-06, review-open. Adds separately labelled hot-scalar and
+review request at seq-06; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-06-reviewer.md`
+— **NOT DONE**. Adds separately labelled hot-scalar and
 exact-vector physical/end-to-end attribution arms, with exact-vector directly
 measuring the materialization side of the PLAIN-inline mechanism. Both are
 hot-only and do not require the Task 230 external TOAST fixture; the strict
 fixture gate remains for cold-only, mixed, and select-all. No packet-004 result
 has been read and no threshold has been frozen. Format and four focused CLI
 tests pass; the mandatory clippy gate contains only the same five pre-existing
-findings.
+findings. Blocking finding: the pre-existing cold-only direct attribution also
+read hot `a_4`, so the six shapes did not follow one stated rule.
+
+Packet 003 seq-07 projection-mirror fix checkpoint: code `95448fa75`; review
+request at seq-07, review-open. Physical attribution now explicitly mirrors the
+selected end-to-end result projection. Cold-only issues only cold `a_5` in the
+candidate and only `payload_note` in the control; id-only/hot-scalar use
+`id`/`a_1`, exact-vector uses `embedding`/`a_4`, mixed uses `id, payload_note` /
+hot `a_1` plus cold `a_5`, and select-all uses the full row / both tiers. The
+rule is emitted in every result line and a table-driven test pins both layouts
+for all six shapes. Format and five focused CLI tests pass; mandatory clippy
+contains only the same five pre-existing findings.
 
 Packet 003 seq-06 six-shape I/O checkpoint: code `428ae9b94`; request at seq-06;
 verdict
