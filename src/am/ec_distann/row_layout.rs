@@ -21,8 +21,10 @@ const POSTGRES_MAX_HEAP_ATTRIBUTES: usize = 1600;
 const POSTGRES_HEAP_TUPLE_HEADER_BYTES: usize = 23;
 const POSTGRES_MAXIMUM_ALIGNMENT: usize = 8;
 const POSTGRES_VARLENA_HEADER_BYTES: usize = 4;
+const POSTGRES_INT_ALIGNMENT: usize = 4;
 const DISTANN_SOURCE_IDENTITY_VALUE_BYTES: usize = 16;
 const DISTANN_HOT_VEC_ID_BYTES: usize = 8;
+const DISTANN_HOT_VEC_ID_ALIGNMENT: usize = 8;
 
 fn identity_maximum_inline_bytes(attribute: &DistannRowSchemaAttribute) -> Option<usize> {
     match (
@@ -108,7 +110,7 @@ fn maximum_hot_tuple_bytes(
         // bytea(16) is varlena: derive its alignment from the catalog type
         // contract rather than treating attlen as a fixed payload width.
         value if value == DISTANN_SOURCE_IDENTITY_VALUE_BYTES + POSTGRES_VARLENA_HEADER_BYTES => {
-            POSTGRES_VARLENA_HEADER_BYTES
+            POSTGRES_INT_ALIGNMENT
         }
         _ => {
             return Err("EC_GENERATION_DESCRIPTOR: invalid source identity inline width".to_owned())
@@ -117,7 +119,7 @@ fn maximum_hot_tuple_bytes(
     let mut attributes = Vec::with_capacity(2 + hot_scalars.len());
     attributes.push((
         indexed_vector_attnum,
-        POSTGRES_VARLENA_HEADER_BYTES,
+        POSTGRES_INT_ALIGNMENT,
         vector_datum_bytes,
     ));
     attributes.push((
@@ -137,8 +139,7 @@ fn maximum_hot_tuple_bytes(
     }
     attributes.sort_unstable_by_key(|(attnum, _, _)| *attnum);
 
-    let mut formed_bytes = align_up(aligned_header_bytes, POSTGRES_MAXIMUM_ALIGNMENT)?;
-    formed_bytes = align_up(formed_bytes, POSTGRES_MAXIMUM_ALIGNMENT)?
+    let mut formed_bytes = align_up(aligned_header_bytes, DISTANN_HOT_VEC_ID_ALIGNMENT)?
         .checked_add(DISTANN_HOT_VEC_ID_BYTES)
         .ok_or_else(|| "EC_GENERATION_DESCRIPTOR: hot tuple width overflow".to_owned())?;
     for (_, alignment, width) in attributes {
@@ -278,6 +279,11 @@ pub struct DistannRowTierLayoutDescriptorV1 {
 }
 
 impl DistannRowTierLayoutDescriptorV1 {
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn maximum_hot_tuple_bytes(&self) -> u32 {
+        self.maximum_hot_tuple_bytes
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.version != DISTANN_ROW_TIER_LAYOUT_VERSION
             || usize::from(self.maximum_hot_scalar_count) != DISTANN_HOT_SCALAR_MAX_ATTRIBUTES

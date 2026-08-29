@@ -546,7 +546,7 @@ fn distann_row_tier_layout_v1_fixture_decodes_independently() {
     assert_eq!(independent.u16(), 3); // indexed vector attnum
     assert_eq!(independent.u16(), 1); // source identity attnum
     assert_eq!(independent.u16(), 0); // optional hot scalars
-    assert_eq!(independent.u16(), 2); // complete live partition
+    assert_eq!(independent.u16(), 3); // complete live partition
     assert_eq!(
         (independent.u16(), independent.u8(), independent.u16()),
         (1, 1, 2)
@@ -555,6 +555,10 @@ fn distann_row_tier_layout_v1_fixture_decodes_independently() {
         (independent.u16(), independent.u8(), independent.u16()),
         (3, 1, 3)
     );
+    assert_eq!(
+        (independent.u16(), independent.u8(), independent.u16()),
+        (4, 2, 2)
+    );
     independent.finish();
 
     let layout = DistannRowTierLayoutDescriptorV1::decode(&bytes).unwrap();
@@ -562,7 +566,7 @@ fn distann_row_tier_layout_v1_fixture_decodes_independently() {
     assert_distann_domain_digest(
         &bytes,
         b"ec_distann_row_tier_layout_v1\0",
-        "31b60126024d258762859652e38e832ed2f530730ded430fcbc894c7a618d1dd",
+        "73bc8ed94216f4e75afa1cadcc9abdf49b3e948bba8606dd7747bec097f115fc",
     );
 }
 
@@ -596,7 +600,7 @@ fn distann_generation_descriptor_v4_fixture_binds_layout_and_graph_v2() {
     assert_eq!(independent.len_bytes(), layout_bytes);
     assert_eq!(
         independent.take(32),
-        hex::decode("31b60126024d258762859652e38e832ed2f530730ded430fcbc894c7a618d1dd").unwrap()
+        hex::decode("73bc8ed94216f4e75afa1cadcc9abdf49b3e948bba8606dd7747bec097f115fc").unwrap()
     );
     independent.finish();
 

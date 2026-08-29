@@ -252,3 +252,22 @@ ALTER FUNCTION ec_distann_active_head_construction(regclass) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_active_head_construction(regclass)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_active_head_construction(regclass) FROM PUBLIC;
+
+-- Task 230: a hot/cold generation reuses row_tier_relid for its compact hot
+-- heap and records the paired cold heap separately. Existing row-heap and
+-- Task 229 sidecar generations upgrade with NULL and retain their shape.
+ALTER TABLE ec_distann_generation
+ADD COLUMN cold_tier_relid oid CHECK (
+    cold_tier_relid IS NULL OR cold_tier_relid <> '0'::oid
+);
+
+ALTER TABLE ec_distann_generation
+ADD CONSTRAINT ec_distann_generation_cold_sidecar_exclusion_check
+CHECK (
+    cold_tier_relid IS NULL
+    OR (payload_sidecar_relid IS NULL
+        AND payload_sidecar_directory_relid IS NULL)
+);
+
+CREATE UNIQUE INDEX ec_distann_generation_cold_tier_relid_unique
+ON ec_distann_generation (cold_tier_relid);

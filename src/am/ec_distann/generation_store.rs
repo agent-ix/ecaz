@@ -29,6 +29,7 @@ use super::lifecycle_state::GenerationState;
 use super::page::{DistannMetadataPage, INDEX_FORMAT_V5_DISTANN_CONTROL};
 use super::quote_ident;
 use super::roster_digest as canonical_roster_digest;
+use super::row_layout::{DistannRowTierLayoutDescriptorV1, DistannRowTierV1};
 use super::row_schema::{resolve_relation_schema, ResolvedRowSchema};
 
 const CONTROL_COMPATIBILITY_VERSION: u16 = 1;
@@ -67,6 +68,7 @@ fn canonical_control_compatibility_digest(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GenerationRelations {
     pub(crate) row_tier_relid: pg_sys::Oid,
+    pub(crate) cold_tier_relid: Option<pg_sys::Oid>,
     pub(crate) graph_store_relid: pg_sys::Oid,
     pub(crate) directory_relid: pg_sys::Oid,
     pub(crate) payload_sidecar_relid: Option<pg_sys::Oid>,
@@ -319,16 +321,80 @@ fn cstring_owned(pointer: *mut std::ffi::c_char, context: &str) -> Result<String
 fn generation_relation_names(
     index_oid: pg_sys::Oid,
     build_id: Uuid,
-) -> (String, String, String, String, String) {
+) -> (String, String, String, String, String, String) {
     let suffix = hex::encode(build_id.as_bytes());
     let oid = u32::from(index_oid);
     (
         format!("_ecdz_row_{oid}_{suffix}"),
+        format!("_ecdz_cold_{oid}_{suffix}"),
         format!("_ecdz_graph_{oid}_{suffix}"),
         format!("_ecdz_dir_{oid}_{suffix}"),
         format!("_ecdz_cover_{oid}_{suffix}"),
         format!("_ecdz_cover_dir_{oid}_{suffix}"),
     )
+}
+
+fn compact_tier_column_sql(
+    schema: &ResolvedRowSchema,
+    layout: &DistannRowTierLayoutDescriptorV1,
+    tier: DistannRowTierV1,
+) -> Result<String, String> {
+    let mut placements = layout
+        .placements
+        .iter()
+        .filter(|placement| placement.tier == tier)
+        .collect::<Vec<_>>();
+    placements.sort_unstable_by_key(|placement| placement.physical_ordinal);
+    let mut definitions = Vec::with_capacity(placements.len() + 1);
+    definitions.push("vec_id bigint NOT NULL".to_owned());
+    for placement in placements {
+        let column = schema
+            .columns
+            .iter()
+            .find(|column| column.attnum == placement.attnum && !column.dropped)
+            .ok_or_else(|| {
+                format!(
+                    "EC_SCHEMA_MISMATCH: row-tier attnum {} is absent from the resolved schema",
+                    placement.attnum
+                )
+            })?;
+        if column.sql_type.is_empty() {
+            return Err(format!(
+                "EC_SCHEMA_UNSUPPORTED: attribute {} has no local SQL type",
+                column.attnum
+            ));
+        }
+        let mut definition = format!("a_{} {}", column.attnum, column.sql_type);
+        if let Some(collation) = &column.collation_sql {
+            definition.push_str(" COLLATE ");
+            definition.push_str(collation);
+        }
+        definitions.push(definition);
+    }
+    Ok(definitions.join(", "))
+}
+
+fn assert_plain_storage(relation_oid: pg_sys::Oid, attnums: &[u16]) -> Result<(), String> {
+    for &source_attnum in attnums {
+        let attribute_name = format!("a_{source_attnum}");
+        let is_plain = Spi::get_one_with_args::<bool>(
+            "SELECT attstorage = 'p'
+               FROM pg_catalog.pg_attribute
+              WHERE attrelid = $1::oid AND attname = $2::name
+                AND attnum > 0 AND NOT attisdropped",
+            &[relation_oid.into(), attribute_name.clone().into()],
+        )
+        .map_err(|error| format!("EC_SCHEMA_MISMATCH: hot-tier storage lookup failed: {error}"))?
+        .ok_or_else(|| {
+            format!("EC_SCHEMA_MISMATCH: hot-tier attribute {attribute_name} is absent")
+        })?;
+        if !is_plain {
+            return Err(format!(
+                "EC_SCHEMA_MISMATCH: hot-tier attribute {attribute_name} is not STORAGE PLAIN"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn traversal_replica_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String) {
@@ -434,7 +500,7 @@ fn create_generation_relations(
     index_handle: RelationHandle,
     build_id: Uuid,
     schema: &ResolvedRowSchema,
-    payload_cover: bool,
+    descriptor: &DistannGenerationDescriptor,
 ) -> Result<GenerationRelations, String> {
     let index_oid = relation_oid_handle(index_handle);
     let (namespace_oid, owner_oid, persistence) =
@@ -451,9 +517,20 @@ fn create_generation_relations(
         "control-index owner",
     )?;
     let tablespace = tablespace_clause(index_handle)?;
-    let (row_name, graph_name, directory_name, payload_sidecar_name, payload_directory_name) =
-        generation_relation_names(index_oid, build_id);
+    let (
+        row_name,
+        cold_name,
+        graph_name,
+        directory_name,
+        payload_sidecar_name,
+        payload_directory_name,
+    ) = generation_relation_names(index_oid, build_id);
+    let payload_cover = descriptor.payload_cover.is_some();
+    let row_tier_layout = descriptor.row_tier_layout();
     let mut required_names = vec![&row_name, &graph_name, &directory_name];
+    if row_tier_layout.is_some() {
+        required_names.push(&cold_name);
+    }
     if payload_cover {
         required_names.extend([&payload_sidecar_name, &payload_directory_name]);
     }
@@ -466,16 +543,26 @@ fn create_generation_relations(
         }
     }
     let qualified_row = format!("{}.{}", quote_ident(&namespace), quote_ident(&row_name));
+    let qualified_cold = format!("{}.{}", quote_ident(&namespace), quote_ident(&cold_name));
     let qualified_graph = format!("{}.{}", quote_ident(&namespace), quote_ident(&graph_name));
     let qualified_payload_sidecar = format!(
         "{}.{}",
         quote_ident(&namespace),
         quote_ident(&payload_sidecar_name)
     );
-    let (row_columns, dropped_columns) = row_tier_column_sql(schema, build_id)?;
+    let (row_columns, dropped_columns) = match row_tier_layout {
+        Some(layout) => (
+            compact_tier_column_sql(schema, layout, DistannRowTierV1::Hot)?,
+            Vec::new(),
+        ),
+        None => row_tier_column_sql(schema, build_id)?,
+    };
 
+    let row_options = row_tier_layout
+        .map(|_| " WITH (fillfactor=100)")
+        .unwrap_or("");
     Spi::run(&format!(
-        "CREATE TABLE {qualified_row} ({row_columns}){tablespace}"
+        "CREATE TABLE {qualified_row} ({row_columns}){row_options}{tablespace}"
     ))
     .map_err(|error| format!("ec_distann row-tier relation creation failed: {error}"))?;
     for dropped in dropped_columns {
@@ -484,6 +571,19 @@ fn create_generation_relations(
             quote_ident(&dropped)
         ))
         .map_err(|error| format!("ec_distann dropped-column preservation failed: {error}"))?;
+    }
+    if let Some(layout) = row_tier_layout {
+        let cold_columns = compact_tier_column_sql(schema, layout, DistannRowTierV1::Cold)?;
+        Spi::run(&format!(
+            "CREATE TABLE {qualified_cold} ({cold_columns}){tablespace}"
+        ))
+        .map_err(|error| format!("ec_distann cold-tier relation creation failed: {error}"))?;
+        for source_attnum in [layout.indexed_vector_attnum, layout.source_identity_attnum] {
+            Spi::run(&format!(
+                "ALTER TABLE {qualified_row} ALTER COLUMN a_{source_attnum} SET STORAGE PLAIN"
+            ))
+            .map_err(|error| format!("ec_distann hot-tier storage setup failed: {error}"))?;
+        }
     }
     Spi::run(&format!(
         "CREATE TABLE {qualified_graph} (\
@@ -529,6 +629,13 @@ fn create_generation_relations(
         quote_ident(&owner)
     ))
     .map_err(|error| format!("ec_distann row-tier ownership change failed: {error}"))?;
+    if row_tier_layout.is_some() {
+        Spi::run(&format!(
+            "ALTER TABLE {qualified_cold} OWNER TO {}",
+            quote_ident(&owner)
+        ))
+        .map_err(|error| format!("ec_distann cold-tier ownership change failed: {error}"))?;
+    }
     Spi::run(&format!(
         "ALTER TABLE {qualified_graph} OWNER TO {}",
         quote_ident(&owner)
@@ -544,6 +651,9 @@ fn create_generation_relations(
 
     let relations = GenerationRelations {
         row_tier_relid: relation_oid_by_name(namespace_oid, &row_name)?,
+        cold_tier_relid: row_tier_layout
+            .map(|_| relation_oid_by_name(namespace_oid, &cold_name))
+            .transpose()?,
         graph_store_relid: relation_oid_by_name(namespace_oid, &graph_name)?,
         directory_relid: relation_oid_by_name(namespace_oid, &directory_name)?,
         payload_sidecar_relid: payload_cover
@@ -553,7 +663,16 @@ fn create_generation_relations(
             .then(|| relation_oid_by_name(namespace_oid, &payload_directory_name))
             .transpose()?,
     };
+    if let Some(layout) = row_tier_layout {
+        assert_plain_storage(
+            relations.row_tier_relid,
+            &[layout.indexed_vector_attnum, layout.source_identity_attnum],
+        )?;
+    }
     record_internal_dependency(relations.row_tier_relid, index_oid);
+    if let Some(cold_tier_relid) = relations.cold_tier_relid {
+        record_internal_dependency(cold_tier_relid, index_oid);
+    }
     record_internal_dependency(relations.graph_store_relid, index_oid);
     record_internal_dependency(relations.directory_relid, index_oid);
     if let Some(payload_sidecar_relid) = relations.payload_sidecar_relid {
@@ -679,6 +798,9 @@ pub(crate) fn drop_generation_relations(
     }
     drop_relation_internal(relations.directory_relid, control_oid)?;
     drop_relation_internal(relations.graph_store_relid, control_oid)?;
+    if let Some(cold_tier_relid) = relations.cold_tier_relid {
+        drop_relation_internal(cold_tier_relid, control_oid)?;
+    }
     drop_relation_internal(relations.row_tier_relid, control_oid)?;
     unsafe { pg_sys::CommandCounterIncrement() };
     Ok(())
@@ -706,6 +828,7 @@ fn validate_replay(
     expected_owner_count: u64,
     expected_owner_digest: [u8; 32],
     payload_cover: bool,
+    hot_cold: bool,
 ) -> Result<(), String> {
     if row.epoch != epoch
         || row.owner_ordinal != owner_ordinal
@@ -738,12 +861,19 @@ fn validate_replay(
                 .to_owned(),
         );
     }
+    if row.cold_tier_relid.is_some() != hot_cold {
+        return Err(
+            "EC_BUILD_ID_CONFLICT: cataloged cold tier differs from the generation descriptor"
+                .to_owned(),
+        );
+    }
     for relation_oid in [
         row.row_tier_relid,
         row.graph_store_relid,
         row.directory_relid,
     ]
     .into_iter()
+    .chain(row.cold_tier_relid)
     .chain(row.payload_sidecar_relid)
     .chain(row.payload_sidecar_directory_relid)
     {
@@ -929,6 +1059,7 @@ fn ec_distann_begin_epoch_handoff(
                 expected_owner_count,
                 expected_owner_digest,
                 descriptor.payload_cover.is_some(),
+                descriptor.row_tier_layout().is_some(),
             )?;
             return Ok(existing);
         }
@@ -942,12 +1073,8 @@ fn ec_distann_begin_epoch_handoff(
                     .to_owned(),
             );
         }
-        let relations = create_generation_relations(
-            handle,
-            build_id,
-            &resolved_schema,
-            descriptor.payload_cover.is_some(),
-        )?;
+        let relations =
+            create_generation_relations(handle, build_id, &resolved_schema, &descriptor)?;
         let row = GenerationCatalogRow {
             epoch,
             owner_ordinal,
@@ -960,6 +1087,7 @@ fn ec_distann_begin_epoch_handoff(
             expected_owner_count,
             expected_owner_digest,
             row_tier_relid: relations.row_tier_relid,
+            cold_tier_relid: relations.cold_tier_relid,
             graph_store_relid: relations.graph_store_relid,
             directory_relid: relations.directory_relid,
             payload_sidecar_relid: relations.payload_sidecar_relid,
@@ -1017,6 +1145,7 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
             index_oid,
             GenerationRelations {
                 row_tier_relid: row.row_tier_relid,
+                cold_tier_relid: row.cold_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
                 payload_sidecar_relid: row.payload_sidecar_relid,
@@ -1127,6 +1256,7 @@ pub(crate) fn reset_control_index_for_rebuild(
     let index_oid = relation_oid_handle(index_handle);
     for (
         row_tier_relid,
+        cold_tier_relid,
         graph_store_relid,
         directory_relid,
         payload_sidecar_relid,
@@ -1137,6 +1267,7 @@ pub(crate) fn reset_control_index_for_rebuild(
             index_oid,
             GenerationRelations {
                 row_tier_relid,
+                cold_tier_relid,
                 graph_store_relid,
                 directory_relid,
                 payload_sidecar_relid,

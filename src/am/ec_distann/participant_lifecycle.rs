@@ -834,6 +834,7 @@ fn ec_distann_apply_epoch_retire(
             index_oid,
             GenerationRelations {
                 row_tier_relid: row.row_tier_relid,
+                cold_tier_relid: row.cold_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
                 payload_sidecar_relid: row.payload_sidecar_relid,
@@ -1122,6 +1123,7 @@ fn ec_distann_reclaim_cancelled_generation(
             index_oid,
             GenerationRelations {
                 row_tier_relid: row.row_tier_relid,
+                cold_tier_relid: row.cold_tier_relid,
                 graph_store_relid: row.graph_store_relid,
                 directory_relid: row.directory_relid,
                 payload_sidecar_relid: row.payload_sidecar_relid,

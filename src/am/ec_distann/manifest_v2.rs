@@ -1417,6 +1417,21 @@ mod tests {
             &descriptor.encode().unwrap(),
         );
         let mut hot_cold_descriptor = descriptor.clone();
+        hot_cold_descriptor.row_schema.attributes.push(
+            super::super::row_schema::DistannRowSchemaAttribute {
+                attnum: 4,
+                name: "cold_value".to_owned(),
+                type_namespace: "pg_catalog".to_owned(),
+                type_name: "int8".to_owned(),
+                typmod: -1,
+                collation_namespace: String::new(),
+                collation_name: String::new(),
+                dropped: false,
+                generated_kind: 0,
+                send_function: "pg_catalog.int8send".to_owned(),
+                receive_function: "pg_catalog.int8recv".to_owned(),
+            },
+        );
         hot_cold_descriptor.graph_record_version =
             super::super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
         hot_cold_descriptor.row_tier_layout = Some(

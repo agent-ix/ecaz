@@ -111,6 +111,45 @@ fn add_second_distann_owner(fixture: &mut DistannPhysicalGenerationFixture) {
         .to_vec();
 }
 
+fn configure_hot_cold_generation_fixture(
+    fixture: &mut DistannPhysicalGenerationFixture,
+    hot_payload_attnums: &[u16],
+) {
+    let hot_payload_option = if hot_payload_attnums.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ", hot_payload_attnums = '{}'",
+            hot_payload_attnums
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    };
+    Spi::run(&format!(
+        "ALTER INDEX {} SET (row_tier_layout = 'hot_cold'{hot_payload_option})",
+        fixture.index_name
+    ))
+    .expect("hot/cold reloptions should configure");
+
+    let mut descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    descriptor.graph_record_version = crate::bench_api::DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
+    descriptor.row_tier_layout = Some(
+        crate::am::ec_distann::resolve_hot_cold_layout_for_test(
+            &descriptor.row_schema,
+            4,
+            1,
+            descriptor.dimensions,
+            hot_payload_attnums,
+        )
+        .unwrap(),
+    );
+    fixture.descriptor = descriptor.encode().unwrap();
+    fixture.descriptor_digest = descriptor.digest().unwrap().to_vec();
+}
+
 fn distann_catalog_name(name: &str) -> String {
     crate::am::ec_distann::catalog_relation_name(name)
         .expect("extension generation catalog should resolve")
@@ -237,6 +276,26 @@ fn create_distann_physical_generation_fixture_configured_schema(
     covering_payload_attnums: Option<&[u16]>,
     readable_row_tier_schema: bool,
 ) -> DistannPhysicalGenerationFixture {
+    create_distann_physical_generation_fixture_configured_schema_with_dimensions(
+        stem,
+        build_marker,
+        payload_type,
+        graph_degree,
+        covering_payload_attnums,
+        readable_row_tier_schema,
+        4,
+    )
+}
+
+fn create_distann_physical_generation_fixture_configured_schema_with_dimensions(
+    stem: &str,
+    build_marker: u8,
+    payload_type: &str,
+    graph_degree: u32,
+    covering_payload_attnums: Option<&[u16]>,
+    readable_row_tier_schema: bool,
+    dimensions: u16,
+) -> DistannPhysicalGenerationFixture {
     assert!(
         stem.bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
@@ -255,7 +314,7 @@ fn create_distann_physical_generation_fixture_configured_schema(
             "CREATE TABLE {table_name} (
                  source_id uuid NOT NULL,
                  payload {payload_type},
-                 embedding ecvector(4) NOT NULL,
+                 embedding ecvector({dimensions}) NOT NULL,
                  payload_generated text
              )"
         ))
@@ -266,7 +325,7 @@ fn create_distann_physical_generation_fixture_configured_schema(
                  source_id uuid NOT NULL,
                  payload {payload_type},
                  legacy_payload integer,
-                 embedding ecvector(4) NOT NULL,
+                 embedding ecvector({dimensions}) NOT NULL,
                  payload_generated text GENERATED ALWAYS AS (payload || ':generated') STORED
              )"
         ))
@@ -332,7 +391,7 @@ fn create_distann_physical_generation_fixture_configured_schema(
         index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
         graph_record_version: crate::am::ec_distann::DISTANN_GRAPH_RECORD_VERSION,
         handoff_wire_version: crate::am::ec_distann::DISTANN_HANDOFF_WIRE_VERSION,
-        dimensions: 4,
+        dimensions,
         graph_degree: metadata.graph_degree_r,
         placement_hash_version: crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
         roster: vec![crate::am::ec_distann::DistannRosterEntry {
@@ -342,7 +401,7 @@ fn create_distann_physical_generation_fixture_configured_schema(
         }],
         neighbor_codec_kind: metadata.neighbor_codec_kind,
         codec_artifact: crate::am::ec_distann::DistannCodecArtifact::RaBitQ {
-            dimensions: 4,
+            dimensions,
             seed: metadata.seed,
             bits: 1,
         },
@@ -757,6 +816,28 @@ fn distann_payload_sidecar_relation_oids(
             .next()
             .expect("generation catalog row should exist")
     })
+}
+
+fn distann_cold_tier_relation_oid(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> pg_sys::Oid {
+    let catalog = distann_generation_catalog_name();
+    Spi::get_one_with_args::<pg_sys::Oid>(
+        &format!(
+            "SELECT cold_tier_relid
+               FROM {catalog}
+              WHERE index_oid = $1::oid
+                AND logical_index_uuid = $2::uuid
+                AND build_id = $3::uuid"
+        ),
+        &[
+            fixture.index_oid.into(),
+            fixture.logical_index_uuid.into(),
+            fixture.build_id.into(),
+        ],
+    )
+    .unwrap()
+    .expect("hot/cold generation must catalog its cold tier")
 }
 
 fn abort_distann_physical_generation(fixture: &DistannPhysicalGenerationFixture) {
@@ -5893,6 +5974,123 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
     .unwrap()
     .unwrap();
     assert_eq!(live_relation_count, 0);
+}
+
+#[pg_test]
+fn test_distann_hot_cold_relation_ddl_and_abort() {
+    let mut fixture = create_distann_physical_generation_fixture_configured_schema_with_dimensions(
+        "ec_distann_hot_cold_relations",
+        0x2d,
+        "bigint",
+        4,
+        None,
+        false,
+        1_536,
+    );
+    configure_hot_cold_generation_fixture(&mut fixture, &[2]);
+    let first = begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+    assert_eq!((first.0.as_str(), first.1, first.2), ("Building", 0, 0));
+
+    let (hot_oid, graph_oid, directory_oid) = distann_generation_relation_oids(&fixture);
+    let cold_oid = distann_cold_tier_relation_oid(&fixture);
+    let replay = begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+    assert_eq!(replay, first, "exact replay must retain both row tiers");
+    assert_eq!(distann_cold_tier_relation_oid(&fixture), cold_oid);
+
+    let catalog_shape = Spi::get_one::<bool>(&format!(
+        "SELECT cold_tier_relid = {cold_oid}
+                AND payload_sidecar_relid IS NULL
+                AND payload_sidecar_directory_relid IS NULL
+           FROM {}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+            AND build_id = '{}'::uuid",
+        distann_generation_catalog_name(),
+        u32::from(fixture.index_oid),
+        fixture.logical_index_uuid,
+        fixture.build_id,
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(catalog_shape, "hot/cold and Task 229 shapes must be exclusive");
+
+    let relation_shape = Spi::get_one::<bool>(&format!(
+        "SELECT
+             hot.relkind = 'r' AND cold.relkind = 'r'
+             AND hot.relowner = control.relowner
+             AND cold.relowner = control.relowner
+             AND hot.relpersistence = 'p' AND cold.relpersistence = 'p'
+             AND hot.relnamespace = control.relnamespace
+             AND cold.relnamespace = control.relnamespace
+             AND hot.reltablespace = cold.reltablespace
+             AND COALESCE(hot.reloptions, ARRAY[]::text[]) @> ARRAY['fillfactor=100']
+             AND (SELECT array_agg(attname::text ORDER BY attnum)
+                    FROM pg_attribute
+                   WHERE attrelid = hot.oid AND attnum > 0 AND NOT attisdropped)
+                 = ARRAY['vec_id', 'a_1', 'a_2', 'a_4']
+             AND (SELECT array_agg(attname::text ORDER BY attnum)
+                    FROM pg_attribute
+                   WHERE attrelid = cold.oid AND attnum > 0 AND NOT attisdropped)
+                 = ARRAY['vec_id', 'a_5']
+             AND (SELECT bool_and(attstorage = 'p')
+                    FROM pg_attribute
+                   WHERE attrelid = hot.oid AND attname IN ('a_1', 'a_4'))
+           FROM pg_class hot
+           JOIN pg_class cold ON cold.oid = {cold_oid}
+           JOIN pg_class control ON control.oid = {}
+          WHERE hot.oid = {hot_oid}",
+        u32::from(fixture.index_oid),
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(relation_shape, "hot/cold relation DDL must match the layout");
+
+    let dependency_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_depend
+          WHERE classid = 'pg_class'::regclass
+            AND objid IN ({hot_oid}, {cold_oid}, {graph_oid}, {directory_oid})
+            AND refclassid = 'pg_class'::regclass
+            AND refobjid = {} AND deptype = 'i'",
+        u32::from(fixture.index_oid),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(dependency_count, 4);
+
+    let hot_name = canonical_index_locator(hot_oid);
+    Spi::run(&format!(
+        "INSERT INTO {hot_name} (vec_id, a_1, a_2, a_4)
+         VALUES (1, '11111111-1111-4111-8111-111111111111'::uuid, 9,
+                 encode_to_ecvector(
+                     array_fill(1.0::real, ARRAY[1536]), 4, 42
+                 ))"
+    ))
+    .expect("maximal hot tuple should form");
+    let formed_bytes = Spi::get_one::<i64>(&format!(
+        "SELECT pg_column_size(h) FROM {hot_name} h WHERE vec_id = 1"
+    ))
+    .unwrap()
+    .unwrap();
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let maximum_hot_tuple_bytes = i64::from(
+        descriptor
+            .row_tier_layout()
+            .unwrap()
+            .maximum_hot_tuple_bytes(),
+    );
+    assert_eq!(
+        formed_bytes, maximum_hot_tuple_bytes,
+        "formed maximal hot tuple must equal the frozen estimator"
+    );
+
+    abort_distann_physical_generation(&fixture);
+    let remaining = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class
+          WHERE oid IN ({hot_oid}, {cold_oid}, {graph_oid}, {directory_oid})"
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(remaining, 0, "abort must remove both row tiers atomically");
 }
 
 #[pg_test]

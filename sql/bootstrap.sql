@@ -338,6 +338,9 @@ CREATE TABLE ec_distann_generation (
     expected_owner_count bigint NOT NULL CHECK (expected_owner_count >= 0),
     expected_owner_digest bytea NOT NULL CHECK (octet_length(expected_owner_digest) = 32),
     row_tier_relid oid NOT NULL CHECK (row_tier_relid <> '0'::oid),
+    cold_tier_relid oid CHECK (
+        cold_tier_relid IS NULL OR cold_tier_relid <> '0'::oid
+    ),
     graph_store_relid oid NOT NULL CHECK (graph_store_relid <> '0'::oid),
     directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
     payload_sidecar_relid oid CHECK (
@@ -394,6 +397,11 @@ CREATE TABLE ec_distann_generation (
         (payload_sidecar_relid IS NULL) =
         (payload_sidecar_directory_relid IS NULL)
     ),
+    CHECK (
+        cold_tier_relid IS NULL
+        OR (payload_sidecar_relid IS NULL
+            AND payload_sidecar_directory_relid IS NULL)
+    ),
     CHECK (state = 'Building' OR next_batch_seq > 0),
     CHECK ((state = 'Building') = (ready_receipt IS NULL)),
     CHECK (
@@ -408,6 +416,7 @@ CREATE TABLE ec_distann_generation (
     ),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (row_tier_relid),
+    UNIQUE (cold_tier_relid),
     UNIQUE (graph_store_relid),
     UNIQUE (directory_relid),
     UNIQUE (payload_sidecar_relid),

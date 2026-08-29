@@ -660,6 +660,21 @@ NOT reinterpret artifact-v1 bytes.
   including a one-owner degenerate roster. Only the legacy
   `distributed_control=false` single-node lane MAY reference an indexed
   base-table tuple directly.
+- A generation whose descriptor selects `row_tier_layout='hot_cold'` SHALL
+  interpret `row_tier_relid` as its compact hot heap and SHALL catalog the
+  paired compact cold heap in `cold_tier_relid`. Each compact heap begins with
+  internal `vec_id bigint`; subsequent physical columns are named by source
+  attnum and ordered by their tier-local physical ordinal.
+- The compact hot heap SHALL use `fillfactor=100`. Its exact-vector and source-
+  identity columns SHALL use `STORAGE PLAIN`; relation creation SHALL verify
+  both catalog settings before admitting the generation. Every source
+  attribute SHALL occur in exactly one of the two compact heaps, while the
+  internal `vec_id` join key occurs in both.
+- Both compact heaps SHALL share the control index's schema, owner,
+  persistence, and effective tablespace, carry internal dependencies on that
+  control index, and be created, replayed, aborted, retired, and reclaimed as
+  one generation lifecycle unit. A hot/cold generation SHALL NOT also catalog
+  Task 229 payload-sidecar relations.
 
 ## Handoff Protocol
 

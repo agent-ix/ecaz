@@ -632,6 +632,7 @@ unsafe extern "C-unwind" fn invalidate_generation_caches(
         };
         cache.retain(|entry| {
             let generation_relation = entry.generation.row_tier_relid == relation_oid
+                || entry.generation.cold_tier_relid == Some(relation_oid)
                 || entry.generation.graph_store_relid == relation_oid
                 || entry.generation.directory_relid == relation_oid
                 || entry.generation.payload_sidecar_relid == Some(relation_oid)

@@ -180,6 +180,8 @@ pub use self::manifest_v2::{
     DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
 };
 pub use self::payload_sidecar::DistannPayloadCoverDescriptorV1;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::row_layout::resolve_hot_cold_layout as resolve_hot_cold_layout_for_test;
 pub use self::row_layout::DistannRowTierLayoutDescriptorV1;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::row_schema::resolve_relation_schema;

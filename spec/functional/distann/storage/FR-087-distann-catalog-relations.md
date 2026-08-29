@@ -225,7 +225,8 @@ physical shard generation on its owning participant.
   `node_id > 0`; `state` SHALL be one of `Building`, `Ready`, `Published`,
   `Retired`; 32-byte digests for build spec, roster, generation descriptor,
   expected-owner set, and cumulative owner stream; `row_tier_relid`,
-  `graph_store_relid`, `directory_relid` (all non-zero); streaming resume
+  `graph_store_relid`, `directory_relid` (all non-zero), plus nullable
+  `cold_tier_relid`; streaming resume
   state (`next_batch_seq`, `cumulative_record_count`, optional 8-byte
   `last_vec_id_le`, 107-byte tagged `owner_stream_sha256_state`); optional
   303-byte `ready_receipt`; publish/retire columns (`epoch_fingerprint` 34
@@ -233,6 +234,8 @@ physical shard generation on its owning participant.
   `successor_activation`, `successor_activation_digest`, `retired_at`).
 - State-machine invariants (load-bearing CHECKs, all SHALL hold):
   - `(cumulative_record_count = 0) = (last_vec_id_le IS NULL)`;
+  - `cold_tier_relid` SHALL be non-zero when present and SHALL be mutually
+    exclusive with the payload-sidecar relation pair;
   - a non-`Building` row SHALL have `next_batch_seq > 0`;
   - `ready_receipt` SHALL be NULL exactly while `Building`;
   - `Published`/`Retired` SHALL each carry fingerprint + manifest digest +
@@ -240,8 +243,8 @@ physical shard generation on its owning participant.
   - `Retired` SHALL additionally carry `successor_activation`, its digest,
     and `retired_at`, and only `Retired` may.
 - Keys: PRIMARY KEY `(index_oid, logical_index_uuid, build_id)`; global
-  UNIQUEs on each of `row_tier_relid`, `graph_store_relid`,
-  `directory_relid`; partial unique fingerprint index per logical index
+  UNIQUEs on each of `row_tier_relid`, nullable `cold_tier_relid`,
+  `graph_store_relid`, `directory_relid`; partial unique fingerprint index per logical index
   where `epoch_fingerprint IS NOT NULL`.
 - Writers: `ec_distann_begin_epoch_handoff`, `ec_distann_stage_epoch_batch`,
   `ec_distann_seal_epoch_handoff`, `ec_distann_abort_epoch_handoff`,

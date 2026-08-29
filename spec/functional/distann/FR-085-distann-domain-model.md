@@ -29,7 +29,7 @@ and mutated only by building and publishing a successor epoch.
 | Roster | The registered set of node descriptors for a logical index; snapshotted per build into participant bindings; revision-fenced by the registry state row. |
 | Hash placement | Owner selection by `fmix64(vec_id XOR domain)` modulo roster size; ownership is disjoint — exactly one owner per vec_id per epoch. |
 | vec_id | Stable global `u64` vector identity derived from the ADR-063 source-identity contract; unique per logical row across nodes and epochs. |
-| Generation | Immutable per-owner physical shard of one build: row tier, graph store, and directory relations plus a catalog row advancing Building → Ready → Published → Retired. |
+| Generation | Immutable per-owner physical shard of one build: either one legacy row tier or paired hot/cold tiers, plus graph-store and directory relations and a catalog row advancing Building → Ready → Published → Retired. |
 | Build epoch | One coordinator-driven build attempt: T1 register (gate + roster snapshot), T2 build/stage/seal (per-owner streams → Ready receipts → build candidate), T3 decide (durable publish decision), T4a recover/activate (pointer swap + predecessor dispositions). |
 | Epoch manifest | Canonical v2 description of a published epoch (roster, per-owner generations, digest chain); its 32-byte digest seeds the epoch fingerprint. |
 | Epoch fingerprint | 34-byte value `u16_le(2) \|\| manifest_digest`; the identity every remote call, cache key, and catalog row validates against. |
@@ -141,6 +141,7 @@ erDiagram
         int owner_ordinal
         text state
         oid row_tier_relid
+        oid cold_tier_relid
         oid graph_store_relid
     }
     HEAD_STATE {
