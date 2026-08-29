@@ -177,8 +177,20 @@ before the matrix. **Smoke authorized**: one step, real-10k, hot/cold,
 release-guarded with no `allow_debug_extension`, run_dir under
 `~/.ecaz/clusters`, stage-counter-only and explicitly not decision-eligible, and
 correctly placed in the packet's `artifacts/` rather than
-`crates/ecaz-cli/suites/`. Ordering: release reinstall and CLI build → smoke →
-smoke evidence review-closed → Packet 004 restarts from empty step 1. The
+`crates/ecaz-cli/suites/`. Packet 008 seq-02 is **REVIEW-CLOSED DONE** (verdict
+`reviews/task-230/008-self-contained-owner-sample/feedback/2026-08-29-02-reviewer.md`)
+and **Packet 004 is authorized to restart from an empty step 1**. Two smoke
+results worth keeping: cold-tier laziness holds on a real three-owner cluster —
+`shape=id_only tier=cold` reports zero heap/TOAST/tidx reads *and* hits on all
+three nodes, the first confirmation of packet-004 §4's STOP condition outside an
+in-process pgrx test and measured by PostgreSQL's own `pg_statio` counters; and
+the PLAIN one-row-per-page regime is confirmed at real scale, with `row_bytes /
+rows` = **8,202 bytes/row identically on all three owners**, matching packet-002
+seq-06's maximal-formed-tuple arithmetic on a live 1,536-dimension fixture, and
+`cold_rows == rows` with `cold_orphans=0`. **The smoke is explicitly not decision
+evidence** — 8 queries, 2 iterations, one arm, no control — and its id-only shape
+cannot demonstrate TOAST elimination, because `SELECT a_1` touches no TOAST in
+either layout; only the exact-vector shape in the full matrix can. The
 authorized smoke completed at accepted head `177aae194` with suite status
 `completed=1 failed=0 missing_artifacts=0 stale=0`, unanimous release/no-debug
 preflight, two passing remote-owner proofs, exactly 62 attribution-work rows,
