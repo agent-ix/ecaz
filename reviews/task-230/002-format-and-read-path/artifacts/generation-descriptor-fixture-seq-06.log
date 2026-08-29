@@ -1,0 +1,11 @@
+Script started on 2026-08-28 18:31:56-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 1 test
+test distann_generation_descriptor_v4_fixture_binds_layout_and_graph_v2 ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 18:31:56-07:00 [COMMAND_EXIT_CODE="0"]

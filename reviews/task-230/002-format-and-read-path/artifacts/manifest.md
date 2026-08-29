@@ -1,13 +1,49 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `1407d4504`
+- Head SHA: `7751746599c0b100d137f92c2e13d3f65c194a1d`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Descriptor V4 and catalog-bound row-layout identity checkpoint
+- Packet: Generation-owned hot/cold relation-creation checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 callback plus pure
-  format/descriptor tests; hot/cold registration only; rerank not applicable
+  format/descriptor tests; hot/cold relation creation only; rerank not applicable
 - Isolation: focused pgrx test creates transaction-scoped source/index fixtures;
   no corpus or benchmark fixture was created
+
+## Seq-06 relation-creation artifacts
+
+All seq-06 artifacts below were produced at
+`7751746599c0b100d137f92c2e13d3f65c194a1d` on 2026-08-28 PDT.
+
+### `hot-cold-relation-pg18-seq-06.log`
+
+- Command: `cargo pgrx test pg18 test_distann_hot_cold_relation_ddl_and_abort`
+- Cited result: focused callback test `1 passed; 0 failed`; it creates paired
+  hot/cold relations at the 1,536-dimension boundary, verifies catalog and DDL
+  invariants plus exact formed-tuple sizing and replay, then proves abort drops
+  all four generation relations.
+
+### `row-layout-fixture-seq-06.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test on_disk_fixtures distann_row_tier_layout_v1_fixture`
+- Cited result: `1 passed; 0 failed`; the independent decoder pins a Cold
+  placement and the changed layout digest.
+
+### `generation-descriptor-fixture-seq-06.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test on_disk_fixtures distann_generation_descriptor_v4_fixture`
+- Cited result: `1 passed; 0 failed`; descriptor V4 binds the layout containing
+  the Cold placement.
+
+### `upgrade-matrix-seq-06.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test upgrade_matrix`
+- Cited result: `2 passed; 0 failed`.
+
+### `format-check-seq-06.log`
+
+- Command: `cargo fmt --all -- --check`
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures).
 
 ## Seq-05 descriptor V4/layout identity artifacts
 

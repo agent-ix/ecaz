@@ -5,19 +5,46 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 05
+seq: 06
 ---
 
-# Task 230 packet 002 — descriptor V4 and catalog-bound layout identity
+# Task 230 packet 002 — generation-owned hot/cold relation creation
 
-Review code checkpoint `a1566fcb9` and PG18 preflight follow-up `1407d4504`
-against the review-closed packet-001 contract and reviewer seq-04, which
-accepted Graph V2 and authorized descriptor V4/layout identity binding. This
-remains a narrow packet-002 checkpoint: it freezes and registers the layout
-identity, but does not yet create hot/cold relations, hand off tier rows, or
-read them.
+Review code checkpoint `775174659` against the review-closed packet-001
+contract and reviewer seq-05, which accepted descriptor V4/layout identity and
+authorized relation creation. This remains a narrow packet-002 checkpoint: it
+creates, catalogs, replays, invalidates, and removes the paired generation
+heaps, but does not yet hand off tier rows or read them.
 
-## Descriptor V4 and layout-identity scope
+## Seq-06 relation-creation scope
+
+- Adds nullable, globally unique `cold_tier_relid` to bootstrap and the
+  0.1.1→0.1.2 upgrade. The catalog and decoder require the cold relation to be
+  mutually exclusive with Task 229's sidecar pair.
+- Creates compact hot and cold heaps from descriptor physical ordinals. Both
+  begin with internal `vec_id bigint`; source columns use generated
+  `a_{attnum}` names and retain their resolved SQL type, typmod, and collation.
+- Gives the hot heap `fillfactor=100`, sets both the exact vector and source
+  identity to `STORAGE PLAIN`, and verifies `pg_attribute.attstorage='p'`
+  before admitting the generation.
+- Preserves the control index's owner, schema, WAL persistence, effective
+  tablespace, and internal dependency for both heaps. Begin replay checks the
+  cataloged cold shape and every relation's existence.
+- Carries the cold OID through abort, retire, cancelled-generation reclaim,
+  control-index rebuild reset, and retained-generation cache invalidation.
+- Extends the V4 frozen layout/descriptor fixture with a real Cold placement,
+  pinning the `Cold = 2` discriminant and the new domain digest.
+- Replaces the overloaded varlena-header alignment value with explicit PG int
+  and internal-vec-id alignment constants and removes the redundant leading
+  alignment operation identified by seq-05.
+- Adds a focused PG18 test at the 1,536-dimension boundary. It verifies catalog
+  exclusivity, compact schemas, ownership/persistence/schema/tablespace,
+  `fillfactor=100`, both PLAIN attributes, four internal dependencies, exact
+  maximal formed-tuple size, replay identity, and atomic abort cleanup.
+- Updates FR-078, FR-085, and FR-087 to describe the paired relation identity,
+  storage settings, and lifecycle contract.
+
+## Prior descriptor V4 and layout-identity scope
 
 - Preserves legacy no-cover descriptor V2 and Task 229 cover descriptor V3
   bytes, and adds descriptor V4 with a length-prefixed row-tier layout plus its
@@ -113,8 +140,15 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-05 output and provenance are recorded in
+Packet-local seq-06 output and provenance are recorded in
 `artifacts/manifest.md`:
+
+- the focused PG18 1,536-D relation creation/replay/abort test passes;
+- the independent row-layout and descriptor V4 frozen fixtures pass;
+- both extension upgrade-matrix tests pass;
+- formatting passes (`cargo fmt --all -- --check`).
+
+Prior seq-05 evidence remains recorded in the same manifest:
 
 - five row-layout tests pass;
 - three descriptor unit tests and three independent descriptor fixtures pass;
@@ -126,15 +160,14 @@ Packet-local seq-05 output and provenance are recorded in
   repository failures already identified in seq-02; none is in a seq-05
   touched line.
 
-No benchmark is claimed for this format-registration slice. Full relation,
-handoff, read, DML, lifecycle, and benchmark coverage remains required before
-Task 230 closes.
+No benchmark is claimed for this relation-creation slice. Handoff, read, DML,
+full lifecycle, and benchmark coverage remains required before Task 230 closes.
 
 ## Review request
 
-Please review descriptor V4, row-layout identity, registration V3, the
-catalog-typmod dimension source, exact formed-tuple bound, and focused PG18
-begin-build/replay coverage at `1407d4504`. If DONE, the next packet-002 slice
-will create and catalog the generation-owned hot/cold relations and carry the
-layout identity through build receipts/manifests and handoff/read admission.
-Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.
+Please review the generation catalog migration, compact hot/cold relation DDL,
+PLAIN/fillfactor enforcement, lifecycle propagation, cache invalidation,
+Cold-placement fixture, and focused maximal-tuple PG18 coverage at
+`775174659`. If DONE, the next packet-002 slice will carry both tier identities
+through receipts/manifests and implement handoff/read admission. Legacy
+tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.

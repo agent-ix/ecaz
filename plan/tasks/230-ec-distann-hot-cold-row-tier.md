@@ -2,10 +2,10 @@
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
-(seq-04), descriptor V4/layout identity review-closed DONE (seq-05) at
-`1407d4504`; relation-creation/handoff/read slice authorized; packet 002 still
-open for format/read-path coverage; persisted-format implementation authorized;
-entry condition 3 satisfied**
+(seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
+generation-owned hot/cold relation creation implemented at `775174659`, seq-06
+review open; packet 002 remains open for handoff/read coverage; persisted-format
+implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -102,7 +102,8 @@ generation callers switched to V2 — is authorized. Packet 002 remains open for
 full format/read-path PG18 coverage.
 
 Packet 002 seq-05 descriptor V4/layout-identity checkpoint: code `a1566fcb9`
-plus PG18 preflight follow-up `1407d4504`; request at seq-05 — **review open**.
+plus PG18 preflight follow-up `1407d4504`; request at seq-05 — **review-closed
+DONE**.
 Legacy descriptor V2 and Task 229 descriptor V3 remain byte-identical; V4 binds
 the row-tier layout and selects Graph V2 from the tuple-format constant;
 registration V3 binds the layout digest; exact formed-tuple sizing accounts for
@@ -131,6 +132,18 @@ tier discriminant is unpinned in frozen bytes; `POSTGRES_VARLENA_HEADER_BYTES`
 is used as an alignment value; two redundant `align_up(..,8)` calls open the
 sizing function; and `pg_test` reinstalled a debug `.so`, so reinstall release
 before any packet-004 latency run.
+
+Packet 002 seq-06 relation-creation checkpoint: code `775174659`; request at
+seq-06 — **review open**. The generation catalog now carries a nullable unique
+`cold_tier_relid`; descriptor-driven begin creates compact hot/cold heaps with
+the control owner/schema/persistence/tablespace and internal dependencies,
+enforces hot `fillfactor=100` plus PLAIN exact-vector/identity storage, validates
+replay identity and relation existence, and propagates the cold relation through
+cache invalidation, abort, retire, reclaim, and rebuild reset. The V4 fixture
+now pins a Cold placement. A focused PG18 test at 1,536 dimensions proves the
+formed maximal tuple equals the descriptor estimator and that abort removes the
+four-relation generation atomically. Handoff, receipts/manifests, and read-path
+admission remain for the next packet-002 slice.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's

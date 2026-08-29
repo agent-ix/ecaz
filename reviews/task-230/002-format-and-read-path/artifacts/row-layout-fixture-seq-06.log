@@ -1,0 +1,12 @@
+Script started on 2026-08-28 18:30:21-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 30s
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 1 test
+test distann_row_tier_layout_v1_fixture_decodes_independently ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 18:31:49-07:00 [COMMAND_EXIT_CODE="0"]
