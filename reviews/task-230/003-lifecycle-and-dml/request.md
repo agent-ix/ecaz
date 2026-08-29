@@ -5,12 +5,39 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 2
+seq: 3
 ---
 
-# Task 230 packet 003 — hot/cold topology checkpoint
+# Task 230 packet 003 — retained-history and destructive-lifecycle checkpoint
 
-Review code checkpoint `760ed15a7` against reviewer seq-01's topology carry-in.
+Review code checkpoint `7ff55c0a3` against reviewer seq-02's retained-history
+semantics and remaining local lifecycle carry-ins.
+
+## Seq-03 retained-history and destructive-lifecycle scope
+
+- Documents that the topology orphan columns are raw physical-history counts:
+  valid predecessor tuples retained for snapshot-pinned readers are included
+  and are storage/churn attribution, not corruption by themselves.
+- Extends the hot/cold DML callback to prove a healthy same-identity replacement
+  reports exactly one retained hot tuple and one retained cold tuple.
+- Proves `DROP INDEX` removes hot, cold, graph, and directory relations plus the
+  generation catalog row.
+- Proves `REINDEX` removes all four old generation relations and catalog state
+  and mints a fresh logical index UUID.
+- Proves an aborted `REINDEX` transaction restores all four relations, the cold
+  catalog binding, and the original logical index UUID.
+
+## Seq-03 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Focused PG18 lifecycle group: two passed, zero failed.
+- Mandatory all-target PG18 clippy: only the same five pre-existing findings;
+  no finding in the seq-03 production documentation or lifecycle callback.
+
+## Seq-02 accepted scope
+
+Reviewer seq-02 closed the topology checkpoint as DONE. The accepted scope
+below remains for packet history.
 
 ## Seq-02 topology scope
 
@@ -72,13 +99,13 @@ below remains for packet history.
 
 ## Packet status
 
-This is a reviewable narrow checkpoint, not packet-003 closure. Still owed are
-retry/intent and remote-owner fault coverage, rebuild and retained-predecessor
-recovery, restart and owner-failure reads carried from packet 002, and the
-remaining drop/REINDEX lifecycle matrix.
+This is a reviewable narrow checkpoint, not packet-003 closure. Local
+DROP/REINDEX cleanup and rollback are now covered. Still owed are remote
+retry/intent and fault coverage, publication/recovery and retained-generation
+reads, and restart/owner-failure reads carried from packet 002.
 
 ## Review request
 
-Please verify version-dispatched diagnostic decode, fail-closed hot/cold
-pairing, logical digest reconstruction, and the appended cold-tier topology
-accounting. Leave feedback under this packet's `feedback/` directory.
+Please verify the raw orphan semantics and the complete hot/cold dependency
+cleanup and rollback matrix. Leave feedback under this packet's `feedback/`
+directory.

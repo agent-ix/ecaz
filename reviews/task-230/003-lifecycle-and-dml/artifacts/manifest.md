@@ -1,14 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `760ed15a75bb2f3ed499665b8dbc0b7b3cd92a3c`
+- Head SHA: `7ff55c0a3a9aab4d86d56d6c7d67e61f80801e7e`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: hot/cold topology checkpoint, seq-02
+- Packet: retained-history and destructive-lifecycle checkpoint, seq-03
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 pgrx callbacks;
   descriptor V4, Graph V2, receipt V3, manifest V4, compact paired hot/cold
   heaps; no corpus benchmark or rerank measurement
 - Isolation: every focused callback creates its own transaction-scoped source
   index and generation relations; no shared-table benchmark surface
+
+## Seq-03 retained-history and destructive-lifecycle artifacts
+
+All seq-03 artifacts were produced at
+`7ff55c0a3a9aab4d86d56d6c7d67e61f80801e7e` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-03.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `5c6c9722c33ed227570ea8f0a5196d1a1e2e31f381ea62630eae55a5b303d8ea`
+
+### `cargo-clippy-seq-03.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 and seq-02; no new finding in the seq-03 changes.
+- SHA-256: `0e9dd05f84b81f381b0d32f2c7c2b1f6f49332478d32d1baf52dade416a2f32b`
+
+### `cargo-pgrx-test-lifecycle-seq-03.log`
+
+- Command: `cargo pgrx test pg18 test_distann_hot_cold_d --no-default-features --features 'pg18 pg_test'`
+- Result: two passed, zero failed; 2,642 filtered out. The callbacks prove the
+  raw retained-tuple topology counts and hot/cold DROP, REINDEX, and rollback
+  dependency behavior.
+- SHA-256: `2ea12e029361139d62fd861f9235d60c839353b5dac8691e6498a59a29684cb1`
 
 ## Seq-02 topology artifacts
 
