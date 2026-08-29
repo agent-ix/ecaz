@@ -430,6 +430,8 @@ pub enum RemoteSocketFaultArg {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Task230IoQueryShapeArg {
     IdOnly,
+    HotScalar,
+    ExactVector,
     ColdOnly,
     Mixed,
     SelectAll,
@@ -439,6 +441,8 @@ impl Task230IoQueryShapeArg {
     fn label(self) -> &'static str {
         match self {
             Self::IdOnly => "id_only",
+            Self::HotScalar => "hot_scalar",
+            Self::ExactVector => "exact_vector",
             Self::ColdOnly => "cold_only",
             Self::Mixed => "mixed",
             Self::SelectAll => "select_all",
@@ -880,10 +884,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.task230_io_iterations == 0 {
         bail!("--task230-io-iterations must be at least 1");
     }
-    if args
-        .task230_io_query_shape
-        .is_some_and(|shape| shape != Task230IoQueryShapeArg::IdOnly)
-        && !args.task230_toast_fixture
+    if args.task230_io_query_shape.is_some_and(|shape| {
+        matches!(
+            shape,
+            Task230IoQueryShapeArg::ColdOnly
+                | Task230IoQueryShapeArg::Mixed
+                | Task230IoQueryShapeArg::SelectAll
+        )
+    }) && !args.task230_toast_fixture
     {
         bail!(
             "cold-only, mixed, and select-all Task 230 I/O shapes require --task230-toast-fixture"
@@ -10100,12 +10108,16 @@ async fn task230_run_local_io_shape(
     let hot_or_row_projection = if hot_cold {
         match shape {
             Task230IoQueryShapeArg::IdOnly | Task230IoQueryShapeArg::Mixed => "a_1, a_4",
+            Task230IoQueryShapeArg::HotScalar => "a_1",
+            Task230IoQueryShapeArg::ExactVector => "a_4",
             Task230IoQueryShapeArg::ColdOnly => "a_4",
             Task230IoQueryShapeArg::SelectAll => "*",
         }
     } else {
         match shape {
             Task230IoQueryShapeArg::IdOnly => "id, embedding",
+            Task230IoQueryShapeArg::HotScalar => "id",
+            Task230IoQueryShapeArg::ExactVector => "embedding",
             Task230IoQueryShapeArg::ColdOnly => "embedding, payload_note",
             Task230IoQueryShapeArg::Mixed => "id, embedding, payload_note",
             Task230IoQueryShapeArg::SelectAll => "*",
@@ -10176,6 +10188,11 @@ async fn task230_row_tier_io_attribution(
     }
     let projection = match shape {
         Task230IoQueryShapeArg::IdOnly => "id",
+        // `id` is the preregistered additional hot scalar (attnum 1).
+        // Keep this separately labelled from the primary id-only arm so all
+        // six packet-001 projections remain independently attributable.
+        Task230IoQueryShapeArg::HotScalar => "id",
+        Task230IoQueryShapeArg::ExactVector => "embedding",
         Task230IoQueryShapeArg::ColdOnly => "payload_note",
         Task230IoQueryShapeArg::Mixed => "id, payload_note",
         Task230IoQueryShapeArg::SelectAll => "id, source_id, source, embedding, payload_note",

@@ -598,6 +598,8 @@ enum DistannNfr021Admissibility {
 #[serde(rename_all = "snake_case")]
 enum DistannTask230IoQueryShape {
     IdOnly,
+    HotScalar,
+    ExactVector,
     ColdOnly,
     Mixed,
     SelectAll,
@@ -607,6 +609,8 @@ impl DistannTask230IoQueryShape {
     fn cli_label(self) -> &'static str {
         match self {
             Self::IdOnly => "id-only",
+            Self::HotScalar => "hot-scalar",
+            Self::ExactVector => "exact-vector",
             Self::ColdOnly => "cold-only",
             Self::Mixed => "mixed",
             Self::SelectAll => "select-all",
@@ -5286,10 +5290,14 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                if step
-                    .task230_io_query_shape
-                    .is_some_and(|shape| shape != DistannTask230IoQueryShape::IdOnly)
-                    && !step.task230_toast_fixture
+                if step.task230_io_query_shape.is_some_and(|shape| {
+                    matches!(
+                        shape,
+                        DistannTask230IoQueryShape::ColdOnly
+                            | DistannTask230IoQueryShape::Mixed
+                            | DistannTask230IoQueryShape::SelectAll
+                    )
+                }) && !step.task230_toast_fixture
                 {
                     bail!(
                         "distann-local-multinode step {:?} cold/mixed/select_all Task 230 I/O shapes require task230_toast_fixture",
@@ -8378,6 +8386,25 @@ psql header noise\n\
             .windows(2)
             .any(|window| window == ["--task230-io-iterations", "7"]));
         assert!(command.contains(&"--task230-toast-fixture".into()));
+
+        for (shape, cli_shape) in [
+            ("hot_scalar", "hot-scalar"),
+            ("exact_vector", "exact-vector"),
+        ] {
+            let hot_only = raw
+                .replace("\"id_only\"", &format!("\"{shape}\""))
+                .replace(",\n            \"task230_toast_fixture\": true", "");
+            let config: SuiteConfig =
+                serde_json::from_str(&hot_only).expect("hot-only Task 230 shape parses");
+            validate_config(&config).expect("hot-only Task 230 shape validates without TOAST");
+            let command = config.steps[0]
+                .expand(&config.defaults, &conn())
+                .expect("hot-only Task 230 shape expands");
+            assert!(command
+                .windows(2)
+                .any(|window| { window == ["--task230-io-query-shape", cli_shape] }));
+            assert!(!command.contains(&"--task230-toast-fixture".into()));
+        }
 
         let invalid = raw.replace("\"hot_cold_row_tier\": true,", "");
         let config: SuiteConfig = serde_json::from_str(&invalid).expect("suite parses");
