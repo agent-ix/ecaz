@@ -2,7 +2,7 @@
 
 Status: active Phase 11.1 gate
 Task: Task 30 Phase 11
-Paper basis: `/home/peter/dev_bak/papers/2512.17264v1.pdf`
+Paper basis: arXiv:2512.17264v1
 
 ## Source Basis
 

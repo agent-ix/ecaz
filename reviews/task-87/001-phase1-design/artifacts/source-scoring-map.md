@@ -126,7 +126,7 @@ Task 87 mapping:
 
 Reference file:
 
-- `/home/peter/dev_bak/pgvectorscale/pgvectorscale/src/access_method/scan.rs`
+- `timescale/pgvectorscale:pgvectorscale/src/access_method/scan.rs`
 
 Relevant resort-buffer lines:
 

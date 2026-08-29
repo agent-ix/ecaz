@@ -1,6 +1,6 @@
 # SPire Paper Source Outline
 
-Source file: `/home/peter/dev_bak/papers/2512.17264v1.pdf`
+Source: arXiv:2512.17264v1
 
 The local PDF metadata identifies the paper as "Scalable Distributed Vector
 Search via Accuracy Preserving Index Construction". The decoded outline used

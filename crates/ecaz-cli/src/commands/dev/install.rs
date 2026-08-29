@@ -50,7 +50,7 @@ pub struct InstallEcazPgTestArgs {
 #[derive(Args, Debug)]
 pub struct InstallPgvectorArgs {
     /// pgvector repository checkout.
-    #[arg(long, env = "PGVECTOR_REPO", default_value_os_t = default_pgvector_repo())]
+    #[arg(long, env = "PGVECTOR_REPO")]
     repo: PathBuf,
 
     /// PostgreSQL major version to install against.
@@ -69,11 +69,7 @@ pub struct InstallPgvectorArgs {
 #[derive(Args, Debug)]
 pub struct InstallVectorscaleArgs {
     /// pgvectorscale extension crate checkout.
-    #[arg(
-        long,
-        env = "PGVECTORSCALE_REPO",
-        default_value_os_t = default_vectorscale_repo()
-    )]
+    #[arg(long, env = "PGVECTORSCALE_REPO")]
     repo: PathBuf,
 
     /// cargo-pgrx binary to use for the install.
@@ -282,14 +278,6 @@ fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
-}
-
-fn default_pgvector_repo() -> PathBuf {
-    home_dir().join("dev_bak/pgvector")
-}
-
-fn default_vectorscale_repo() -> PathBuf {
-    home_dir().join("dev_bak/pgvectorscale/pgvectorscale")
 }
 
 fn default_cargo_pgrx_bin() -> PathBuf {

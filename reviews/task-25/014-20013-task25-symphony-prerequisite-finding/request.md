@@ -12,9 +12,9 @@ the task-25 closing posture and the task-27 start date:
    wrong configuration for Symphony.
 
 Artifacts:
-- `~/dev_bak/papers/symphonyqg-2025-sigmod-arxiv-2411.12229.pdf`
-- `~/dev_bak/papers/rabitq-2024-sigmod-arxiv-2405.12497.pdf`
-- `~/dev_bak/papers/extended-rabitq-2025-sigmod-arxiv-2409.09913.pdf`
+- SymphonyQG, arXiv:2411.12229
+- RaBitQ, arXiv:2405.12497
+- Extended RaBitQ, arXiv:2409.09913
 
 Branch: `task25-rabitq-stage1-phase0` (slice 14 builds on `3431476`).
 
@@ -137,7 +137,7 @@ trait surface exactly as today.
   subsection to the same section with the API shape, the
   equation-6 decomposition, and the rationale for keeping the
   centered path off the `Quantizer` trait.
-- Papers archived in `~/dev_bak/papers/` (not committed to repo
+- Papers inspected from local authorized copies (not committed to repo
   since outside the project tree and large binary).
 
 ## What this slice does NOT do

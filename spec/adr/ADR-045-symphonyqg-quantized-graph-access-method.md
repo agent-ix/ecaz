@@ -257,8 +257,7 @@ added a pragmatic q ∈ {1, 2, 4, 8} extension to `RaBitQQuantizer`
 so non-Symphony consumers (DiskANN in-memory tier, general
 prefilter, offline eval) can dial the recall/storage tradeoff.
 The slice-12 q-bit implementation is not paper-faithful to
-**Extended RaBitQ** (Gao et al., SIGMOD 2025, arXiv:2409.09913 —
-`~/dev_bak/papers/extended-rabitq-2025-sigmod-arxiv-2409.09913.pdf`):
+**Extended RaBitQ** (Gao et al., SIGMOD 2025, arXiv:2409.09913):
 
 1. **Scalar quantizer.** Slice 12 uses uniform binning on
    `±2σ`; Extended RaBitQ uses a Lloyd-Max-like codebook
