@@ -129,9 +129,14 @@ hardcoded CLI literal, so the next counter added to `ALL` will break the runner
 the same way, and the failure only surfaces once a full-scale arm is already
 running — have the extension declare its own metric count, or at minimum comment
 the coupling at the `ALL` definition site. The minimum source-site safeguard is
-implemented comment-only at `1a927c22d`; packet 006 is **REVIEW-OPEN** at
-`reviews/task-230/006-counter-coupling-note/request.md`. No benchmark result
-exists yet.
+implemented comment-only at `1a927c22d`; packet 006 is **REVIEW-CLOSED DONE**
+(verdict
+`reviews/task-230/006-counter-coupling-note/feedback/2026-08-29-01-reviewer.md`)
+— the comment sits immediately above `ALL`, which is exactly the uncovered path:
+forgetting `ALL` itself is already a compile error via the `[Self; 61]` length,
+so the failure mode that actually occurred was updating enum and `ALL` correctly
+while forgetting the CLI literal in another crate. **Nothing further blocks the
+restart.** No benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -742,6 +747,22 @@ works in the real run: `extension_build_profile=release`, `debug_override=false`
 captured so the restart can be proved to use the same frozen config. **On the
 rerun the reviewer will additionally check** that the config SHA-256 matches
 `e141ac65…` and that the results file is genuinely new and begins at step 1.
+
+Packet 006 work-count coupling note: code `1a927c22d`; request at seq-01;
+verdict
+`reviews/task-230/006-counter-coupling-note/feedback/2026-08-29-01-reviewer.md`
+— **DONE**. Comment-only, and placed on precisely the path that was uncovered:
+adding an enum variant and forgetting `ALL` is already caught by the compiler
+through the array length, so the real gap was updating both correctly and
+forgetting `DISTANN_WORK_ROWS` in another crate. The note sits immediately above
+`ALL` — the second edit a counter author must make — and names the exact file and
+the exact `server count + client_result_rows` relationship rather than gesturing
+at a coupling. The reviewer ran no gates and expected none: clippy does not lint
+comment content and the lines are inside the format width, so skipping tests here
+is a correct application of the repository's own "static review is sufficient"
+policy rather than a shortcut. The stronger option — having the extension declare
+its own metric count so the CLI validates against the server instead of a literal
+— remains available if this bites again.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
