@@ -31,6 +31,10 @@ topology/storage accounting, reuse attestation, and the post-DML diagnostic
 signal clarification — **but `pg_statio_all_tables` TOAST/tidx delta capture is
 still missing and MUST land before the packet-004 matrix runs, not merely before
 packet 004 closes**;
+row-tier I/O attribution checkpoint 5 implementation complete / review-open at
+`50701c204`, adding isolated typed shapes, same-session owner
+pre/post/force-flush snapshots, all six heap/TOAST/tidx deltas, and aggregate
+shared-buffer hit ratio; no packet-004 measurement has started;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

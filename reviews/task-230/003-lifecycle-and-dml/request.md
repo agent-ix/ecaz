@@ -5,13 +5,46 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 4
+seq: 5
 ---
 
-# Task 230 packet 003 — multinode hot/cold harness checkpoint
+# Task 230 packet 003 — row-tier I/O attribution checkpoint
 
-Review code checkpoint `41a016060` as the production-fixture surface required
-for the remaining remote lifecycle matrix and packet 004 A/B.
+Review code checkpoint `50701c204` against reviewer seq-04's must-land
+heap/TOAST/tidx attribution requirement.
+
+## Seq-05 row-tier I/O attribution scope
+
+- Adds typed `task230_io_query_shape` values for id-only, cold-only, mixed, and
+  select-all arms plus an explicit iteration count to both the suite schema and
+  multinode CLI.
+- Keeps one query shape per fresh fixture and rejects reuse, so cumulative I/O
+  and cache state cannot bleed between shapes.
+- Runs the selected end-to-end ANN projection for elapsed/materialized output,
+  then runs the matching physical hot/row/cold projection independently on
+  every owner.
+- Takes each owner's pre/post `pg_statio_all_tables` snapshots and explicit
+  `pg_stat_force_next_flush()` in the same backend session that performed the
+  attributed relation reads.
+- Emits heap, TOAST heap, and TOAST index read/hit deltas per relation, plus an
+  aggregate shared-buffer hit ratio; counter resets and relation-identity drift
+  fail closed.
+- Adds a Task 230-only external, uncompressed TOAST fixture so cold/mixed/all
+  shapes do not inherit the unrelated materialization-correctness variant
+  matrix.
+
+## Seq-05 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Four focused ecaz-cli tests pass, including exact six-counter subtraction and
+  fail-closed counter reset.
+- Mandatory all-target PG18 clippy reproduces only the same five pre-existing
+  findings; no finding is in the seq-05 changes.
+
+## Seq-04 accepted scope
+
+Reviewer seq-04 closed the multinode/suite selection and topology harness as
+DONE. The accepted scope below remains for packet history.
 
 ## Seq-04 multinode and suite harness scope
 
@@ -130,15 +163,13 @@ below remains for packet history.
 
 ## Packet status
 
-This is a reviewable harness checkpoint, not packet-003 closure. It makes the
-remaining production matrix selectable and observable. Still owed are the
-actual remote retry/intent and fault run, publication/recovery and
-retained-generation reads, and restart/owner-failure reads carried from packet
-002.
+This closes the last harness prerequisite but is not packet-003 closure. Still
+owed are the actual remote retry/intent and fault run,
+publication/recovery and retained-generation reads, and restart/owner-failure
+reads carried from packet 002.
 
 ## Review request
 
-Please verify reloption construction/reuse attestation, complete cold-tier
-topology validation/storage accounting, typed suite expansion, and the
-post-DML diagnostic interpretation. Leave feedback under this packet's
-`feedback/` directory.
+Please verify per-shape isolation, same-session pre/post/force-flush behavior,
+all six `pg_statio_all_tables` deltas, aggregate hit-ratio math, and typed suite
+expansion. Leave feedback under this packet's `feedback/` directory.

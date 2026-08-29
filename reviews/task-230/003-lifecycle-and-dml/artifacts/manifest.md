@@ -1,14 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `41a01606063d2ffdee76d7d5a2ac3f4fb01ce3db`
+- Head SHA: `50701c2048550990e3e6ef6123743b94cd57c522`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: multinode hot/cold harness checkpoint, seq-04
+- Packet: row-tier I/O attribution checkpoint, seq-05
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
-  descriptor V4 / Graph V2 hot/cold selection and topology accounting; no
+  row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
   corpus benchmark or rerank measurement
-- Isolation: pure CLI/suite parsing and topology validation tests; no shared
-  table or running PostgreSQL surface
+- Isolation: pure CLI/suite and counter-delta validation tests; the dynamic
+  fresh-fixture measurement is intentionally deferred until this harness is
+  reviewed
+
+## Seq-05 row-tier I/O attribution artifacts
+
+All seq-05 artifacts were produced at
+`50701c2048550990e3e6ef6123743b94cd57c522` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-05.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `43bba626ab655ef7ba80bc92c51810a973c574f5d943531090db239e1410c30c`
+
+### `cargo-clippy-seq-05.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 through seq-04; no new finding in the seq-05 changes.
+- SHA-256: `14efc939b5661bb9ba917952e77131c52ba00f9e727ce7ba2a47d0d4e0afbcd0`
+
+### `cargo-test-cli-seq-05.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: four passed, zero failed; 546 filtered out. The added counter test
+  covers heap/TOAST/tidx read/hit subtraction and reset rejection.
+- SHA-256: `83f84d5fed709edac56c37bc45f90152c0204878d37c5cb3c9689e4e7d8c2ad7`
 
 ## Seq-04 multinode and suite harness artifacts
 
