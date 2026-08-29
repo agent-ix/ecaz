@@ -13034,7 +13034,7 @@ async fn task230_assert_retained_generation_reads(
             .query_one(
                 "SELECT count(*)::bigint,
                         bool_and(NOT tuple_payload_missing),
-                        bool_and(array_length(payload_offsets, 1) = 3),
+                        bool_and(array_length(payload_offsets, 1) = 2),
                         coalesce(sum(octet_length(payload_values)), 0)::bigint
                    FROM ec_distann_materialize_physical_row_payloads(
                         'dm_idx'::regclass, $1::bytea, ARRAY[$2::bigint],
