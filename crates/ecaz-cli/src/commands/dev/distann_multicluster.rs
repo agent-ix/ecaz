@@ -103,6 +103,17 @@ pub struct LocalMultinodePg18Args {
     /// counterbalanced covered/no-cover DML cost gate.
     #[arg(long, default_value_t = false)]
     pub task229_dml_benchmark: bool,
+    /// Task 230 isolated query shape for row-tier heap/TOAST/tidx I/O deltas.
+    #[arg(long, value_enum)]
+    pub task230_io_query_shape: Option<Task230IoQueryShapeArg>,
+    /// Queries executed by the Task 230 per-shape I/O attribution arm.
+    #[arg(long, default_value_t = 20)]
+    pub task230_io_iterations: u32,
+    /// Add the external uncompressed payload column used by Task 230 cold,
+    /// mixed, and select-all I/O attribution without enabling another task's
+    /// materialization variant matrix.
+    #[arg(long, default_value_t = false)]
+    pub task230_toast_fixture: bool,
     /// Query iterations per latency arm in physical benchmark mode.
     #[arg(long, default_value_t = 5)]
     pub benchmark_iterations: u32,
@@ -414,6 +425,25 @@ pub struct LocalMultinodePg18Args {
 pub enum RemoteSocketFaultArg {
     Reset,
     Slow,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Task230IoQueryShapeArg {
+    IdOnly,
+    ColdOnly,
+    Mixed,
+    SelectAll,
+}
+
+impl Task230IoQueryShapeArg {
+    fn label(self) -> &'static str {
+        match self {
+            Self::IdOnly => "id_only",
+            Self::ColdOnly => "cold_only",
+            Self::Mixed => "mixed",
+            Self::SelectAll => "select_all",
+        }
+    }
 }
 
 impl RemoteSocketFaultArg {
@@ -840,6 +870,24 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.materialization_correctness && args.coordinator_outside_roster {
         bail!("--materialization-correctness requires the coordinator to be physical owner zero");
+    }
+    if args.task230_io_query_shape.is_some() && !args.physical_benchmark {
+        bail!("--task230-io-query-shape requires --physical-benchmark");
+    }
+    if args.task230_io_query_shape.is_some() && args.reuse_fixture {
+        bail!("--task230-io-query-shape requires a fresh isolated fixture");
+    }
+    if args.task230_io_iterations == 0 {
+        bail!("--task230-io-iterations must be at least 1");
+    }
+    if args
+        .task230_io_query_shape
+        .is_some_and(|shape| shape != Task230IoQueryShapeArg::IdOnly)
+        && !args.task230_toast_fixture
+    {
+        bail!(
+            "cold-only, mixed, and select-all Task 230 I/O shapes require --task230-toast-fixture"
+        );
     }
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
@@ -2167,7 +2215,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     if args.hot_cold_row_tier && !(1..=1_536).contains(&physical_dim) {
         bail!("--hot-cold-row-tier requires a physical dimension in 1..=1536");
     }
-    let correctness_column = if args.materialization_correctness {
+    let correctness_column = if args.materialization_correctness || args.task230_toast_fixture {
         ", payload_note text"
     } else {
         ""
@@ -2235,7 +2283,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             rows = args.rows,
         )
     };
-    let correctness_fixture = if coordinator && args.materialization_correctness {
+    let correctness_fixture = if coordinator
+        && (args.materialization_correctness || args.task230_toast_fixture)
+    {
         // Keep the benchmark/query vector non-null. A correctness-only payload
         // column provides both genuine NULL datums and forced, uncompressed
         // out-of-line varlena datums in the immutable row tier without changing
@@ -9732,6 +9782,18 @@ async fn run_physical_benchmarks(
             remote_owners > 0
         ));
     }
+    lines.extend(
+        task230_row_tier_io_attribution(
+            args,
+            coordinator,
+            socket_dir,
+            nodes,
+            &physical_corpus,
+            &physical_queries,
+            scale,
+        )
+        .await?,
+    );
     if args.stage_counter_only || args.skip_single_control {
         lines.push(format!(
             "physical_benchmark_insert_throughput_ab scale={scale} pass=false reason=single_control_skipped"
@@ -9892,6 +9954,346 @@ fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
         || args.top_k != 10
         || args.head_index_cap != 4096
         || args.candidate_heap_limit.unwrap_or(32) != 32
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Task230IoCounters {
+    tier: String,
+    relid: i64,
+    heap_read: i64,
+    heap_hit: i64,
+    toast_read: i64,
+    toast_hit: i64,
+    tidx_read: i64,
+    tidx_hit: i64,
+}
+
+impl Task230IoCounters {
+    fn delta(&self, after: &Self) -> Result<Self> {
+        if self.tier != after.tier || self.relid != after.relid {
+            bail!("Task 230 I/O snapshot relation identity changed");
+        }
+        let subtract = |name: &str, before: i64, after: i64| -> Result<i64> {
+            after
+                .checked_sub(before)
+                .filter(|value| *value >= 0)
+                .ok_or_else(|| {
+                    eyre!("Task 230 I/O counter {name} moved backwards: {before} -> {after}")
+                })
+        };
+        Ok(Self {
+            tier: self.tier.clone(),
+            relid: self.relid,
+            heap_read: subtract("heap_read", self.heap_read, after.heap_read)?,
+            heap_hit: subtract("heap_hit", self.heap_hit, after.heap_hit)?,
+            toast_read: subtract("toast_read", self.toast_read, after.toast_read)?,
+            toast_hit: subtract("toast_hit", self.toast_hit, after.toast_hit)?,
+            tidx_read: subtract("tidx_read", self.tidx_read, after.tidx_read)?,
+            tidx_hit: subtract("tidx_hit", self.tidx_hit, after.tidx_hit)?,
+        })
+    }
+
+    fn accesses(&self) -> i64 {
+        self.heap_read
+            + self.heap_hit
+            + self.toast_read
+            + self.toast_hit
+            + self.tidx_read
+            + self.tidx_hit
+    }
+
+    fn hits(&self) -> i64 {
+        self.heap_hit + self.toast_hit + self.tidx_hit
+    }
+}
+
+async fn task230_io_snapshot(
+    client: &tokio_postgres::Client,
+    fingerprint: &[u8],
+    force_flush: bool,
+) -> Result<Vec<Task230IoCounters>> {
+    if force_flush {
+        client
+            .batch_execute("SELECT pg_stat_force_next_flush(); SELECT pg_stat_clear_snapshot();")
+            .await?;
+    } else {
+        client
+            .batch_execute("SELECT pg_stat_clear_snapshot();")
+            .await?;
+    }
+    client
+        .query(
+            "SELECT relation.tier, relation.relid::oid::bigint,
+                    coalesce(io.heap_blks_read, 0)::bigint,
+                    coalesce(io.heap_blks_hit, 0)::bigint,
+                    coalesce(io.toast_blks_read, 0)::bigint,
+                    coalesce(io.toast_blks_hit, 0)::bigint,
+                    coalesce(io.tidx_blks_read, 0)::bigint,
+                    coalesce(io.tidx_blks_hit, 0)::bigint
+               FROM ec_distann_generation generation
+               CROSS JOIN LATERAL (
+                   VALUES ('hot_or_row'::text, generation.row_tier_relid),
+                          ('cold'::text, generation.cold_tier_relid)
+               ) relation(tier, relid)
+               LEFT JOIN pg_statio_all_tables io ON io.relid = relation.relid
+              WHERE generation.index_oid = 'dm_idx'::regclass::oid
+                AND generation.epoch_fingerprint = $1::bytea
+                AND relation.relid IS NOT NULL
+              ORDER BY relation.tier",
+            &[&fingerprint],
+        )
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok(Task230IoCounters {
+                tier: row.try_get(0)?,
+                relid: row.try_get(1)?,
+                heap_read: row.try_get(2)?,
+                heap_hit: row.try_get(3)?,
+                toast_read: row.try_get(4)?,
+                toast_hit: row.try_get(5)?,
+                tidx_read: row.try_get(6)?,
+                tidx_hit: row.try_get(7)?,
+            })
+        })
+        .collect()
+}
+
+async fn task230_run_local_io_shape(
+    client: &tokio_postgres::Client,
+    fingerprint: &[u8],
+    hot_cold: bool,
+    shape: Task230IoQueryShapeArg,
+    iterations: u32,
+    top_k: u32,
+) -> Result<i64> {
+    let row = client
+        .query_one(
+            "SELECT row_tier_relid::regclass::text,
+                    cold_tier_relid::regclass::text
+               FROM ec_distann_generation
+              WHERE index_oid = 'dm_idx'::regclass::oid
+                AND epoch_fingerprint = $1::bytea",
+            &[&fingerprint],
+        )
+        .await?;
+    let hot_or_row_relation = row.get::<_, String>(0);
+    let cold_relation = row.try_get::<_, Option<String>>(1)?;
+    let safe_relation = |relation: &str| -> Result<()> {
+        if relation.is_empty()
+            || !relation
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
+        {
+            bail!("Task 230 I/O attribution received unsafe internal relation {relation:?}");
+        }
+        Ok(())
+    };
+    safe_relation(&hot_or_row_relation)?;
+    if let Some(relation) = &cold_relation {
+        safe_relation(relation)?;
+    }
+    if hot_cold != cold_relation.is_some() {
+        bail!("Task 230 I/O attribution row-tier shape disagrees with the selected arm");
+    }
+
+    let hot_or_row_projection = if hot_cold {
+        match shape {
+            Task230IoQueryShapeArg::IdOnly | Task230IoQueryShapeArg::Mixed => "a_1, a_4",
+            Task230IoQueryShapeArg::ColdOnly => "a_4",
+            Task230IoQueryShapeArg::SelectAll => "*",
+        }
+    } else {
+        match shape {
+            Task230IoQueryShapeArg::IdOnly => "id, embedding",
+            Task230IoQueryShapeArg::ColdOnly => "embedding, payload_note",
+            Task230IoQueryShapeArg::Mixed => "id, embedding, payload_note",
+            Task230IoQueryShapeArg::SelectAll => "*",
+        }
+    };
+    let mut queries = vec![format!(
+        "SELECT coalesce(sum(octet_length(to_jsonb(projected)::text)), 0)::bigint
+           FROM (SELECT {hot_or_row_projection} FROM {hot_or_row_relation} LIMIT {top_k}) projected"
+    )];
+    if hot_cold
+        && matches!(
+            shape,
+            Task230IoQueryShapeArg::ColdOnly
+                | Task230IoQueryShapeArg::Mixed
+                | Task230IoQueryShapeArg::SelectAll
+        )
+    {
+        let cold_relation = cold_relation.as_deref().expect("shape checked above");
+        let projection = if shape == Task230IoQueryShapeArg::SelectAll {
+            "*"
+        } else {
+            "a_5"
+        };
+        queries.push(format!(
+            "SELECT coalesce(sum(octet_length(to_jsonb(projected)::text)), 0)::bigint
+               FROM (SELECT {projection} FROM {cold_relation} LIMIT {top_k}) projected"
+        ));
+    }
+    let mut materialized_bytes = 0_i64;
+    for _ in 0..iterations {
+        for query in &queries {
+            materialized_bytes += client.query_one(query, &[]).await?.get::<_, i64>(0);
+        }
+    }
+    Ok(materialized_bytes)
+}
+
+async fn task230_row_tier_io_attribution(
+    args: &LocalMultinodePg18Args,
+    coordinator: &tokio_postgres::Client,
+    socket_dir: &Path,
+    nodes: &[Node],
+    physical_corpus: &str,
+    physical_queries: &str,
+    scale: &str,
+) -> Result<Vec<String>> {
+    let Some(shape) = args.task230_io_query_shape else {
+        return Ok(Vec::new());
+    };
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT epoch_fingerprint FROM ec_distann_active_epoch
+              WHERE index_oid = 'dm_idx'::regclass::oid",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    let mut observers = Vec::with_capacity(nodes.len().saturating_sub(1));
+    for node in &nodes[1..] {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        observers.push((
+            node.node_id,
+            client,
+            tokio::spawn(async move { connection.await }),
+        ));
+    }
+    let projection = match shape {
+        Task230IoQueryShapeArg::IdOnly => "id",
+        Task230IoQueryShapeArg::ColdOnly => "payload_note",
+        Task230IoQueryShapeArg::Mixed => "id, payload_note",
+        Task230IoQueryShapeArg::SelectAll => "id, source_id, source, embedding, payload_note",
+    };
+    let sql = format!(
+        "WITH query_vector AS (
+             SELECT source FROM {physical_queries} ORDER BY id OFFSET $1 LIMIT 1
+         ), result AS (
+             SELECT {projection} FROM {physical_corpus}
+              ORDER BY embedding <#> (SELECT source FROM query_vector)
+              LIMIT {}
+         )
+         SELECT count(*)::bigint,
+                coalesce(sum(octet_length(to_jsonb(result)::text)), 0)::bigint
+           FROM result",
+        args.top_k,
+    );
+    let started = Instant::now();
+    let mut returned_rows = 0_i64;
+    let mut materialized_bytes = 0_i64;
+    for iteration in 0..args.task230_io_iterations {
+        let offset = i64::from(iteration % args.queries);
+        let row = coordinator.query_one(&sql, &[&offset]).await?;
+        returned_rows += row.get::<_, i64>(0);
+        materialized_bytes += row.get::<_, i64>(1);
+    }
+    let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+
+    // The end-to-end query above is the latency surface. Snapshot only after
+    // it completes, then run the matching physical projection directly in
+    // every owner observer session. This makes each pre/post/flush triple come
+    // from the same backend that performed the attributed relation reads.
+    let mut before = Vec::new();
+    before.push((
+        nodes[0].node_id,
+        task230_io_snapshot(coordinator, &fingerprint, true).await?,
+    ));
+    for (node_id, client, _) in &observers {
+        before.push((
+            *node_id,
+            task230_io_snapshot(client, &fingerprint, true).await?,
+        ));
+    }
+    let mut attributed_bytes = task230_run_local_io_shape(
+        coordinator,
+        &fingerprint,
+        args.hot_cold_row_tier,
+        shape,
+        args.task230_io_iterations,
+        args.top_k,
+    )
+    .await?;
+    for (_, client, _) in &observers {
+        attributed_bytes += task230_run_local_io_shape(
+            client,
+            &fingerprint,
+            args.hot_cold_row_tier,
+            shape,
+            args.task230_io_iterations,
+            args.top_k,
+        )
+        .await?;
+    }
+
+    let mut after = Vec::new();
+    after.push((
+        nodes[0].node_id,
+        task230_io_snapshot(coordinator, &fingerprint, true).await?,
+    ));
+    for (node_id, client, _) in &observers {
+        after.push((
+            *node_id,
+            task230_io_snapshot(client, &fingerprint, true).await?,
+        ));
+    }
+    let mut lines = Vec::new();
+    let mut total_accesses = 0_i64;
+    let mut total_hits = 0_i64;
+    for ((node_id, before_rows), (after_node_id, after_rows)) in before.iter().zip(&after) {
+        if node_id != after_node_id || before_rows.len() != after_rows.len() {
+            bail!("Task 230 I/O observer topology changed during the query arm");
+        }
+        for (prior, current) in before_rows.iter().zip(after_rows) {
+            let delta = prior.delta(current)?;
+            total_accesses += delta.accesses();
+            total_hits += delta.hits();
+            let ratio = if delta.accesses() == 0 {
+                "not_observed".to_owned()
+            } else {
+                format!("{:.6}", delta.hits() as f64 / delta.accesses() as f64)
+            };
+            lines.push(format!(
+                "physical_benchmark_row_tier_io scale={scale} shape={} node={node_id} tier={} relid={} heap_blks_read={} heap_blks_hit={} toast_blks_read={} toast_blks_hit={} tidx_blks_read={} tidx_blks_hit={} shared_buffer_hit_ratio={ratio} attribution_surface=direct_generation_relation stats_pre_post_same_session=true query_session_same_stats_session=true post_force_flush=true",
+                shape.label(),
+                delta.tier,
+                delta.relid,
+                delta.heap_read,
+                delta.heap_hit,
+                delta.toast_read,
+                delta.toast_hit,
+                delta.tidx_read,
+                delta.tidx_hit,
+            ));
+        }
+    }
+    let ratio = if total_accesses == 0 {
+        bail!("Task 230 I/O attribution observed no row-tier buffer accesses");
+    } else {
+        total_hits as f64 / total_accesses as f64
+    };
+    lines.push(format!(
+        "physical_benchmark_row_tier_io_summary scale={scale} shape={} iterations={} rows={} materialized_bytes={} attributed_relation_bytes={} elapsed_ms={elapsed_ms:.3} heap_toast_tidx_accesses={total_accesses} heap_toast_tidx_hits={total_hits} shared_buffer_hit_ratio={ratio:.6} isolated_shape=true attribution_surface=direct_generation_relation stats_pre_post_same_session=true query_session_post_force_flush=true pass=true",
+        shape.label(), args.task230_io_iterations, returned_rows, materialized_bytes, attributed_bytes,
+    ));
+    for (_, _, task) in observers {
+        task.abort();
+    }
+    Ok(lines)
 }
 
 fn materialization_line_was_emitted_incrementally(line: &str) -> bool {
@@ -17814,6 +18216,48 @@ mod tests {
             false,
         )
         .is_ok());
+    }
+
+    #[test]
+    fn task230_io_counter_delta_covers_heap_toast_and_tidx() {
+        let before = Task230IoCounters {
+            tier: "cold".to_owned(),
+            relid: 42,
+            heap_read: 1,
+            heap_hit: 2,
+            toast_read: 3,
+            toast_hit: 4,
+            tidx_read: 5,
+            tidx_hit: 6,
+        };
+        let after = Task230IoCounters {
+            tier: "cold".to_owned(),
+            relid: 42,
+            heap_read: 2,
+            heap_hit: 4,
+            toast_read: 6,
+            toast_hit: 8,
+            tidx_read: 10,
+            tidx_hit: 12,
+        };
+        let delta = before.delta(&after).expect("monotone counters subtract");
+        assert_eq!(
+            (
+                delta.heap_read,
+                delta.heap_hit,
+                delta.toast_read,
+                delta.toast_hit,
+                delta.tidx_read,
+                delta.tidx_hit,
+                delta.accesses(),
+                delta.hits(),
+            ),
+            (1, 2, 3, 4, 5, 6, 21, 12)
+        );
+        assert!(
+            after.delta(&before).is_err(),
+            "counter reset must fail closed"
+        );
     }
 
     #[test]

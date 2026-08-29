@@ -594,6 +594,26 @@ enum DistannNfr021Admissibility {
     Nonconforming,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DistannTask230IoQueryShape {
+    IdOnly,
+    ColdOnly,
+    Mixed,
+    SelectAll,
+}
+
+impl DistannTask230IoQueryShape {
+    fn cli_label(self) -> &'static str {
+        match self {
+            Self::IdOnly => "id-only",
+            Self::ColdOnly => "cold-only",
+            Self::Mixed => "mixed",
+            Self::SelectAll => "select-all",
+        }
+    }
+}
+
 impl DistannNfr021Admissibility {
     fn label(self) -> &'static str {
         match self {
@@ -685,6 +705,15 @@ struct DistannLocalMultinodeStep {
     /// Optional additional hot scalar physical attnums for Task 230.
     #[serde(default)]
     hot_payload_attnums: Option<String>,
+    /// Task 230 isolated heap/TOAST/tidx attribution query shape.
+    #[serde(default)]
+    task230_io_query_shape: Option<DistannTask230IoQueryShape>,
+    /// Query count for the Task 230 I/O attribution arm.
+    #[serde(default)]
+    task230_io_iterations: Option<u32>,
+    /// Build the external uncompressed cold payload fixture used by Task 230.
+    #[serde(default)]
+    task230_toast_fixture: bool,
     /// Preregistered fresh-build position in a counterbalanced format pair.
     #[serde(default)]
     counterbalance_position: Option<String>,
@@ -5245,6 +5274,28 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.task230_io_query_shape.is_some() && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} task230_io_query_shape requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.task230_io_iterations == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} task230_io_iterations must be at least 1",
+                        step.name
+                    )
+                }
+                if step
+                    .task230_io_query_shape
+                    .is_some_and(|shape| shape != DistannTask230IoQueryShape::IdOnly)
+                    && !step.task230_toast_fixture
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} cold/mixed/select_all Task 230 I/O shapes require task230_toast_fixture",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only && step.materialization_correctness {
                     bail!(
                         "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
@@ -6409,6 +6460,22 @@ fn expand_distann_local_multinode(
         "--hot-payload-attnums",
         step.hot_payload_attnums.as_deref(),
     );
+    push_opt_arg(
+        &mut args,
+        "--task230-io-query-shape",
+        step.task230_io_query_shape
+            .map(DistannTask230IoQueryShape::cli_label),
+    );
+    push_opt_arg(
+        &mut args,
+        "--task230-io-iterations",
+        step.task230_io_iterations
+            .map(|value| value.to_string())
+            .as_deref(),
+    );
+    if step.task230_toast_fixture {
+        args.push("--task230-toast-fixture".into());
+    }
     push_opt_arg(
         &mut args,
         "--benchmark-position-label",
@@ -8286,8 +8353,13 @@ psql header noise\n\
           "steps": [{
             "kind": "distann-local-multinode",
             "name": "candidate",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k",
             "hot_cold_row_tier": true,
-            "hot_payload_attnums": "1"
+            "hot_payload_attnums": "1",
+            "task230_io_query_shape": "id_only",
+            "task230_io_iterations": 7,
+            "task230_toast_fixture": true
           }]
         }"#;
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
@@ -8299,6 +8371,13 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--hot-payload-attnums", "1"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--task230-io-query-shape", "id-only"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--task230-io-iterations", "7"]));
+        assert!(command.contains(&"--task230-toast-fixture".into()));
 
         let invalid = raw.replace("\"hot_cold_row_tier\": true,", "");
         let config: SuiteConfig = serde_json::from_str(&invalid).expect("suite parses");
