@@ -2,9 +2,10 @@
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
-(seq-04), descriptor V4/layout identity seq-05 review-open at `1407d4504`;
-packet 002 still open for format/read-path coverage; persisted-format
-implementation authorized; entry condition 3 satisfied**
+(seq-04), descriptor V4/layout identity review-closed DONE (seq-05) at
+`1407d4504`; relation-creation/handoff/read slice authorized; packet 002 still
+open for format/read-path coverage; persisted-format implementation authorized;
+entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -109,7 +110,27 @@ alignment and PLAIN `bytea(16)`'s 20 bytes; vector binary-I/O identity and
 corrupt schema drift are pinned. A focused PG18 begin-build/replay test exposed
 and closed a zeroed-control-metadata bug by sourcing exact dimensions from the
 indexed `ecvector` catalog typmod. Relation creation, receipt/manifest version
-propagation, handoff, and read paths remain for the next slice.
+propagation, handoff, and read paths remain for the next slice. Verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-05-reviewer.md`
+— **DONE**. All six carry-ins closed (seq-02: catalog-exact
+`maximum_hot_tuple_bytes` now computed internally and equality-validated, vector
+binary-I/O identity pinned including namespace, both drift branches covered;
+seq-04: offset renamed, padding validator factored, graph-record version now
+sourced from `DISTANN_NODE_FORMAT_VERSION`). The `bytea(16)` figure correctly
+moved 17 → 20: under `attstorage='p'` PostgreSQL's `ATT_IS_PACKABLE` is false so
+no short-varlena header applies — the reviewer's seq-02 acceptance of 17 was
+wrong. Reviewer re-derived the tuple arithmetic (uuid 6204, bytea 6208, fixture
+84), verified every `fixed_heap_alignment` against PG `typalign`, confirmed
+`ecvector` typmod is the dimension via `lib.rs:1510`/`lib.rs:1024`, and ran the
+tests and clippy independently. Carried into the relation-creation slice: the
+20-byte figure assumes `attstorage='p'` on the identity column, which no DDL yet
+sets or asserts (safe direction, but pin it as Task 229 did at
+`ec_distann_physical_lifecycle.rs:5878`, and honour packet-001 §1's maximal
+formed-tuple check); the V4 golden fixture has no cold placement so the Cold
+tier discriminant is unpinned in frozen bytes; `POSTGRES_VARLENA_HEADER_BYTES`
+is used as an alignment value; two redundant `align_up(..,8)` calls open the
+sizing function; and `pg_test` reinstalled a debug `.so`, so reinstall release
+before any packet-004 latency run.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
