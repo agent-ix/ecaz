@@ -10105,42 +10105,18 @@ async fn task230_run_local_io_shape(
         bail!("Task 230 I/O attribution row-tier shape disagrees with the selected arm");
     }
 
-    let hot_or_row_projection = if hot_cold {
-        match shape {
-            Task230IoQueryShapeArg::IdOnly | Task230IoQueryShapeArg::Mixed => "a_1, a_4",
-            Task230IoQueryShapeArg::HotScalar => "a_1",
-            Task230IoQueryShapeArg::ExactVector => "a_4",
-            Task230IoQueryShapeArg::ColdOnly => "a_4",
-            Task230IoQueryShapeArg::SelectAll => "*",
-        }
-    } else {
-        match shape {
-            Task230IoQueryShapeArg::IdOnly => "id, embedding",
-            Task230IoQueryShapeArg::HotScalar => "id",
-            Task230IoQueryShapeArg::ExactVector => "embedding",
-            Task230IoQueryShapeArg::ColdOnly => "embedding, payload_note",
-            Task230IoQueryShapeArg::Mixed => "id, embedding, payload_note",
-            Task230IoQueryShapeArg::SelectAll => "*",
-        }
-    };
-    let mut queries = vec![format!(
-        "SELECT coalesce(sum(octet_length(to_jsonb(projected)::text)), 0)::bigint
-           FROM (SELECT {hot_or_row_projection} FROM {hot_or_row_relation} LIMIT {top_k}) projected"
-    )];
-    if hot_cold
-        && matches!(
-            shape,
-            Task230IoQueryShapeArg::ColdOnly
-                | Task230IoQueryShapeArg::Mixed
-                | Task230IoQueryShapeArg::SelectAll
-        )
-    {
+    // Physical attribution mirrors the selected end-to-end projection; ANN
+    // traversal I/O is measured separately by the primary id-only arm.
+    let (hot_or_row_projection, cold_projection) = task230_local_io_projections(hot_cold, shape);
+    let mut queries = Vec::with_capacity(2);
+    if let Some(projection) = hot_or_row_projection {
+        queries.push(format!(
+            "SELECT coalesce(sum(octet_length(to_jsonb(projected)::text)), 0)::bigint
+               FROM (SELECT {projection} FROM {hot_or_row_relation} LIMIT {top_k}) projected"
+        ));
+    }
+    if let Some(projection) = cold_projection {
         let cold_relation = cold_relation.as_deref().expect("shape checked above");
-        let projection = if shape == Task230IoQueryShapeArg::SelectAll {
-            "*"
-        } else {
-            "a_5"
-        };
         queries.push(format!(
             "SELECT coalesce(sum(octet_length(to_jsonb(projected)::text)), 0)::bigint
                FROM (SELECT {projection} FROM {cold_relation} LIMIT {top_k}) projected"
@@ -10153,6 +10129,31 @@ async fn task230_run_local_io_shape(
         }
     }
     Ok(materialized_bytes)
+}
+
+fn task230_local_io_projections(
+    hot_cold: bool,
+    shape: Task230IoQueryShapeArg,
+) -> (Option<&'static str>, Option<&'static str>) {
+    if !hot_cold {
+        return (
+            Some(match shape {
+                Task230IoQueryShapeArg::IdOnly | Task230IoQueryShapeArg::HotScalar => "id",
+                Task230IoQueryShapeArg::ExactVector => "embedding",
+                Task230IoQueryShapeArg::ColdOnly => "payload_note",
+                Task230IoQueryShapeArg::Mixed => "id, payload_note",
+                Task230IoQueryShapeArg::SelectAll => "*",
+            }),
+            None,
+        );
+    }
+    match shape {
+        Task230IoQueryShapeArg::IdOnly | Task230IoQueryShapeArg::HotScalar => (Some("a_1"), None),
+        Task230IoQueryShapeArg::ExactVector => (Some("a_4"), None),
+        Task230IoQueryShapeArg::ColdOnly => (None, Some("a_5")),
+        Task230IoQueryShapeArg::Mixed => (Some("a_1"), Some("a_5")),
+        Task230IoQueryShapeArg::SelectAll => (Some("*"), Some("*")),
+    }
 }
 
 async fn task230_row_tier_io_attribution(
@@ -10285,7 +10286,7 @@ async fn task230_row_tier_io_attribution(
                 format!("{:.6}", delta.hits() as f64 / delta.accesses() as f64)
             };
             lines.push(format!(
-                "physical_benchmark_row_tier_io scale={scale} shape={} node={node_id} tier={} relid={} heap_blks_read={} heap_blks_hit={} toast_blks_read={} toast_blks_hit={} tidx_blks_read={} tidx_blks_hit={} shared_buffer_hit_ratio={ratio} attribution_surface=direct_generation_relation stats_pre_post_same_session=true query_session_same_stats_session=true post_force_flush=true",
+                "physical_benchmark_row_tier_io scale={scale} shape={} node={node_id} tier={} relid={} heap_blks_read={} heap_blks_hit={} toast_blks_read={} toast_blks_hit={} tidx_blks_read={} tidx_blks_hit={} shared_buffer_hit_ratio={ratio} attribution_surface=direct_generation_relation physical_projection_rule=mirrors_end_to_end_projection stats_pre_post_same_session=true query_session_same_stats_session=true post_force_flush=true",
                 shape.label(),
                 delta.tier,
                 delta.relid,
@@ -10304,7 +10305,7 @@ async fn task230_row_tier_io_attribution(
         total_hits as f64 / total_accesses as f64
     };
     lines.push(format!(
-        "physical_benchmark_row_tier_io_summary scale={scale} shape={} iterations={} rows={} materialized_bytes={} attributed_relation_bytes={} elapsed_ms={elapsed_ms:.3} heap_toast_tidx_accesses={total_accesses} heap_toast_tidx_hits={total_hits} shared_buffer_hit_ratio={ratio:.6} isolated_shape=true attribution_surface=direct_generation_relation stats_pre_post_same_session=true query_session_post_force_flush=true pass=true",
+        "physical_benchmark_row_tier_io_summary scale={scale} shape={} iterations={} rows={} materialized_bytes={} attributed_relation_bytes={} elapsed_ms={elapsed_ms:.3} heap_toast_tidx_accesses={total_accesses} heap_toast_tidx_hits={total_hits} shared_buffer_hit_ratio={ratio:.6} isolated_shape=true attribution_surface=direct_generation_relation physical_projection_rule=mirrors_end_to_end_projection stats_pre_post_same_session=true query_session_post_force_flush=true pass=true",
         shape.label(), args.task230_io_iterations, returned_rows, materialized_bytes, attributed_bytes,
     ));
     for (_, _, task) in observers {
@@ -18233,6 +18234,47 @@ mod tests {
             false,
         )
         .is_ok());
+    }
+
+    #[test]
+    fn task230_io_projections_mirror_all_six_end_to_end_shapes() {
+        let shapes = [
+            (Task230IoQueryShapeArg::IdOnly, "id", Some("a_1"), None),
+            (Task230IoQueryShapeArg::HotScalar, "id", Some("a_1"), None),
+            (
+                Task230IoQueryShapeArg::ExactVector,
+                "embedding",
+                Some("a_4"),
+                None,
+            ),
+            (
+                Task230IoQueryShapeArg::ColdOnly,
+                "payload_note",
+                None,
+                Some("a_5"),
+            ),
+            (
+                Task230IoQueryShapeArg::Mixed,
+                "id, payload_note",
+                Some("a_1"),
+                Some("a_5"),
+            ),
+            (Task230IoQueryShapeArg::SelectAll, "*", Some("*"), Some("*")),
+        ];
+        for (shape, row_projection, hot_projection, cold_projection) in shapes {
+            assert_eq!(
+                task230_local_io_projections(false, shape),
+                (Some(row_projection), None),
+                "row-heap projection drifted for {}",
+                shape.label()
+            );
+            assert_eq!(
+                task230_local_io_projections(true, shape),
+                (hot_projection, cold_projection),
+                "hot/cold projection drifted for {}",
+                shape.label()
+            );
+        }
     }
 
     #[test]
