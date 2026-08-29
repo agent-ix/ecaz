@@ -9,10 +9,12 @@ generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `5214b6d98`; production read admission review-closed DONE (seq-09) at
 `f4c8fcedf`; NULL cold-only/mixed reconstruction review-closed DONE (seq-10) at
 `03a4015a2` — **packet 002 REVIEW-CLOSED**, all four packet-001 §7 checkpoints
-satisfied; packet 003 DML/lifecycle checkpoint 1 implemented and review-open at
-`6d439e1e3` (`reviews/task-230/003-lifecycle-and-dml/request.md` seq-01), with
-remote retry/fault, restart/owner-failure, recovery, retained predecessor, and
-remaining drop/REINDEX coverage still owed; packet-001 §7
+satisfied; packet 003 DML/lifecycle checkpoint 1 review-closed DONE (seq-01) at
+`6d439e1e3` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-01-reviewer.md`),
+packet 003 still open with remote retry/fault, restart/owner-failure, recovery,
+retained predecessor, remaining drop/REINDEX, **and topology reporting
+(version-dispatched decode plus cold-tier accounting)** still owed; packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
@@ -292,6 +294,32 @@ same session that ran the queries. Standing requirement from packet 003 onward:
 every checkpoint carries both `clippy` and `format-check` logs with manifest
 entries, including test-only commits, since `--all-targets` lints test code;
 `clippy-seq-10.log` is still owed so packet 002 closes with a complete record.
+
+Packet 003 seq-01 hot/cold DML and reclaim checkpoint: code `6d439e1e3`;
+request `reviews/task-230/003-lifecycle-and-dml/request.md` seq-01; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-01-reviewer.md`
+— **DONE** for the claimed scope. Every `encode_physical_v1`/`decode_physical_v1`
+call in `physical_dml.rs` is converted to version-dispatched form with zero
+leftovers (reviewer-verified by grep), so backlink read/modify/write,
+replacement, and tombstone all carry the V2 cold locator through
+decode/mutate/re-encode. The guard required in packet-001 seq-02 —
+`validate_physical_v1` rejecting a present `cold_tid` — now provides real
+defence: a missed re-encode site would fail loudly rather than silently publish a
+locator-less record. Insert is cold-then-hot-then-graph with a fail-closed check
+for a missing cold relation; delete touches only the graph tombstone; replacement
+appends a new pair plus graph version retaining predecessors. Forwarded owner
+payloads deliberately keep the full logical source schema on the wire so a layout
+change never becomes a wire change. Both gate logs present from checkpoint 1,
+honouring the standing requirement set at packet-002 closure; reviewer's clippy
+run on a clean tree reproduces the packet log; the PG18 run covers six callbacks
+in one invocation including all four prior packet-002 hot/cold tests as
+regression guards. **Added to the packet-003 owed ledger:**
+`diagnose_physical_generation` (`handoff.rs:1992`), reached from
+`build_topology_row`, still hard-codes `decode_physical_v1` and has no cold-tier
+accounting — a hot/cold generation therefore cannot produce a topology report
+(fail-closed, not wrong). Packet-001 §3 names topology among the surfaces that
+must verify descriptor/receipt/manifest links, and packet 004 will read topology
+and storage numbers per arm.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
