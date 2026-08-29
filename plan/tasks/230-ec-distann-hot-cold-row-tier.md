@@ -14,9 +14,11 @@ satisfied; packet 003 DML/lifecycle checkpoint 1 review-closed DONE (seq-01) at
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-01-reviewer.md`),
 packet 003 still open with remote retry/fault, restart/owner-failure, recovery,
 retained predecessor, and remaining drop/REINDEX still owed; topology reporting
-checkpoint 2 implemented and review-open at `760ed15a7` (seq-02), with
-version-dispatched Graph V2 diagnostics, logical hot/cold reconstruction, and
-explicit cold row/orphan/byte accounting; packet-001 §7
+checkpoint 2 review-closed DONE (seq-02) at `760ed15a7` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-02-reviewer.md`),
+closing the seq-01 topology carry-in with version-dispatched Graph V2
+diagnostics, logical hot/cold reconstruction, and explicit cold
+row/orphan/byte accounting; packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
@@ -322,6 +324,28 @@ accounting — a hot/cold generation therefore cannot produce a topology report
 (fail-closed, not wrong). Packet-001 §3 names topology among the surfaces that
 must verify descriptor/receipt/manifest links, and packet 004 will read topology
 and storage numbers per arm.
+
+Packet 003 seq-02 hot/cold topology checkpoint: code `760ed15a7`; request at
+seq-02; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-02-reviewer.md`
+— **DONE**, closing the topology carry-in the reviewer added at seq-01. The
+diagnostic now decodes at `descriptor.graph_record_version`, opens the cold
+relation under the same `AccessShareLock` set, and dispatches reconstruction on a
+total five-tuple with a pre-loop shape check. Reconstruction calls the **same**
+`fetch_hot_cold_row` the seal path uses rather than a parallel topology-local
+implementation, so seal, read, and topology now share one reconstruction
+definition. Three optional columns append (19 → 22) with legacy/sidecar
+generations reporting NULL, keeping "no cold tier" distinct from "empty cold
+tier". Strongest evidence in the checkpoint: the PG18 test asserts
+`row_tier_digest` equals the digest frozen in the manifest at seal time, proving
+that recombining two compact tuples yields a byte-identical logical digest to the
+pre-split single-row form. **Reviewer note carried into retained-predecessor
+work and packet 004:** `cold_orphan_row_count` mirrors the existing hot-side
+`row_count.saturating_sub(colocated_row_count)` definition, so after a
+same-identity replacement — which packet-001 §5 requires to retain predecessor
+tuples until reclaim — both orphan columns report non-zero for a perfectly
+healthy generation. Document that semantic where the columns are defined, or
+exclude retained predecessors, before packet 004 reads these numbers per arm.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
