@@ -28,13 +28,15 @@ multinode/suite harness checkpoint 4 review-closed DONE (seq-04) at
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-04-reviewer.md`),
 adding the explicit hot/cold fixture selection, complete cold-tier
 topology/storage accounting, reuse attestation, and the post-DML diagnostic
-signal clarification — **but `pg_statio_all_tables` TOAST/tidx delta capture is
-still missing and MUST land before the packet-004 matrix runs, not merely before
-packet 004 closes**;
-row-tier I/O attribution checkpoint 5 implementation complete / review-open at
-`50701c204`, adding isolated typed shapes, same-session owner
+signal clarification;
+row-tier I/O attribution checkpoint 5 review-closed DONE (seq-05) at
+`50701c204` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-05-reviewer.md`),
+closing the seq-04 must-land item with isolated typed shapes, same-session owner
 pre/post/force-flush snapshots, all six heap/TOAST/tidx deltas, and aggregate
-shared-buffer hit ratio; no packet-004 measurement has started;
+shared-buffer hit ratio; no packet-004 measurement has started; **packet 004 must
+resolve four measured I/O shapes versus six §6-predicted shapes before freezing
+thresholds**;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -410,6 +412,33 @@ cache-residency proxy — there is no `toast_blks_read`/`hit` or
 Those are the columns that attribute the mechanism (control doing TOAST fetches,
 candidate not). Land them as their own `ecaz-cli` commit before the matrix runs;
 a matrix run without them has to be run again.
+
+Packet 003 seq-05 row-tier I/O attribution checkpoint: code `50701c204`;
+request at seq-05; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-05-reviewer.md`
+— **DONE**, closing the reviewer's seq-04 must-land item in full. All six
+counters (`heap`/`toast`/`tidx` reads and hits) are captured per relation as
+pre/post deltas on every owner, in the same backend session that performed the
+reads. Three details credited: `pg_stat_clear_snapshot()` alongside
+`pg_stat_force_next_flush()` — the reviewer had asked only for the flush, but
+`pg_statio_*` is snapshot-stable within a transaction, so without the clear every
+delta returns zero and looks like a clean result; `checked_sub` failing closed on
+counter reset rather than saturating to zero, which would otherwise be
+indistinguishable from a perfect cache hit and read as evidence *for* the
+candidate; and one query shape per fresh fixture with reuse rejected, since
+`pg_statio` is cumulative and cache state is sticky. Emitted lines carry their own
+provenance markers so a packet-004 reviewer can verify methodology from the
+artifact rather than manifest prose. The Task 230-only external TOAST fixture
+avoids inheriting `materialization_correctness`'s variant matrix — the exact
+confound that cost Task 229 three of its four gates — and the schema requires it
+for cold/mixed/select-all while correctly not requiring it for id-only.
+**Carried into packet-004 preregistration:** `DistannTask230IoQueryShape` is
+`IdOnly | ColdOnly | Mixed | SelectAll`, but packet-001 §6 pre-committed
+directions for six shapes; hot-scalar and exact-vector have no attribution arm.
+The traversal-side mechanism evidence is already carried by id-only, but the
+exact-vector *materialization* prediction has no arm. Either add the two shapes
+or narrow §6's prediction list before any full-scale result is read — freezing
+thresholds for four while predicting six leaves two predictions unfalsifiable.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
