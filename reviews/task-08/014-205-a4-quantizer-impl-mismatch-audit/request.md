@@ -1,7 +1,7 @@
 # Review Request: A4 Quantizer Implementation Mismatch Audit
 
 Basis: `main` working tree after review `204`, plus upstream reference at
-`~/dev_bak/TurboQuantDB/`
+`https://github.com/jyunming/TurboQuantDB`
 
 ## Why This Packet Exists
 

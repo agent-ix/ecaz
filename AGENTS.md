@@ -94,6 +94,17 @@ Packet directories inside a task bucket must sort in chronological order.
 - `request.md` should summarize the result and point at the packet-local
   artifact files.
 
+### Workstation Path Hygiene
+
+- New or changed tracked content must not introduce a machine-specific absolute
+  workstation home path. Use an environment variable, repository-relative path,
+  or durable public URL instead.
+- `scripts/check_workstation_paths.py` enforces this on added diff lines without
+  echoing the sensitive value into CI output.
+- Historical evidence that predates this control must not be bulk-rewritten merely
+  to make the legacy corpus look clean. Any redaction requires an explicit audit
+  trail and a separate history-remediation decision.
+
 ### Never Commit: Corpus Data, Operational Logs, and Polling Cruft
 
 A review packet is decision-grade evidence, not a capture of everything the run

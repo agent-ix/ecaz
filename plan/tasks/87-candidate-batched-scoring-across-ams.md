@@ -379,7 +379,7 @@ fix, not Task 87.
   the calibration prototype already produces `Prepared…Query`
   shapes that batch naturally.
 - **pgvectorscale** is a read-only reference: clone at
-  `/Users/peter/dev_bak/pgvectorscale/`; key files
+  the `timescale/pgvectorscale` repository; key files
   `access_method/scan.rs` (resort_buffer pattern) and
   `access_method/graph/mod.rs` (streaming iteration).
 
@@ -426,7 +426,7 @@ fix, not Task 87.
 - Task 86 packet 001 transferability matrix (per-AM block-
   kernel fit ranking)
 - pgvectorscale resort_buffer pattern:
-  `/Users/peter/dev_bak/pgvectorscale/pgvectorscale/src/access_method/scan.rs`
+  `pgvectorscale/src/access_method/scan.rs`
 - FR-038 (benchmark provenance): every suite checked-in JSON
 - ADR-075 (Task 65b stepping stone framing) — similar
   staged-rollout pattern

@@ -7,7 +7,7 @@ Recipient: coder-1
 This is a code-level evaluation of `src/am/ec_diskann/` and a comparison to
 pgvectorscale's Vamana implementation. It is informed by reading every probe
 packet `11087..11094` and the relevant ec_diskann source plus
-`~/dev_bak/pgvectorscale/pgvectorscale/src/access_method/` (cloned at HEAD).
+`timescale/pgvectorscale:pgvectorscale/src/access_method/` (cloned at HEAD).
 
 The review excludes pgvectorscale's streaming-iterator amgettuple shape per
 the request; everything else (graph build, prune, search, distance handling,

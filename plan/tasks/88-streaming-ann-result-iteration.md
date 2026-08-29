@@ -8,7 +8,7 @@ Priority: 2 (hybrid-search support; follows Task 87)
 
 Task 86 investigation surfaced pgvectorscale's
 `StreamingDiskANN` pattern (see
-`/Users/peter/dev_bak/pgvectorscale/pgvectorscale/src/access_method/graph/mod.rs`
+`timescale/pgvectorscale:pgvectorscale/src/access_method/graph/mod.rs`
 `greedy_search_streaming_init` + `greedy_search_iterate`).
 The pattern yields candidates lazily to the PostgreSQL
 executor in approximate-score order, with a resort buffer +
@@ -200,7 +200,7 @@ the two.
   the post-filter use case justification — don't expand
   Task 88's scope.
 - **pgvectorscale** is the reference implementation
-  (`/Users/peter/dev_bak/pgvectorscale/`). Key files:
+  (`timescale/pgvectorscale`). Key files:
   - `pgvectorscale/src/access_method/scan.rs`
     (`resort_buffer`, `StreamingStats`)
   - `pgvectorscale/src/access_method/graph/mod.rs`
@@ -243,7 +243,7 @@ the two.
   (surfaced the streaming-vs-batching distinction)
 - Task 87 (predecessor): `plan/tasks/87-candidate-batched-scoring-across-ams.md`
 - pgvectorscale `StreamingDiskANN` reference:
-  `/Users/peter/dev_bak/pgvectorscale/`
+  `timescale/pgvectorscale`
 - pgvectorscale README streaming section: *"The
   post-filtering implementation, while slower, is streaming
   and correct…"*
