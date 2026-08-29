@@ -6,8 +6,10 @@ descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
 `885b86be0`; receipt V3 / manifest V4 sealing review-closed DONE (seq-08) at
-`5214b6d98`; production read admission implemented at `f4c8fcedf` with packet
-002 seq-09 review-open; seq-07
+`5214b6d98`; production read admission review-closed DONE (seq-09) at
+`f4c8fcedf`; **packet 002 NOT yet closed** — packet-001 §7 checkpoint 4 still
+owes NULL-value projection, restart, and owner-failure coverage, or a written
+reconciliation moving restart/owner-failure into packet 003; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
@@ -229,6 +231,29 @@ sidecar projection regression also passes. All three compile gates and format
 pass; clippy reports only the same five pre-existing repository failures.
 Reviewer seq-08's manifest-version predicate note is closed. Packet 003
 lifecycle/DML remains gated on the outside verdict.
+
+Packet 002 seq-09 production read-admission checkpoint: code `f4c8fcedf`;
+request at seq-09; verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-09-reviewer.md`
+— **DONE**. Packet-001 acceptance criterion 2 is now satisfied numerically: the
+typed PG18 test asserts, with counters reset between arms, that expansion reads
+`HotTierTupleReads == 1` / `ExactVectorReads == 1` with
+`ColdTierRelationOpens == 0` and `ColdTierTupleReads == 0`, that a cold-only
+projection opens no hot relation, and that a hot-only projection opens no cold
+relation. Ten hot/cold/exact-vector counters landed for packet-004 attribution.
+The slice also found and fixed a memory-safety-class bug via its own three-owner
+test — routing an owner-local hot/cold hit through the full-logical-row path read
+the internal `vec_id`'s i64 bits as a UUID Datum pointer; reviewer confirmed
+`generation_read.rs:79-101` leaves no residual full-row assumption and that the
+three legacy tag-guarded V1 paths stay unversioned. Reviewer's seq-08
+`version()`/`validate()` carry-in is closed. Clippy verified on a clean tree and
+reproduces the packet log exactly, which also settles the seq-08 anomaly as
+contamination — the five pre-existing lints remain open. **For packet 004:** the
+counters prove tier laziness but not TOAST elimination, since
+`ExactVectorReads`/`ExactVectorBytes` look identical inline or detoasted; decide
+now whether attribution comes from a detoast counter or per-relation block
+statistics including each tier's TOAST relation, or a win will be observed but
+unexplained.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
