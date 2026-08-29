@@ -10156,6 +10156,16 @@ fn task230_local_io_projections(
     }
 }
 
+fn task230_physical_identity_column(hot_cold: bool) -> &'static str {
+    if hot_cold {
+        // The standard physical fixture's source identity is source attnum 2;
+        // compact hot/cold tiers retain source attnums in their column names.
+        "a_2"
+    } else {
+        "source_id"
+    }
+}
+
 async fn task230_row_tier_io_attribution(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -14125,13 +14135,16 @@ async fn drive_physical_fixture(
         {
             bail!("remote owner {} returned unsafe row relation", node.node_id);
         }
+        let identity_column = task230_physical_identity_column(args.hot_cold_row_tier);
         let sample = capture_psql(
             psql,
             socket_dir,
             node.port,
             &format!(
-                "SELECT source_id::text || '|' || source::text
-                   FROM {row_relation} ORDER BY source_id LIMIT 1"
+                "SELECT internal.{identity_column}::text || '|' || corpus.source::text
+                   FROM {row_relation} internal
+                   JOIN dm corpus ON corpus.source_id = internal.{identity_column}
+                  ORDER BY internal.{identity_column} LIMIT 1"
             ),
         )
         .await?;
@@ -14236,8 +14249,8 @@ async fn drive_physical_fixture(
             socket_dir,
             node.port,
             &format!(
-                "SELECT source_id::text FROM {row_relation} \
-                  WHERE source_id = '{source_id}'::uuid LIMIT 1;"
+                "SELECT {identity_column}::text FROM {row_relation} \
+                  WHERE {identity_column} = '{source_id}'::uuid LIMIT 1;"
             ),
         )
         .await;
@@ -14280,7 +14293,7 @@ async fn drive_physical_fixture(
                 node.port,
                 &format!(
                     "SELECT count(*) FROM {row_relation} \
-                      WHERE source_id = '{candidate_source_id}'::uuid;"
+                      WHERE {identity_column} = '{candidate_source_id}'::uuid;"
                 ),
             )
             .await;
@@ -18439,6 +18452,12 @@ mod tests {
                 shape.label()
             );
         }
+    }
+
+    #[test]
+    fn task230_remote_owner_identity_column_tracks_physical_layout() {
+        assert_eq!(task230_physical_identity_column(false), "source_id");
+        assert_eq!(task230_physical_identity_column(true), "a_2");
     }
 
     #[test]
