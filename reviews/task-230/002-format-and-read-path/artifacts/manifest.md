@@ -45,6 +45,16 @@ All seq-06 artifacts below were produced at
 - Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
   non-failures).
 
+### `clippy-seq-06.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Produced after the seq-06 review verdict at `0396b2069`; reviewed code remains
+  `775174659`.
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1069`, and `ec_distann_physical_lifecycle.rs:8202`; no
+  failure is in a seq-06 touched line.
+
 ## Seq-05 descriptor V4/layout identity artifacts
 
 All seq-05 artifacts below were produced at `1407d4504` on 2026-08-28 PDT.
