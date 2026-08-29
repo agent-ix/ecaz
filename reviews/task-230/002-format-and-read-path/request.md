@@ -5,15 +5,34 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 09
+seq: 10
 ---
 
-# Task 230 packet 002 — production hot/cold read admission
+# Task 230 packet 002 — NULL projection and scope reconciliation
 
-Review code checkpoint `f4c8fcedf` against the review-closed packet-001
-contract and reviewer seq-08, which accepted receipt V3 / manifest V4 sealing
-and authorized production read admission. This is the final packet-002 slice;
-packet 003 lifecycle and DML remains separate.
+Review test checkpoint `03a4015a2` against reviewer seq-09, which accepted the
+production read implementation but held packet 002 open for NULL coverage and
+an explicit checkpoint-4 scope reconciliation.
+
+## Seq-10 closure scope
+
+- Extends the canonical handoff fixture builder with explicit NULL positions.
+  NULL attributes are marked in the bitmap and omitted from the ordered value
+  stream, exercising the real wire/handoff/seal/read path rather than a
+  post-publication mutation that would invalidate Graph V2 CTIDs.
+- Adds a published hot/cold fixture whose cold payload and generated payload
+  are both NULL. The focused PG18 callback pins cold-only reconstruction as
+  `(nulls=[true,true], offsets=[0,0], values=empty)` and mixed reconstruction as
+  `[non-NULL identity, NULL cold, non-NULL vector, NULL cold]`, including equal
+  offsets across both NULL positions.
+- Explicitly moves packet-001 §7 checkpoint 4's restart and owner-failure read
+  coverage into packet 003's lifecycle matrix. Packet 003 must restate and
+  dynamically exercise both; they are not waived.
+- Chooses packet-004 TOAST attribution now: capture pre/post deltas from
+  `pg_statio_all_tables` for each isolated arm and query shape, including heap,
+  TOAST heap, and TOAST index reads/hits. Report the shared-buffer hit ratio
+  from the same deltas. This makes control TOAST access versus candidate
+  elimination visible without adding production detoast instrumentation.
 
 ## Seq-09 production read scope
 
@@ -224,8 +243,14 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-09 output and provenance are recorded in
+Packet-local seq-10 output and provenance are recorded in
 `artifacts/manifest.md`:
+
+- the focused PG18 typed-materialization callback passes with canonical
+  cold-only and mixed NULL reconstruction;
+- formatting passes.
+
+Prior seq-09 evidence remains recorded in the same manifest:
 
 - the manifest all-or-none and identified SQL-builder unit tests pass;
 - all three PG18 compile gates pass (production, `pg_test`, and attribution);
@@ -277,10 +302,8 @@ No benchmark is claimed for packet 002. DML, full lifecycle, and the
 
 ## Review request
 
-Please review Graph V2 production-read dispatch, logical-to-physical vector
-ordinal mapping, lazy tier admission, authoritative paired-locator typed
-reconstruction, local/remote CustomScan routing and bounded visibility retry,
-the new attribution counters, and the PG18 projection matrix at `f4c8fcedf`.
-If DONE, packet 002 is review-closed and packet 003 lifecycle/DML is authorized.
-Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain
-unversioned V1.
+Please review the canonical NULL fixture and cold-only/mixed reconstruction
+assertions at `03a4015a2`, plus the explicit transfer of restart and
+owner-failure coverage to packet 003. If DONE, packet 002 is review-closed and
+packet 003 lifecycle/DML is authorized. Legacy tag-guarded `expand.rs`,
+`reader.rs`, and `insert.rs` paths remain unversioned V1.

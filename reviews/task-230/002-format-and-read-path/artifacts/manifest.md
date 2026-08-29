@@ -1,14 +1,32 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `f4c8fcedfb3620e41105b33e364620941056ce0c`
+- Head SHA: `03a4015a2b6ae42ec3b6e92fcbfe4737d58db443`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Production hot/cold read-admission checkpoint
+- Packet: NULL projection and packet-002 closure checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 callbacks plus pure
   format/read tests; descriptor V4, Graph V2, receipt V3, manifest V4, compact
   paired hot/cold heaps; production exact rerank; no corpus benchmark
 - Isolation: focused pgrx tests create transaction-scoped one-index and
   three-owner source/index fixtures; no corpus or benchmark fixture was created
+
+## Seq-10 NULL projection artifacts
+
+All seq-10 artifacts below were produced at
+`03a4015a2b6ae42ec3b6e92fcbfe4737d58db443` on 2026-08-28 PDT.
+
+### `hot-cold-null-pg18-seq-10.log`
+
+- Command: `cargo test --lib --no-default-features --features 'pg18 pg_test' test_distann_hot_cold_typed_materialization_and_visibility`
+- Cited result: `1 passed; 0 failed`; the existing exact-vector/tier-laziness
+  and fail-closed matrix still passes, and a canonical NULL handoff row proves
+  byte-exact cold-only and mixed logical reconstruction.
+
+### `format-check-seq-10.log`
+
+- Command: `cargo fmt --all -- --check`
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures).
 
 ## Seq-09 production read-admission artifacts
 

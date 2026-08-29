@@ -7,9 +7,9 @@ generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
 `885b86be0`; receipt V3 / manifest V4 sealing review-closed DONE (seq-08) at
 `5214b6d98`; production read admission review-closed DONE (seq-09) at
-`f4c8fcedf`; **packet 002 NOT yet closed** — packet-001 §7 checkpoint 4 still
-owes NULL-value projection, restart, and owner-failure coverage, or a written
-reconciliation moving restart/owner-failure into packet 003; seq-07
+`f4c8fcedf`; NULL cold-only/mixed reconstruction added at `03a4015a2`, packet
+002 seq-10 review-open; packet-001 §7 checkpoint 4 restart and owner-failure
+coverage explicitly moved to packet 003's lifecycle matrix; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
@@ -254,6 +254,19 @@ counters prove tier laziness but not TOAST elimination, since
 now whether attribution comes from a detoast counter or per-relation block
 statistics including each tier's TOAST relation, or a win will be observed but
 unexplained.
+
+Packet 002 seq-10 closure checkpoint: code `03a4015a2`; request at seq-10 —
+**review-open**. A canonical handoff row now carries NULL bits for the cold
+payload and generated payload while omitting their bytes from the value stream;
+the focused PG18 callback proves cold-only reconstruction returns two NULLs,
+zero offsets, and no bytes, and mixed reconstruction preserves identity/vector
+bytes with equal offsets at both NULL positions. Packet-001 §7 checkpoint 4's
+restart and owner-failure read coverage is explicitly moved into packet 003's
+lifecycle matrix and must be dynamically exercised there. Packet-004 TOAST
+attribution is preregistered as per-shape pre/post `pg_statio_all_tables`
+deltas for heap, TOAST heap, and TOAST index reads/hits on isolated arm
+surfaces; shared-buffer hit ratio is computed from the same deltas. If seq-10
+is DONE, packet 002 closes and packet 003 is authorized.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
