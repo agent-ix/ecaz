@@ -85,11 +85,21 @@ write/lifecycle matrix passed 23 scenarios and 110 records with 12
 predecessor reads, and both external cluster directories were removed after
 capture. **Only packet 004's full-scale 10k/50k/100k A/B remains — it decides
 PROMOTE or STOP.**
-Packet 004 preregistration implementation complete, review-open (seq-01) at
-`5837f4bec`: a pushed 20-step standard suite freezes two counterbalanced
-10k/50k/100k primary pairs, isolated 100k exact/cold/mixed/all secondary pairs,
-release/lint entry gates, and numeric PROMOTE/STOP thresholds before any result
-exists. No step permits a debug extension; execution awaits outside review.
+Packet 004 preregistration reviewed **NOT DONE** (seq-01) at `5837f4bec`
+(verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-01-reviewer.md`).
+The 20-step suite shape and all five carried entry gates are accepted and not
+reopened, and no step permits a debug extension. Two threshold items must be
+fixed before the run, while changing them is still preregistration: (1) the
+`physical_generation_bytes` ≤ 1.35× gate applies packet-001 §6's **hot-tier**
+~30% figure to a **whole-generation** ratio — at 100k/1,536 dims the predicted
+delta is ≈ +190 MB on ≈ 2,498 MB, a ratio near **1.08**, so the gate allows
+about 4.6× more headroom than the hypothesis and cannot fail for the intended
+design; restate it per-tier, or tighten the total to ~1.15×, with the arithmetic
+shown; and (2) §6 pre-committed exact-vector to *improve*, but §4 only guards it
+against regression, so a flat result would silently pass — state that a
+pre-committed direction contradicted by the data is reported as a falsified
+prediction regardless of its guardrail. Execution awaits these two fixes.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -637,6 +647,26 @@ release preflight is load-bearing. **Framing note:** this evidence ran at
 dimension-independent invariants; at dim 16 the hot tuple is inline regardless of
 `attstorage='p'`, so packet 003 is *not* evidence about the storage regime — that
 lives in packet-002 seq-06's maximal-formed-tuple test.
+
+Packet 004 seq-01 decision preregistration: config `5837f4bec`; request at
+seq-01; verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-01-reviewer.md`
+— **NOT DONE**, two threshold fixes before the run. Accepted and not reopened:
+the 20-step shape (verified — config checked in, dry-run expands 20 steps,
+`suite-audit.log` reports "audit passed: 20 steps", every `run_dir` a distinct
+child of `~/.ecaz/clusters`, zero `allow_debug_extension` occurrences), the
+conjunctive two-pair 100k mean rule with no tie-break, the combined
+percent-and-absolute form throughout, §3's "a gate is not attributed if the two
+arms do not have the same fixture schema and payload" (Task 229's confound
+written into policy), and §1's requirement that physical prediction files be
+**byte-identical** within every primary pair — the strongest available parity
+check for a change that moves bytes without touching the graph or vectors. All
+five reviewer carry-ins are honored, several better than asked. **Blocking:**
+(1) the 1.35× storage gate mixes denominators — 30% of the hot tier is ≈ 8% of
+the generation, so the gate cannot fail for the intended design; (2) no
+disposition is stated for a §6 direction the data contradicts, so a flat
+exact-vector result would pass every gate while falsifying the clearest timing
+test of the mechanism.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
