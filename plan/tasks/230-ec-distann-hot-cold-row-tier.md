@@ -9,12 +9,15 @@ generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `5214b6d98`; production read admission review-closed DONE (seq-09) at
 `f4c8fcedf`; NULL cold-only/mixed reconstruction review-closed DONE (seq-10) at
 `03a4015a2` — **packet 002 REVIEW-CLOSED**, all four packet-001 §7 checkpoints
-satisfied; packet 003 lifecycle and DML authorized and NEXT; packet-001 §7
+satisfied; packet 003 DML/lifecycle checkpoint 1 implemented and review-open at
+`6d439e1e3` (`reviews/task-230/003-lifecycle-and-dml/request.md` seq-01), with
+remote retry/fault, restart/owner-failure, recovery, retained predecessor, and
+remaining drop/REINDEX coverage still owed; packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
-(updated 2026-08-28; Task 229 is review-closed STOP; request
+(updated 2026-08-29; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
 `.../2026-08-28-01-reviewer.md` and `.../2026-08-28-02-reviewer.md`;
