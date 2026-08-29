@@ -68,11 +68,15 @@ commits already in `23fb9b7ba`), but
 `cargo clippy -p ecaz-cli --all-targets` must join the packet gate set with a
 recorded baseline; `-D warnings` is not yet usable there because `ecaz-cloud`
 and the two known `ecaz` lib errors fail first;
-payload-offset/lint-gate checkpoint 9 implementation complete, packet 003
-review-open (seq-09) at `deb245711`: the retained materialization now enforces
-the authoritative N-attnums/N-cumulative-end-offsets contract and both root
-PG18 and ecaz-cli all-target clippy receipts are recorded; the three runtime
-evidence groups remain owed;
+payload-offset/lint-gate checkpoint 9 review-closed DONE (seq-09) at
+`deb245711` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-09-reviewer.md`):
+the reviewer settled the arity at the production encoder
+(`remote_endpoint.rs:847-855` pushes one cumulative end offset per requested
+attribute, no terminal N+1), confirming the packet-002 pgrx assertions were right
+and the CLI's `= 3` was wrong; both root PG18 and `ecaz-cli` all-target clippy
+receipts are now recorded. **Packet 003's static and harness work is complete;
+only the three runtime evidence groups remain owed.**
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -574,6 +578,26 @@ the same function under the same convention; state which arity is authoritative
 for `ec_distann_materialize_physical_row_payloads` and make both assert it the
 same way, since an offsets off-by-one produces correct-looking rows with shifted
 attribute boundaries.
+
+Packet 003 seq-09 payload-offset contract and CLI lint gate: code `deb245711`;
+request at seq-09; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-09-reviewer.md`
+— **DONE**, closing both seq-08 carry-ins. The reviewer resolved the offsets
+arity at the encoder rather than by arbitrating between two test suites:
+`remote_endpoint.rs:847-855` builds `payload_offsets` with
+`capacity(payload_values.len())` and pushes one cumulative end offset per value,
+so the contract is N offsets for N attnums. The whole encoding is coherent once
+`payload_values` is seen to carry one entry per requested attribute with NULLs
+contributing zero bytes — which is why seq-10's `offsets[1] == offsets[0]` holds
+and why its length is 4 rather than 2. The fix was a one-character test-assertion
+correction; production behaviour was always right, and the wrong arity would have
+failed the retained-read arm at runtime with a misleading `offsets_valid=false`.
+`cargo clippy -p ecaz-cli --all-targets` is now a packet receipt, exiting 0
+against a 77/78-warning pre-existing baseline with nothing at the seq-09 change.
+**Suggestion carried:** record the baseline *count* in the manifest and compare
+each run — a 77-warning list is too large to eyeball, so a future checkpoint's new
+warning would go unnoticed; a count comparison turns the receipt from a filed
+artifact into a check that can fail.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
