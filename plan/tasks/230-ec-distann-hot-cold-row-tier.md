@@ -153,9 +153,14 @@ against the arm-contamination class that cost Task 229 three of its four gates.
 been exercised against row-heap"; grepping `distann_multicluster.rs` for logical
 fixture column names used against a generation or hot relation returns no
 residual matches, so that specific class appears closed — one class checked, not
-a guarantee. If a third mid-run failure occurs, do a tiny-scale dry end-to-end
-hot/cold pass before committing to the 20-step matrix again. No complete
-benchmark result exists yet.
+a guarantee. A third pre-measurement failure then occurred immediately in the
+row-heap step because Packet 007's new logical-`dm` join yielded no valid owner
+sample. Correction `cb6666410` restores row heap's proven internal query and
+samples hot/cold identity plus `a_4::real[]` from the same owned hot tuple,
+without any `dm` join. Packet 008 is **REVIEW-OPEN** at
+`reviews/task-230/008-self-contained-owner-sample/request.md`; its checked-in
+one-step real-10k hot/cold suite smoke must pass and be review-closed before
+Packet 004 restarts from empty step 1. No complete benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

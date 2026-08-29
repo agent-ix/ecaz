@@ -1,0 +1,986 @@
+Script started on 2026-08-29 08:30:43-07:00 [<not executed on terminal>]
+warning: the MSRV in `clippy.toml` and `Cargo.toml` differ; using `1.75.0` from `clippy.toml`
+
+warning: this `if` statement can be collapsed
+   --> src/am/ec_distann/ambuild.rs:139:9
+    |
+139 | /         if training.is_none() {
+140 | |             if self.head_construction == super::options::HeadConstruction::PartitionUnion {
+141 | |                 let partitions = self.head_partition_nodes.as_deref().ok_or_else(|| {
+142 | |                     "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned()
+...   |
+152 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+139 ~         if training.is_none()
+140 ~             && self.head_construction == super::options::HeadConstruction::PartitionUnion {
+141 |                 let partitions = self.head_partition_nodes.as_deref().ok_or_else(|| {
+...
+150 |                 );
+151 ~             }
+    |
+
+warning: called `expect` on `self.head_sizing` after checking its variant with `is_some`
+   --> src/am/ec_distann/generation_descriptor.rs:872:31
+    |
+868 |         if self.head_sizing.is_some() {
+    |         ----------------------------- help: try: `if let Some(<item>) = self.head_sizing`
+...
+872 |             let attestation = self.head_sizing.expect("checked above");
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: this function has too many arguments (10/8)
+   --> crates/ecaz-cloud/src/commands/bench.rs:180:1
+    |
+180 | / async fn remote_suite_script(
+181 | |     repo_root: &std::path::Path,
+182 | |     config: &std::path::Path,
+183 | |     artifacts_dir: &std::path::Path,
+...   |
+190 | |     simd_mode: Option<&str>,
+191 | | ) -> Result<String> {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: `ecaz-cli` (build script) generated 1 warning
+warning: `ecaz` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p ecaz` to apply 1 suggestion)
+warning: `ecaz-cloud` (lib) generated 2 warnings (1 duplicate)
+    Checking ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: large size difference between variants
+  --> crates/ecaz-cli/src/cli.rs:61:1
+   |
+61 | /   enum Command {
+62 | |       /// Corpus plumbing: load fixtures, inspect what's loaded, verify manifests.
+63 | |       Corpus {
+64 | |           #[command(subcommand)]
+...  |
+68 | | /     Bench {
+69 | | |         #[command(subcommand)]
+70 | | |         command: commands::bench::BenchCommand,
+71 | | |     },
+   | | |_____- the second-largest variant contains at least 592 bytes
+72 | |       /// Development/setup/test helpers that own the old wrapper-script surface.
+73 | | /     Dev {
+74 | | |         #[command(subcommand)]
+75 | | |         command: commands::dev::DevCommand,
+76 | | |     },
+   | | |_____- the largest variant contains at least 800 bytes
+...  |
+91 | |       },
+92 | |   }
+   | |___^ the entire enum is at least 800 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+   = note: `#[warn(clippy::large_enum_variant)]` on by default
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+75 -         command: commands::dev::DevCommand,
+75 +         command: Box<commands::dev::DevCommand>,
+   |
+
+warning: this function has too many arguments (11/8)
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:294:1
+    |
+294 | / async fn compare_query_results(
+295 | |     client: &tokio_postgres::Client,
+296 | |     corpus_table: &str,
+297 | |     corpus_ids: &[i64],
+...   |
+305 | |     compare_queries: usize,
+306 | | ) -> Result<Vec<QueryComparison>> {
+    | |_________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: the loop variable `query_row` is used to index `query_ids`
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:319:22
+    |
+319 |     for query_row in 0..compare_count {
+    |                      ^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_range_loop
+    = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+    |
+319 -     for query_row in 0..compare_count {
+319 +     for (query_row, <item>) in query_ids.iter().enumerate().take(compare_count) {
+    |
+
+warning: this function has too many arguments (15/8)
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:728:1
+    |
+728 | / fn render_probe(
+729 | |     args: &BuildProbeArgs,
+730 | |     corpus_table: &str,
+731 | |     rows: usize,
+...   |
+743 | |     frontier_diagnosis: Option<&FrontierDiagnosis>,
+744 | | ) -> String {
+    | |___________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: current MSRV (Minimum Supported Rust Version) is `1.75.0` but this item is stable since `1.83.0`
+   --> crates/ecaz-cli/src/commands/bench/latency.rs:553:32
+    |
+553 |             merged_crown_stats.get_or_insert_default().add_assign(stats);
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#incompatible_msrv
+    = note: `#[warn(clippy::incompatible_msrv)]` on by default
+
+warning: current MSRV (Minimum Supported Rust Version) is `1.75.0` but this item is stable since `1.83.0`
+   --> crates/ecaz-cli/src/commands/bench/latency.rs:755:22
+    |
+755 |                     .get_or_insert_default()
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#incompatible_msrv
+
+warning: this function has too many arguments (10/8)
+   --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:967:1
+    |
+967 | / async fn rerank_with_sidecar_db(
+968 | |     client: &Client,
+969 | |     sidecar: &Sidecar,
+970 | |     read_mode: SidecarReadMode,
+...   |
+977 | |     concurrency: usize,
+978 | | ) -> Result<RerankRun> {
+    | |______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (11/8)
+    --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:1055:1
+     |
+1055 | / async fn rerank_one_sidecar_db_query(
+1056 | |     client: &Client,
+1057 | |     sidecar: &Sidecar,
+1058 | |     read_mode: SidecarReadMode,
+...    |
+1066 | |     final_rerank_k: Option<usize>,
+1067 | | ) -> Result<RerankQueryResult> {
+     | |______________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: manual slice size calculation
+    --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:1264:20
+     |
+1264 |     let expected = query.len() * std::mem::size_of::<f32>();
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::mem::size_of_val(query)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#manual_slice_size_calculation
+     = note: `#[warn(clippy::manual_slice_size_calculation)]` on by default
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/bench/spire_pipeline.rs:1348:1
+     |
+1348 | / async fn apply_session_options(
+1349 | |     client: &Client,
+1350 | |     nprobe: i32,
+1351 | |     rerank_width: Option<i32>,
+...    |
+1357 | |     session_gucs: &[(String, String)],
+1358 | | ) -> Result<()> {
+     | |_______________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: large size difference between variants
+   --> crates/ecaz-cli/src/commands/bench/suite.rs:213:1
+    |
+213 | / enum SuiteStep {
+214 | |     CorpusFetch(CorpusFetchStep),
+215 | |     CorpusPrepare(CorpusPrepareStep),
+216 | |     Load(LoadStep),
+...   |
+221 | |     DistannLocalMultinode(DistannLocalMultinodeStep),
+    | |     ------------------------------------------------ the largest variant contains at least 1024 bytes
+222 | |     SpirePipeline(SpirePipelineStep),
+    | |     -------------------------------- the second-largest variant contains at least 720 bytes
+...   |
+227 | |     Raw(RawStep),
+228 | | }
+    | |_^ the entire enum is at least 1024 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+221 -     DistannLocalMultinode(DistannLocalMultinodeStep),
+221 +     DistannLocalMultinode(Box<DistannLocalMultinodeStep>),
+    |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+    --> crates/ecaz-cli/src/commands/bench/suite.rs:2369:22
+     |
+2369 |     let mut by_node: HashMap<(String, String, String), HashMap<String, (String, f64)>> =
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#type_complexity
+     = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: using `contains()` instead of `iter().any()` is more efficient
+    --> crates/ecaz-cli/src/commands/bench/suite.rs:5057:20
+     |
+5057 |                   if step
+     |  ____________________^
+5058 | |                     .benchmark_concurrency_sweep
+5059 | |                     .iter()
+5060 | |                     .any(|value| *value == 0)
+     | |_____________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#manual_contains
+     = note: `#[warn(clippy::manual_contains)]` on by default
+help: try
+     |
+5057 ~                 if step
+5058 +                     .benchmark_concurrency_sweep.contains(&0)
+     |
+
+warning: large size difference between variants
+   --> crates/ecaz-cli/src/commands/bench/mod.rs:920:1
+    |
+920 | / pub enum BenchCommand {
+921 | |     /// Recall@k sweep: measure accuracy vs ground truth for a set of tuning points.
+922 | |     Recall(RecallArgs),
+923 | |     /// Cross-AM consistency: compare per-query top-k predictions across AMs.
+...   |
+926 | |     Latency(LatencyArgs),
+    | |     -------------------- the second-largest variant contains at least 288 bytes
+...   |
+942 | |     SpirePipeline(SpirePipelineArgs),
+    | |     -------------------------------- the largest variant contains at least 592 bytes
+...   |
+946 | |     TqBiasAudit(TqBiasAuditArgs),
+947 | | }
+    | |_^ the entire enum is at least 592 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+942 -     SpirePipeline(SpirePipelineArgs),
+942 +     SpirePipeline(Box<SpirePipelineArgs>),
+    |
+
+warning: this function has too many arguments (10/8)
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:865:1
+    |
+865 | / fn write_distributed_placement_outputs(
+866 | |     output_dir: &Path,
+867 | |     input: &LoadedDistributedPlacementConfig,
+868 | |     prefix: &str,
+...   |
+875 | |     reloptions: &[(String, String)],
+876 | | ) -> Result<DistributedPlacementOutputPlan> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: usage of `bool::then` in `filter_map`
+    --> crates/ecaz-cli/src/commands/corpus/load.rs:1319:10
+     |
+1319 |           .filter_map(|(key, _)| {
+     |  __________^
+1320 | |             HNSW_ONLY_RELOPTIONS
+1321 | |                 .iter()
+1322 | |                 .any(|hnsw_key| hnsw_key == &key.as_str())
+1323 | |                 .then(|| key.clone())
+1324 | |         })
+     | |__________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#filter_map_bool_then
+     = note: `#[warn(clippy::filter_map_bool_then)]` on by default
+help: use `filter` then `map` instead
+     |
+1319 ~         .filter(|&(key, _)| HNSW_ONLY_RELOPTIONS
+1320 +                 .iter()
+1321 +                 .any(|hnsw_key| hnsw_key == &key.as_str())).map(|(key, _)| key.clone())
+     |
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/corpus/load.rs:1824:1
+     |
+1824 | / async fn ensure_corpus_table(
+1825 | |     client: &mut Client,
+1826 | |     table: &str,
+1827 | |     path: &Path,
+...    |
+1833 | |     table_reloptions: &[(String, String)],
+1834 | | ) -> Result<usize> {
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this async expression only awaits a single future
+   --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:674:44
+    |
+674 |         let connection_task = tokio::spawn(async move { connection.await });
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+    = note: `#[warn(clippy::redundant_async_block)]` on by default
+
+warning: using `contains()` instead of `iter().any()` is more efficient
+   --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:907:12
+    |
+907 |           if args
+    |  ____________^
+908 | |             .benchmark_concurrency_sweep
+909 | |             .iter()
+910 | |             .any(|value| *value == 0)
+    | |_____________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#manual_contains
+help: try
+    |
+907 ~         if args
+908 +             .benchmark_concurrency_sweep.contains(&0)
+    |
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2016:1
+     |
+2016 | / fn real_setup_sql(
+2017 | |     corpus_path: &Path,
+2018 | |     queries_path: &Path,
+2019 | |     query_offset: u32,
+...    |
+2025 | |     head_sizing: &str,
+2026 | | ) -> String {
+     | |___________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:4440:1
+     |
+4440 | / async fn task229_sidecar_insert_topology(
+4441 | |     coordinator: &tokio_postgres::Client,
+4442 | |     psql: &Path,
+4443 | |     socket_dir: &Path,
+...    |
+4449 | |     benchmark_position: &str,
+4450 | | ) -> Result<Vec<String>> {
+     | |________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (17/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:4741:1
+     |
+4741 | / async fn task167_post_insert_exact_recall(
+4742 | |     coordinator: &tokio_postgres::Client,
+4743 | |     scale: &str,
+4744 | |     physical_corpus: &str,
+...    |
+4758 | |     heldout_physical_sample_sd: Option<f64>,
+4759 | | ) -> Result<Vec<String>> {
+     | |________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: useless use of `format!`
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:5399:9
+     |
+5399 | /         format!(
+5400 | |             "scenario=blocking_build_mutation_fenced pass=true build_lock=ShareRowExclusiveLock waiting_lock=RowExclusiveLock mu...
+5401 | |         ),
+     | |_________^ help: consider using `.to_string()`: `"scenario=blocking_build_mutation_fenced pass=true build_lock=ShareRowExclusiveLock waiting_lock=RowExclusiveLock mutation_sqlstate=40001 token=EC_REPLICA_INVALIDATED inserted_rows=0 state_after_error=Stale rebuilt=true".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_format
+     = note: `#[warn(clippy::useless_format)]` on by default
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:5981:1
+     |
+5981 | / async fn run_task199_replica_lifecycle_drills(
+5982 | |     coordinator: &tokio_postgres::Client,
+5983 | |     coordinator_port: u16,
+5984 | |     scale: &str,
+...    |
+5990 | |     enospc_fixture: Option<&Task199EnospcFixture>,
+5991 | | ) -> Result<Vec<String>> {
+     | |________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this call to `clone` can be replaced with `std::slice::from_ref`
+    --> crates/ecaz-cli/src/commands/bench/suite.rs:9138:62
+     |
+9138 |         assert!(assert_distann_storage_ratio_rows(&manifest, &[storage.clone()]).is_err());
+     |                                                              ^^^^^^^^^^^^^^^^^^ help: try: `std::slice::from_ref(&storage)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#cloned_ref_to_slice_refs
+     = note: `#[warn(clippy::cloned_ref_to_slice_refs)]` on by default
+
+warning: this function has too many arguments (12/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:6525:1
+     |
+6525 | / async fn compare_materialization_scenario(
+6526 | |     coordinator: &tokio_postgres::Client,
+6527 | |     control: &BenchmarkSeedVariant,
+6528 | |     candidate: &BenchmarkSeedVariant,
+...    |
+6537 | |     line_suffix: &str,
+6538 | | ) -> Result<String> {
+     | |___________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:6617:1
+     |
+6617 | / async fn run_materialization_correctness(
+6618 | |     coordinator: &tokio_postgres::Client,
+6619 | |     pg_ctl: &Path,
+6620 | |     socket_dir: &Path,
+...    |
+6626 | |     line_suffix: &str,
+6627 | | ) -> Result<Vec<String>> {
+     | |________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (13/8)
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:7416:1
+     |
+7416 | / async fn run_physical_benchmarks(
+7417 | |     args: &LocalMultinodePg18Args,
+7418 | |     coordinator: &tokio_postgres::Client,
+7419 | |     coordinator_port: u16,
+...    |
+7429 | |     enospc_fixture: Option<&Task199EnospcFixture>,
+7430 | | ) -> Result<Vec<String>> {
+     | |________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:7920:17
+     |
+7920 |                 &scale,
+     |                 ^^^^^^ help: change this to: `scale`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_borrow
+     = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: current MSRV (Minimum Supported Rust Version) is `1.75.0` but this item is stable since `1.82.0`
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:8324:18
+     |
+8324 |                 .is_none_or(|identity| identity == generation_identity);
+     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#incompatible_msrv
+
+warning: derefed type is same as origin
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:8571:29
+     |
+8571 | / ...                   gateway_trace_queries
+8572 | | ...                       .as_deref()
+     | |_____________________________________^ help: try: `gateway_trace_queries`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_option_as_deref
+     = note: `#[warn(clippy::needless_option_as_deref)]` on by default
+
+warning: derefed type is same as origin
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:8752:29
+     |
+8752 | / ...                   gateway_trace_queries
+8753 | | ...                       .as_deref()
+     | |_____________________________________^ help: try: `gateway_trace_queries`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_option_as_deref
+
+warning: derefed type is same as origin
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:8841:29
+     |
+8841 | / ...                   gateway_trace_queries
+8842 | | ...                       .as_deref()
+     | |_____________________________________^ help: try: `gateway_trace_queries`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_option_as_deref
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:10211:26
+      |
+10211 |             tokio::spawn(async move { connection.await }),
+      |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:10576:40
+      |
+10576 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:10664:40
+      |
+10664 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:10838:40
+      |
+10838 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11258:40
+      |
+11258 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11285:40
+      |
+11285 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this boolean expression can be simplified
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11350:8
+      |
+11350 |       if !task234_is_batch_rpc(rpc)
+      |  ________^
+11351 | |         && !(snapshot.batch_total == 1
+11352 | |             && snapshot.batch_successes == 0
+11353 | |             && snapshot.batch_failures == 1)
+      | |____________________________________________^ help: try: `!(task234_is_batch_rpc(rpc) || snapshot.batch_total == 1 && snapshot.batch_successes == 0 && snapshot.batch_failures == 1)`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#nonminimal_bool
+      = note: `#[warn(clippy::nonminimal_bool)]` on by default
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11456:52
+      |
+11456 |                     let cancel_task = tokio::spawn(async move { cancel_connection.await });
+      |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `cancel_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11480:52
+      |
+11480 |                     let killer_task = tokio::spawn(async move { killer_connection.await });
+      |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `killer_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11633:40
+      |
+11633 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11711:44
+      |
+11711 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11765:36
+      |
+11765 |     let killer_task = tokio::spawn(async move { killer_connection.await });
+      |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `killer_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11815:36
+      |
+11815 |     let killer_task = tokio::spawn(async move { killer_connection.await });
+      |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `killer_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11931:44
+      |
+11931 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:11966:44
+      |
+11966 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12000:40
+      |
+12000 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12035:40
+      |
+12035 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12132:35
+      |
+12132 |     let probe_task = tokio::spawn(async move { probe_connection.await });
+      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `probe_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12167:36
+      |
+12167 |     let killer_task = tokio::spawn(async move { killer_connection.await });
+      |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `killer_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12233:35
+      |
+12233 |     let owner_task = tokio::spawn(async move { owner_connection.await });
+      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `owner_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12267:41
+      |
+12267 |     let coordinator_task = tokio::spawn(async move { coordinator_connection.await });
+      |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `coordinator_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12313:41
+      |
+12313 |     let coordinator_task = tokio::spawn(async move { coordinator_connection.await });
+      |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `coordinator_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12342:35
+      |
+12342 |     let owner_task = tokio::spawn(async move { owner_connection.await });
+      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `owner_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12424:45
+      |
+12424 |         let participant_task = tokio::spawn(async move { participant_connection.await });
+      |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `participant_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12517:44
+      |
+12517 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12645:44
+      |
+12645 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:12905:35
+      |
+12905 |     let owner_task = tokio::spawn(async move { owner_connection.await });
+      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `owner_connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:13024:44
+      |
+13024 |         let connection_task = tokio::spawn(async move { connection.await });
+      |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: this function has too many arguments (11/8)
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:13693:1
+      |
+13693 | / async fn drive_physical_fixture(
+13694 | |     args: &LocalMultinodePg18Args,
+13695 | |     pg_ctl: &Path,
+13696 | |     psql: &Path,
+...     |
+13704 | |     remote_fault_marker: &Path,
+13705 | | ) -> Result<()> {
+      | |_______________^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+warning: this async expression only awaits a single future
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:13766:40
+      |
+13766 |     let connection_task = tokio::spawn(async move { connection.await });
+      |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+
+warning: matching on `Some` with `ok()` is redundant
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:15913:24
+      |
+15913 |     let update_probe = if let Some(identity) = source_identity_uuid_bytes(source_id).ok() {
+      |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#match_result_ok
+      = note: `#[warn(clippy::match_result_ok)]` on by default
+help: consider matching on `Ok(identity)` and removing the call to `ok` instead
+      |
+15913 -     let update_probe = if let Some(identity) = source_identity_uuid_bytes(source_id).ok() {
+15913 +     let update_probe = if let Ok(identity) = source_identity_uuid_bytes(source_id) {
+      |
+
+warning: doc list item without indentation
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:17406:5
+      |
+17406 | /// Task 172 AC-3 / NFR-018 cluster storage summation. Queries each node for its
+      |     ^
+      |
+      = help: if this is supposed to be its own paragraph, add a blank line
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+      = note: `#[warn(clippy::doc_lazy_continuation)]` on by default
+help: indent this line
+      |
+17406 | ///   Task 172 AC-3 / NFR-018 cluster storage summation. Queries each node for its
+      |     ++
+
+warning: doc list item without indentation
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:17407:5
+      |
+17407 | /// `dm_idx` index bytes and `dm` heap bytes, sums across the cluster, and
+      |     ^
+      |
+      = help: if this is supposed to be its own paragraph, add a blank line
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+      |
+17407 | ///   `dm_idx` index bytes and `dm` heap bytes, sums across the cluster, and
+      |     ++
+
+warning: doc list item without indentation
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:17408:5
+      |
+17408 | /// computes the replicated-index space amplification vs raw f32 vectors
+      |     ^
+      |
+      = help: if this is supposed to be its own paragraph, add a blank line
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+      |
+17408 | ///   computes the replicated-index space amplification vs raw f32 vectors
+      |     ++
+
+warning: doc list item without indentation
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:17409:5
+      |
+17409 | /// (`cluster_index_bytes / (rows * dim * 4)`). Emits one `storage_node` line per
+      |     ^
+      |
+      = help: if this is supposed to be its own paragraph, add a blank line
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+      |
+17409 | ///   (`cluster_index_bytes / (rows * dim * 4)`). Emits one `storage_node` line per
+      |     ++
+
+warning: doc list item without indentation
+     --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:17410:5
+      |
+17410 | /// node plus a `storage_summation` summary line (both parsed into result rows).
+      |     ^
+      |
+      = help: if this is supposed to be its own paragraph, add a blank line
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+      |
+17410 | ///   node plus a `storage_summation` summary line (both parsed into result rows).
+      |     ++
+
+warning: current MSRV (Minimum Supported Rust Version) is `1.75.0` but this item is stable since `1.82.0`
+    --> crates/ecaz-cli/src/commands/dev/fault.rs:1241:23
+     |
+1241 |         && peer_match.is_none_or(str::is_empty)
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#incompatible_msrv
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> crates/ecaz-cli/src/commands/dev/fault.rs:2748:9
+     |
+2748 | /         match client.simple_query("SELECT 1").await {
+2749 | |             Ok(_) => {
+2750 | |                 return Err(eyre!(
+2751 | |                     "idle_in_transaction_session_timeout {} unexpectedly left the backend usable",
+...    |
+2755 | |             Err(_) => {}
+2756 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#single_match
+     = note: `#[warn(clippy::single_match)]` on by default
+help: try
+     |
+2748 ~         if let Ok(_) = client.simple_query("SELECT 1").await {
+2749 +             return Err(eyre!(
+2750 +                 "idle_in_transaction_session_timeout {} unexpectedly left the backend usable",
+2751 +                 am.as_str()
+2752 +             ))
+2753 +         }
+     |
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> crates/ecaz-cli/src/commands/dev/fault.rs:3435:5
+     |
+3435 | /     match worker_task.await? {
+3436 | |         Ok(()) => return Err(eyre!("{label} unexpectedly completed before SIGKILL")),
+3437 | |         Err(_) => {}
+3438 | |     }
+     | |_____^ help: try: `if let Ok(()) = worker_task.await? { return Err(eyre!("{label} unexpectedly completed before SIGKILL")) }`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#single_match
+
+warning: writing `&PathBuf` instead of `&Path` involves a new object where a slice will do
+   --> crates/ecaz-cli/src/commands/dev/install.rs:188:16
+    |
+188 |     pgrx_home: &PathBuf,
+    |                ^^^^^^^^ help: change this to: `&Path`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#ptr_arg
+    = note: `#[warn(clippy::ptr_arg)]` on by default
+
+warning: writing `&PathBuf` instead of `&Path` involves a new object where a slice will do
+   --> crates/ecaz-cli/src/commands/dev/scratch.rs:194:45
+    |
+194 | async fn stop_existing_postmaster(data_dir: &PathBuf) -> Result<()> {
+    |                                             ^^^^^^^^ help: change this to: `&Path`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#ptr_arg
+
+warning: large size difference between variants
+  --> crates/ecaz-cli/src/commands/dev/spire_multicluster.rs:20:1
+   |
+20 | / pub enum SpireMulticlusterCommand {
+21 | |     /// Run the PG18 one-coordinator/one-remote baseline smoke fixture.
+22 | |     #[command(name = "smoke-pg18")]
+23 | |     SmokePg18(SmokePg18Args),
+   | |     ------------------------ the second-largest variant contains at least 184 bytes
+...  |
+37 | |     LocalMultinodePg18(LocalMultinodePg18Args),
+   | |     ------------------------------------------ the largest variant contains at least 608 bytes
+38 | | }
+   | |_^ the entire enum is at least 608 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+37 -     LocalMultinodePg18(LocalMultinodePg18Args),
+37 +     LocalMultinodePg18(Box<LocalMultinodePg18Args>),
+   |
+
+warning: enclosing `Ok` and `?` operator are unneeded
+   --> crates/ecaz-cli/src/commands/dev/support.rs:285:5
+    |
+285 | /     Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
+286 | |         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
+287 | |         .canonicalize()
+288 | |         .wrap_err("resolving bundled scratch debug-helper SQL")?)
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_question_mark
+    = note: `#[warn(clippy::needless_question_mark)]` on by default
+help: remove the enclosing `Ok` and `?` operator
+    |
+285 ~     Path::new(env!("CARGO_MANIFEST_DIR"))
+286 |         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
+287 |         .canonicalize()
+288 ~         .wrap_err("resolving bundled scratch debug-helper SQL")
+    |
+
+warning: items after a test module
+    --> crates/ecaz-cli/src/commands/dev/spire_multicluster.rs:3041:1
+     |
+3041 | mod tests {
+     | ^^^^^^^^^
+...
+3170 | fn joined_reloption_args(shared: &[String], specific: &[String]) -> Vec<String> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3174 | fn default_local_multinode_run_id() -> String {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3182 | fn log_local_multinode(path: Option<&Path>, line: &str) -> Result<()> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3199 | fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+3205 | fn push_u16_arg(command: &mut Command, name: &str, value: Option<u16>) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#items_after_test_module
+     = note: `#[warn(clippy::items_after_test_module)]` on by default
+     = help: move the items to before the test module was defined
+
+warning: `ecaz-cli` (bin "ecaz") generated 77 warnings (1 duplicate) (run `cargo clippy --fix --bin "ecaz" -p ecaz-cli` to apply 42 suggestions)
+warning: `ecaz-cli` (bin "ecaz" test) generated 78 warnings (76 duplicates) (run `cargo clippy --fix --bin "ecaz" -p ecaz-cli --tests` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.30s
+
+Script done on 2026-08-29 08:30:54-07:00 [COMMAND_EXIT_CODE="0"]

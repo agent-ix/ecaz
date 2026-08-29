@@ -1,0 +1,78 @@
+{
+  "name": "task230-packet008-tiny-hotcold-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-230/008-self-contained-owner-sample/artifacts/smoke-run",
+  "defaults": {
+    "pg": 18
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task230-packet008-hotcold-smoke",
+      "tags": [
+        "task230",
+        "packet008",
+        "validation",
+        "hotcold",
+        "10k"
+      ],
+      "artifact_dir": "${artifact_dir}/hotcold",
+      "run_dir": "/home/peter/.ecaz/clusters/task230-packet008-hotcold-smoke",
+      "pgbin": "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+      "nodes": 3,
+      "base_port": 45690,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 8,
+      "query_offset": 0,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "full_metrics",
+      "stage_counter_only": true,
+      "skip_recall": true,
+      "skip_single_control": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 2,
+      "benchmark_warmup_iterations": 1,
+      "skip_fault_drills": true,
+      "skip_concurrency_drill": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "task230_io_query_shape": "id_only",
+      "task230_io_iterations": 2,
+      "hot_cold_row_tier": true,
+      "hot_payload_attnums": "1",
+      "benchmark_seed_variants": [
+        {
+          "name": "production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "traversal_replica": false,
+          "typed_locator": false,
+          "packed_payload": false,
+          "expanded_locator": false,
+          "payload_projection": true,
+          "covering_sidecar": false,
+          "nfr_021": {
+            "id": "task230-packet008-hotcold-smoke-nfr021",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Pre-decision end-to-end hot/cold harness smoke after the third full-scale discovery; not decision evidence."
+          }
+        }
+      ]
+    }
+  ]
+}
