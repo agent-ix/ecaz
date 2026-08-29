@@ -4,9 +4,9 @@ Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 (seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
-`775174659`; hot/cold handoff + Graph V2 locator checkpoint review-open (seq-07)
-at `885b86be0`; packet 002 remains open for receipt/manifest identity and read
-admission; persisted-format implementation authorized; entry condition 3
+`775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
+`885b86be0`; packet 002 remains open for receipt/manifest identity and read
+admission, and owes `clippy-seq-07.log` + `format-check-seq-07.log`; persisted-format implementation authorized; entry condition 3
 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
@@ -159,6 +159,32 @@ now pins a Cold placement. A focused PG18 test at 1,536 dimensions proves the
 formed maximal tuple equals the descriptor estimator and that abort removes the
 four-relation generation atomically. Handoff, receipts/manifests, and read-path
 admission remain for the next packet-002 slice.
+
+Packet 002 seq-07 hot/cold handoff checkpoint: code `885b86be0`; request at
+seq-07; verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-07-reviewer.md`
+— **DONE**. The unchanged handoff wire is partitioned by descriptor physical
+ordinal into compact hot/cold tuples, cold is inserted first and hot second, and
+both real TIDs are written into the version-dispatched Graph V2 record. Reviewer
+traced that `heap_tid` and `cold_tid` are assigned from the returned insert TIDs
+before `encode_physical_version`, so the pre-flight placeholder cannot survive;
+the PG18 test proves it end to end by decoding the graph record and asserting
+the V2 trailer equals the cold tuple's actual `ctid`. Compact schema validation
+pins each physical column's attnum/name/type/typmod/collation/binary-I/O against
+the frozen placement, with the correct asymmetry that a generated source column
+maps to a non-generated physical column. Relation admission extends the full
+guard set to the cold tier plus `fillfactor=100`, exactly two `attstorage='p'`
+attributes, and a nullable-past-`vec_id` shape; the `contype <> 'n'` relaxation
+is required by PG18's catalogued NOT NULL and does not weaken the legacy branch.
+Legacy and Task 229 paths untouched, with the legacy staging test re-run as a
+regression guard. **Required before packet 002 closes:** the seq-07 packet
+carries no clippy or format artifact, the second occurrence after seq-06 note 2
+was closed by `2d33f5e29`; the reviewer ran clippy independently (five
+pre-existing errors, none in `handoff.rs`) but terminal output is not durable
+packet evidence. Notes: a NULL indexed vector is not rejected at handoff (an
+inherited gap — `prepare_legacy_entries` has it too), and `pg_test` reinstalled a
+debug `.so` for the third time, so reinstall release before any packet-004
+latency run.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
