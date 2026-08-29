@@ -3,8 +3,8 @@
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 (seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
-generation-owned hot/cold relation creation implemented at `775174659`, seq-06
-review open; packet 002 remains open for handoff/read coverage; persisted-format
+generation-owned hot/cold relation creation review-closed DONE (seq-06) at
+`775174659`; packet 002 remains open for handoff/read coverage; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
@@ -134,7 +134,20 @@ sizing function; and `pg_test` reinstalled a debug `.so`, so reinstall release
 before any packet-004 latency run.
 
 Packet 002 seq-06 relation-creation checkpoint: code `775174659`; request at
-seq-06 — **review open**. The generation catalog now carries a nullable unique
+seq-06 — verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-28-06-reviewer.md`
+— **DONE**. All four seq-05 code carry-ins closed, including the
+three-times-carried requirement to pin the estimator against PostgreSQL: the
+PG18 test forms a real 1,536-dimension hot tuple and asserts
+`pg_column_size` equals the frozen descriptor value (6,204 bytes, re-derived by
+the reviewer). Reviewer decoded the new fixture bytes by hand, grepped every
+`row_tier_relid` consumer to confirm no lifecycle path misses the cold tier, and
+ran the clippy gate independently. Notes: the maximal-tuple `assert_eq!` is
+exact only at ≤8 hot attributes because a non-NULL row omits the null bitmap
+that the estimator correctly charges — widen it when a wider hot cover is
+exercised; `clippy-seq-06.log` is missing from the packet artifacts and must be
+added before packet 002 closes; and bootstrap versus migration create
+differently-named constraints. The generation catalog now carries a nullable unique
 `cold_tier_relid`; descriptor-driven begin creates compact hot/cold heaps with
 the control owner/schema/persistence/tablespace and internal dependencies,
 enforces hot `fillfactor=100` plus PLAIN exact-vector/identity storage, validates
