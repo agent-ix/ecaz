@@ -100,6 +100,12 @@ shown; and (2) §6 pre-committed exact-vector to *improve*, but §4 only guards 
 against regression, so a flat result would silently pass — state that a
 pre-committed direction contradicted by the data is reported as a falsified
 prediction regardless of its guardrail. Execution awaits these two fixes.
+Packet 004 preregistration seq-02 corrections implementation complete,
+review-open against unchanged config `5837f4bec`: published hot main-heap bytes
+are gated at 1.35× emitted raw-vector bytes, total generation bytes at 1.15×
+matched row-heap control with the 100k arithmetic stated, and every §6 timing
+direction must be reported supported or falsified independent of its guardrail.
+No benchmark result exists; execution awaits outside review.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

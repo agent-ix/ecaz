@@ -5,14 +5,20 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 01
+seq: 02
 ---
 
 # Task 230 full-scale decision preregistration
 
-Review the checked-in suite at `5837f4bec` and the numeric decision policy
-below before any full-scale result is produced. Packet 003 is review-closed
+Review the two seq-01 policy corrections below against the unchanged checked-in
+suite at `5837f4bec` before any full-scale result is produced. The accepted
+20-step shape and entry gates are not reopened. Packet 003 is review-closed
 DONE. This packet alone decides **PROMOTE** or **STOP**.
+
+Seq-02 changes only the two findings in
+`feedback/2026-08-29-01-reviewer.md`: storage ratios now use stated and measured
+denominators, and every preregistered directional prediction receives an
+explicit supported/falsified disposition.
 
 ## Frozen matrix
 
@@ -88,10 +94,19 @@ PROMOTE requires every gate below. Otherwise the disposition is STOP.
 
 ### 3. Storage, build, and DML guardrails
 
-- Candidate `physical_generation_bytes` must be at most **1.35×** its matched
-  row-heap control in every primary pair at every scale. This admits the
-  preregistered roughly 30% PLAIN hot-page cost but not an unbounded second
-  storage copy.
+- The measured candidate hot main-heap bytes — the sum of published
+  `physical_topology.row_bytes` across the three owners — must be at most
+  **1.35×** `physical_benchmark_storage.raw_vector_bytes`. Both sides refer to
+  the indexed exact vector: one 8 KiB hot page per 6,144-byte logical vector is
+  about 1.333× before small relation overhead, directly testing the predicted
+  PLAIN page amplification.
+- Separately, candidate `physical_generation_bytes` must be at most **1.15×**
+  its matched row-heap control in every primary pair at every scale. At 100k,
+  the preregistered arithmetic is about +190 MB (819 MB PLAIN hot pages minus
+  roughly 633 MB control TOAST storage, plus about 4 MB of tuple/locator
+  overhead) on the Task 229 control's 2,498 MB generation, or about 1.08×.
+  The 1.15× ceiling leaves real margin while still catching an unexplained
+  whole-generation expansion.
 - Candidate physical build and publish time must each be at most **1.25×** the
   matched control in every primary pair.
 - For routed replacement and delete, candidate p95 must be at most **1.50×**
@@ -115,10 +130,27 @@ PROMOTE requires every gate below. Otherwise the disposition is STOP.
   hit ratio for every shape. Shared-buffer hit ratio is explicit attribution,
   not a post-hoc alternative decision metric.
 
+### 5. Directional prediction accounting
+
+The final PROMOTE/STOP request must classify every packet-001 §6 timing
+prediction as **supported** or **falsified**, independent of whether its numeric
+guardrail passes:
+
+- id-only/hot-scalar: improve or remain neutral;
+- exact-vector: improve;
+- cold-only: regress; and
+- mixed and select-all: regress.
+
+For an `elapsed_ms / iterations` secondary comparison, equality is neutral;
+strictly lower is improvement and strictly higher is regression. A flat or
+worse exact-vector result is therefore explicitly a falsified prediction even
+when it stays inside the 5%/0.25 ms guardrail. Conversely, an unexpectedly
+neutral or faster cold/mixed/all result is also reported as falsified rather
+than silently rewritten as success. Prediction classification is part of the
+decision record; the numeric gates above still determine PROMOTE versus STOP.
+
 ## Review request
 
-Please review the 20-step suite shape, the release/lint entry gates, and every
-numeric threshold. In particular, confirm that the largest-scale secondary
-shape matrix and the conjunctive cold/mixed failure rule satisfy the carried
-Packet 003 requirements. If DONE, the real suite is authorized at this frozen
-config and decision policy.
+Please review only the corrected storage denominators/ceilings and the explicit
+directional-prediction disposition. If DONE, the real suite is authorized at
+the otherwise unchanged frozen config and policy.

@@ -2,7 +2,7 @@
 
 - Head SHA: `5837f4bec64076769415645b00fb86b4c4e7294a`
 - Task bucket: `reviews/task-230/004-full-scale-decision/`
-- Packet: full-scale decision preregistration, seq-01
+- Packet: full-scale decision preregistration, seq-02
 - Timestamp: 2026-08-29T05:54:54-07:00
 - Lane / fixture / storage format / rerank mode: local Intel PG18;
   `ec_distann` row-heap control versus descriptor V4 / Graph V2 hot/cold;
@@ -11,6 +11,18 @@
   counterbalanced primary pairs per scale and matched fresh 100k secondary
   projection pairs; run directories live under `~/.ecaz/clusters`
 - Results state: **none**. Only config audit and dry-run expansion exist.
+
+## Seq-02 policy correction
+
+- The suite config, its SHA, its 20-step expansion, and every accepted entry
+  gate are unchanged from seq-01.
+- Storage now has two correctly denominated gates: published candidate hot
+  main-heap bytes at most 1.35× emitted logical raw-vector bytes, and total
+  generation bytes at most 1.15× matched row-heap control bytes.
+- Every preregistered §6 timing direction must be classified supported or
+  falsified in the final decision even when the applicable numeric guardrail
+  passes.
+- No measurement result exists at this revision.
 
 ## `crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json`
 
