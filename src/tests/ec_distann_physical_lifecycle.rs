@@ -6103,7 +6103,7 @@ fn test_distann_hot_cold_handoff_v2_locator() {
     begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
     assert_eq!(
         stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch),
-        (1, 1, owner_digest)
+        (1, 1, owner_digest.clone())
     );
 
     let (hot_oid, graph_oid, _) = distann_generation_relation_oids(&fixture);
@@ -6176,6 +6176,28 @@ fn test_distann_hot_cold_handoff_v2_locator() {
         })
     );
     assert_eq!(node.vec_id, vec_id);
+
+    let encoded_receipt = seal_distann_physical_generation(&fixture, 1, &owner_digest);
+    assert_eq!(
+        encoded_receipt.len(),
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_HOT_COLD_BYTES
+    );
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(&encoded_receipt).unwrap();
+    assert_eq!(
+        receipt.version(),
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_HOT_COLD_VERSION
+    );
+    assert!(receipt.payload_sidecar.is_none());
+    let hot_cold = receipt
+        .hot_cold
+        .expect("hot/cold Ready receipt must carry both tier identities");
+    assert_ne!(hot_cold.hot_initial_content_digest, [0; 32]);
+    assert_ne!(hot_cold.cold_initial_content_digest, [0; 32]);
+    assert!(hot_cold.hot_heap_bytes > 0 && hot_cold.cold_heap_bytes > 0);
+    assert_eq!(
+        receipt.row_tier_bytes,
+        hot_cold.hot_heap_bytes + hot_cold.cold_heap_bytes
+    );
 
     abort_distann_physical_generation(&fixture);
 }
@@ -6266,7 +6288,7 @@ fn test_distann_cover_sidecar_lifecycle() {
     let encoded_receipt = seal_distann_physical_generation(&fixture, 1, &owner_digest);
     assert_eq!(
         encoded_receipt.len(),
-        crate::am::ec_distann::DISTANN_READY_RECEIPT_MAX_BYTES
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_COVER_BYTES
     );
     let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(&encoded_receipt).unwrap();
     let sidecar = receipt
@@ -7191,6 +7213,9 @@ fn create_distann_participant_lifecycle_fixture_configured(
         global_row_tier_digest: receipt.persisted_row_tier_digest,
         payload_cover_descriptor_digest,
         global_payload_sidecar_initial_content_digest,
+        row_tier_layout_descriptor_digest: None,
+        global_hot_tier_initial_content_digest: None,
+        global_cold_tier_initial_content_digest: None,
         participant_receipts: vec![receipt],
     };
     let manifest_bytes = manifest.encode().unwrap();

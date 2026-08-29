@@ -1142,6 +1142,45 @@ fn distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap() {
 }
 
 #[test]
+fn distann_ready_receipt_v3_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_ready_receipt_v3.hex"
+    ));
+    assert_eq!(bytes.len(), 383);
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 3);
+    assert_eq!(independent.u32(), 10);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    independent.take(64);
+    assert_eq!(independent.u64(), 10);
+    assert_eq!(independent.u64(), 6);
+    assert_eq!(independent.u64(), 6);
+    independent.take(32 * 4);
+    assert_eq!(independent.u64(), 600);
+    assert_eq!(independent.u64(), 1200);
+    assert_eq!(independent.u64(), 60);
+    assert_eq!(independent.u8(), 1);
+    assert_eq!(independent.take(32), &[0xB1; 32]);
+    assert_eq!(independent.take(32), &[0xB2; 32]);
+    assert_eq!(independent.u64(), 12_288);
+    assert_eq!(independent.u64(), 24_576);
+    independent.take(32);
+    independent.finish();
+
+    let receipt = DistannReadyReceipt::decode(&bytes).unwrap();
+    assert_eq!(receipt.version(), 3);
+    let hot_cold = receipt.hot_cold.as_ref().unwrap();
+    assert_eq!(hot_cold.hot_initial_content_digest, [0xB1; 32]);
+    assert_eq!(hot_cold.cold_initial_content_digest, [0xB2; 32]);
+    assert_eq!(receipt.encode().unwrap(), bytes);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannReadyReceipt::decode(&swapped).is_err());
+}
+
+#[test]
 fn distann_manifest_subrecord_fixtures_decode_and_reject_swap() {
     let codec_bytes = decode_hex_fixture(include_str!(
         "../fixtures/on-disk/distann_manifest_codec_parameters_v1.hex"
@@ -1223,6 +1262,66 @@ fn distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap() {
         fingerprint.as_bytes().len(),
         DISTANN_EPOCH_FINGERPRINT_BYTES
     );
+    assert_eq!(
+        DistannEpochFingerprint::decode(fingerprint.as_bytes()).unwrap(),
+        fingerprint
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannEpochManifestV2::decode(&swapped).is_err());
+    let mut swapped_fingerprint = *fingerprint.as_bytes();
+    swapped_fingerprint.swap(0, 1);
+    assert!(DistannEpochFingerprint::decode(&swapped_fingerprint).is_err());
+}
+
+#[test]
+fn distann_epoch_manifest_v4_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_epoch_manifest_v4.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 4);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    assert!(independent.len_bytes().is_empty());
+    independent.take(32 * 3);
+    assert_eq!(independent.u16(), 1);
+    let roster_count = independent.u32();
+    assert_eq!(roster_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u16(), 2);
+    assert_eq!(independent.u16(), 1);
+    independent.len_bytes();
+    independent.len_bytes();
+    independent.take(32 * 2);
+    assert_eq!(independent.u64(), 10);
+    independent.take(32 * 2);
+    assert_eq!(independent.take(32), &[0xD7; 32]);
+    independent.take(32 * 2);
+    let receipt_count = independent.u32();
+    assert_eq!(receipt_count, 2);
+    for _ in 0..receipt_count {
+        assert_eq!(independent.len_bytes().len(), 383);
+    }
+    independent.finish();
+
+    let manifest = DistannEpochManifestV2::decode(&bytes).unwrap();
+    assert_eq!(manifest.version(), 4);
+    assert_eq!(manifest.graph_record_version, 2);
+    assert_eq!(manifest.row_tier_layout_descriptor_digest, Some([0xD7; 32]));
+    assert!(manifest
+        .participant_receipts
+        .iter()
+        .all(|receipt| receipt.version() == 3));
+    assert_eq!(manifest.encode().unwrap(), bytes);
+    let fingerprint = manifest.fingerprint().unwrap();
+    assert_eq!(fingerprint.version(), 4);
     assert_eq!(
         DistannEpochFingerprint::decode(fingerprint.as_bytes()).unwrap(),
         fingerprint

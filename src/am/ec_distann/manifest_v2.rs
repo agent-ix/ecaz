@@ -27,9 +27,11 @@ pub const DISTANN_SOURCE_SNAPSHOT_VERSION: u16 = 1;
 /// Legacy/no-cover receipt version and size.
 pub const DISTANN_READY_RECEIPT_VERSION: u16 = 1;
 pub const DISTANN_READY_RECEIPT_COVER_VERSION: u16 = 2;
+pub const DISTANN_READY_RECEIPT_HOT_COLD_VERSION: u16 = 3;
 /// Legacy/no-cover manifest version.
 pub const DISTANN_EPOCH_MANIFEST_VERSION: u16 = 2;
 pub const DISTANN_EPOCH_MANIFEST_COVER_VERSION: u16 = 3;
+pub const DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION: u16 = 4;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION: u16 = 1;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION: u16 = 2;
 pub const DISTANN_READY_RECEIPT_STATE: u8 = 1;
@@ -40,7 +42,9 @@ pub const DISTANN_EPOCH_MANIFEST_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
-pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = 351;
+pub const DISTANN_READY_RECEIPT_COVER_BYTES: usize = 351;
+pub const DISTANN_READY_RECEIPT_HOT_COLD_BYTES: usize = 383;
+pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = DISTANN_READY_RECEIPT_HOT_COLD_BYTES;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES: usize = 31;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 73;
 
@@ -49,6 +53,10 @@ const READY_RECEIPT_DOMAIN: &[u8] = b"ec_distann_ready_receipt_v1\0";
 const EPOCH_MANIFEST_DOMAIN: &[u8] = b"ec_distann_epoch_manifest_v2\0";
 const PAYLOAD_SIDECAR_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
     b"ec_distann_payload_sidecar_global_initial_content_v1\0";
+const HOT_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
+    b"ec_distann_hot_tier_global_initial_content_v1\0";
+const COLD_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
+    b"ec_distann_cold_tier_global_initial_content_v1\0";
 const DIGEST_BYTES: usize = 32;
 const BUILD_OPTIONS_V1_BYTES: usize = 26;
 const MANIFEST_BUILD_OPTIONS_V1_VERSION: u16 = 1;
@@ -428,6 +436,14 @@ pub struct DistannReadyReceiptPayloadSidecar {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistannReadyReceiptHotCold {
+    pub hot_initial_content_digest: [u8; DIGEST_BYTES],
+    pub cold_initial_content_digest: [u8; DIGEST_BYTES],
+    pub hot_heap_bytes: u64,
+    pub cold_heap_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannReadyReceipt {
     pub node_id: u32,
     pub epoch: u64,
@@ -446,6 +462,7 @@ pub struct DistannReadyReceipt {
     pub directory_bytes: u64,
     pub state: u8,
     pub payload_sidecar: Option<DistannReadyReceiptPayloadSidecar>,
+    pub hot_cold: Option<DistannReadyReceiptHotCold>,
 }
 
 impl DistannReadyReceipt {
@@ -475,11 +492,19 @@ impl DistannReadyReceipt {
                 self.state
             ));
         }
+        if self.payload_sidecar.is_some() && self.hot_cold.is_some() {
+            return Err(
+                "EC_READY_RECEIPT: payload sidecar and hot/cold evidence are mutually exclusive"
+                    .to_owned(),
+            );
+        }
         Ok(())
     }
 
     pub fn version(&self) -> u16 {
-        if self.payload_sidecar.is_some() {
+        if self.hot_cold.is_some() {
+            DISTANN_READY_RECEIPT_HOT_COLD_VERSION
+        } else if self.payload_sidecar.is_some() {
             DISTANN_READY_RECEIPT_COVER_VERSION
         } else {
             DISTANN_READY_RECEIPT_VERSION
@@ -511,6 +536,12 @@ impl DistannReadyReceipt {
             encoder.put_u64(sidecar.heap_bytes);
             encoder.put_u64(sidecar.index_bytes);
         }
+        if let Some(hot_cold) = &self.hot_cold {
+            encoder.put_fixed(&hot_cold.hot_initial_content_digest);
+            encoder.put_fixed(&hot_cold.cold_initial_content_digest);
+            encoder.put_u64(hot_cold.hot_heap_bytes);
+            encoder.put_u64(hot_cold.cold_heap_bytes);
+        }
         encoder.finish()
     }
 
@@ -540,7 +571,9 @@ impl DistannReadyReceipt {
         let version = decoder.get_u16("Ready receipt version")?;
         if !matches!(
             version,
-            DISTANN_READY_RECEIPT_VERSION | DISTANN_READY_RECEIPT_COVER_VERSION
+            DISTANN_READY_RECEIPT_VERSION
+                | DISTANN_READY_RECEIPT_COVER_VERSION
+                | DISTANN_READY_RECEIPT_HOT_COLD_VERSION
         ) {
             return Err(format!(
                 "EC_READY_RECEIPT: unsupported receipt version {version}"
@@ -574,6 +607,18 @@ impl DistannReadyReceipt {
         } else {
             None
         };
+        let hot_cold = if version == DISTANN_READY_RECEIPT_HOT_COLD_VERSION {
+            Some(DistannReadyReceiptHotCold {
+                hot_initial_content_digest: decoder
+                    .get_fixed("Ready receipt hot-tier initial content digest")?,
+                cold_initial_content_digest: decoder
+                    .get_fixed("Ready receipt cold-tier initial content digest")?,
+                hot_heap_bytes: decoder.get_u64("Ready receipt hot-tier heap bytes")?,
+                cold_heap_bytes: decoder.get_u64("Ready receipt cold-tier heap bytes")?,
+            })
+        } else {
+            None
+        };
         let receipt = Self {
             node_id,
             epoch,
@@ -592,6 +637,7 @@ impl DistannReadyReceipt {
             directory_bytes,
             state,
             payload_sidecar,
+            hot_cold,
         };
         decoder.finish("Ready receipt")?;
         receipt.validate()?;
@@ -616,7 +662,9 @@ impl DistannEpochFingerprint {
     ) -> Result<Self, String> {
         if !matches!(
             manifest_version,
-            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+            DISTANN_EPOCH_MANIFEST_VERSION
+                | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+                | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {manifest_version}"
@@ -638,7 +686,9 @@ impl DistannEpochFingerprint {
         let version = u16::from_le_bytes(input[0..2].try_into().expect("fingerprint version"));
         if !matches!(
             version,
-            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+            DISTANN_EPOCH_MANIFEST_VERSION
+                | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+                | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {version}"
@@ -688,18 +738,52 @@ pub struct DistannEpochManifestV2 {
     pub global_row_tier_digest: [u8; DIGEST_BYTES],
     pub payload_cover_descriptor_digest: Option<[u8; DIGEST_BYTES]>,
     pub global_payload_sidecar_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
+    pub row_tier_layout_descriptor_digest: Option<[u8; DIGEST_BYTES]>,
+    pub global_hot_tier_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
+    pub global_cold_tier_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
     pub participant_receipts: Vec<DistannReadyReceipt>,
 }
 
 impl DistannEpochManifestV2 {
     pub fn version(&self) -> u16 {
-        if self.payload_cover_descriptor_digest.is_some()
+        if self.row_tier_layout_descriptor_digest.is_some()
+            || self.global_hot_tier_initial_content_digest.is_some()
+            || self.global_cold_tier_initial_content_digest.is_some()
+        {
+            DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+        } else if self.payload_cover_descriptor_digest.is_some()
             || self.global_payload_sidecar_initial_content_digest.is_some()
         {
             DISTANN_EPOCH_MANIFEST_COVER_VERSION
         } else {
             DISTANN_EPOCH_MANIFEST_VERSION
         }
+    }
+
+    pub(crate) fn hot_cold_global_initial_content_digests(
+        receipts: &[DistannReadyReceipt],
+    ) -> Result<([u8; DIGEST_BYTES], [u8; DIGEST_BYTES]), String> {
+        let mut hot = CanonicalEncoder::with_capacity(4 + receipts.len() * 44);
+        let mut cold = CanonicalEncoder::with_capacity(4 + receipts.len() * 44);
+        let count = u32::try_from(receipts.len())
+            .map_err(|_| "EC_EPOCH_MANIFEST: hot/cold receipt count exceeds u32".to_owned())?;
+        hot.put_u32(count);
+        cold.put_u32(count);
+        for receipt in receipts {
+            let evidence = receipt.hot_cold.as_ref().ok_or_else(|| {
+                "EC_EPOCH_MANIFEST: hot/cold manifest has a legacy Ready receipt".to_owned()
+            })?;
+            for encoder in [&mut hot, &mut cold] {
+                encoder.put_u32(receipt.node_id);
+                encoder.put_u64(receipt.owned_record_count);
+            }
+            hot.put_fixed(&evidence.hot_initial_content_digest);
+            cold.put_fixed(&evidence.cold_initial_content_digest);
+        }
+        Ok((
+            domain_digest(HOT_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN, &hot.finish()?),
+            domain_digest(COLD_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN, &cold.finish()?),
+        ))
     }
 
     pub(crate) fn payload_sidecar_global_initial_content_digest(
@@ -733,10 +817,18 @@ impl DistannEpochManifestV2 {
         validate_parent_fingerprint(&self.parent_fingerprint)?;
         if self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
             || self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
-            || self.graph_record_version != DISTANN_GRAPH_RECORD_VERSION
             || self.handoff_wire_version != DISTANN_HANDOFF_WIRE_VERSION
         {
             return Err("EC_EPOCH_MANIFEST: unsupported physical format version".to_owned());
+        }
+        let expected_graph_record_version =
+            if self.version() == DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION {
+                super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION
+            } else {
+                DISTANN_GRAPH_RECORD_VERSION
+            };
+        if self.graph_record_version != expected_graph_record_version {
+            return Err("EC_EPOCH_MANIFEST: unsupported graph record version".to_owned());
         }
         validate_roster(&self.roster)?;
         self.codec_parameters.validate()?;
@@ -752,12 +844,15 @@ impl DistannEpochManifestV2 {
         match (
             self.payload_cover_descriptor_digest,
             self.global_payload_sidecar_initial_content_digest,
+            self.row_tier_layout_descriptor_digest,
+            self.global_hot_tier_initial_content_digest,
+            self.global_cold_tier_initial_content_digest,
         ) {
-            (None, None) => {
+            (None, None, None, None, None) => {
                 if self
                     .participant_receipts
                     .iter()
-                    .any(|receipt| receipt.payload_sidecar.is_some())
+                    .any(|receipt| receipt.payload_sidecar.is_some() || receipt.hot_cold.is_some())
                 {
                     return Err(
                         "EC_EPOCH_MANIFEST: no-cover manifest contains a covered Ready receipt"
@@ -765,7 +860,17 @@ impl DistannEpochManifestV2 {
                     );
                 }
             }
-            (Some(_), Some(expected)) => {
+            (Some(_), Some(expected), None, None, None) => {
+                if self
+                    .participant_receipts
+                    .iter()
+                    .any(|receipt| receipt.hot_cold.is_some())
+                {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: covered manifest contains a hot/cold Ready receipt"
+                            .to_owned(),
+                    );
+                }
                 let actual = Self::payload_sidecar_global_initial_content_digest(
                     &self.participant_receipts,
                 )?;
@@ -776,12 +881,30 @@ impl DistannEpochManifestV2 {
                     );
                 }
             }
-            _ => {
-                return Err(
-                    "EC_EPOCH_MANIFEST: payload cover descriptor and initial-content digests must be paired"
-                        .to_owned(),
-                )
+            (None, None, Some(_), Some(expected_hot), Some(expected_cold)) => {
+                if self
+                    .participant_receipts
+                    .iter()
+                    .any(|receipt| receipt.payload_sidecar.is_some())
+                {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: hot/cold manifest contains a covered Ready receipt"
+                            .to_owned(),
+                    );
+                }
+                let (actual_hot, actual_cold) =
+                    Self::hot_cold_global_initial_content_digests(&self.participant_receipts)?;
+                if actual_hot != expected_hot || actual_cold != expected_cold {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: global hot/cold initial-content digest mismatch"
+                            .to_owned(),
+                    );
+                }
             }
+            _ => return Err(
+                "EC_EPOCH_MANIFEST: payload-cover or hot/cold identities are incomplete or overlap"
+                    .to_owned(),
+            ),
         }
 
         let mut record_sum = 0_u64;
@@ -852,6 +975,15 @@ impl DistannEpochManifestV2 {
             encoder.put_fixed(&cover_digest);
             encoder.put_fixed(&initial_content_digest);
         }
+        if let (Some(layout_digest), Some(hot_digest), Some(cold_digest)) = (
+            self.row_tier_layout_descriptor_digest,
+            self.global_hot_tier_initial_content_digest,
+            self.global_cold_tier_initial_content_digest,
+        ) {
+            encoder.put_fixed(&layout_digest);
+            encoder.put_fixed(&hot_digest);
+            encoder.put_fixed(&cold_digest);
+        }
         encoder.put_u32(
             u32::try_from(encoded_receipts.len())
                 .map_err(|_| "EC_EPOCH_MANIFEST: receipt count exceeds u32".to_owned())?,
@@ -867,7 +999,9 @@ impl DistannEpochManifestV2 {
         let version = decoder.get_u16("epoch manifest version")?;
         if !matches!(
             version,
-            DISTANN_EPOCH_MANIFEST_VERSION | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+            DISTANN_EPOCH_MANIFEST_VERSION
+                | DISTANN_EPOCH_MANIFEST_COVER_VERSION
+                | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_MANIFEST: unsupported manifest version {version}"
@@ -908,6 +1042,19 @@ impl DistannEpochManifestV2 {
             } else {
                 (None, None)
             };
+        let (
+            row_tier_layout_descriptor_digest,
+            global_hot_tier_initial_content_digest,
+            global_cold_tier_initial_content_digest,
+        ) = if version == DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION {
+            (
+                Some(decoder.get_fixed("manifest row-tier layout descriptor digest")?),
+                Some(decoder.get_fixed("manifest global hot-tier initial content digest")?),
+                Some(decoder.get_fixed("manifest global cold-tier initial content digest")?),
+            )
+        } else {
+            (None, None, None)
+        };
         let receipt_count = decoder.get_u32("manifest receipt count")? as usize;
         if receipt_count != roster.len()
             || receipt_count
@@ -944,6 +1091,9 @@ impl DistannEpochManifestV2 {
             global_row_tier_digest,
             payload_cover_descriptor_digest,
             global_payload_sidecar_initial_content_digest,
+            row_tier_layout_descriptor_digest,
+            global_hot_tier_initial_content_digest,
+            global_cold_tier_initial_content_digest,
             participant_receipts,
         };
         manifest.validate()?;
@@ -979,6 +1129,7 @@ fn sample_receipt(node_id: u32, count: u64) -> DistannReadyReceipt {
         directory_bytes: count * 10,
         state: DISTANN_READY_RECEIPT_STATE,
         payload_sidecar: None,
+        hot_cold: None,
     }
 }
 
@@ -1029,6 +1180,9 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
         global_row_tier_digest: [0x99; DIGEST_BYTES],
         payload_cover_descriptor_digest: None,
         global_payload_sidecar_initial_content_digest: None,
+        row_tier_layout_descriptor_digest: None,
+        global_hot_tier_initial_content_digest: None,
+        global_cold_tier_initial_content_digest: None,
         participant_receipts: vec![sample_receipt(10, 6), sample_receipt(20, 4)],
     }
 }
@@ -1140,7 +1294,7 @@ mod tests {
             index_bytes: 8192,
         });
         let covered_bytes = covered.encode().unwrap();
-        assert_eq!(covered_bytes.len(), DISTANN_READY_RECEIPT_MAX_BYTES);
+        assert_eq!(covered_bytes.len(), DISTANN_READY_RECEIPT_COVER_BYTES);
         assert_eq!(
             u16::from_le_bytes(covered_bytes[..2].try_into().unwrap()),
             DISTANN_READY_RECEIPT_COVER_VERSION
@@ -1149,6 +1303,31 @@ mod tests {
             DistannReadyReceipt::decode(&covered_bytes).unwrap(),
             covered
         );
+
+        let mut hot_cold = sample_receipt(10, 6);
+        hot_cold.hot_cold = Some(DistannReadyReceiptHotCold {
+            hot_initial_content_digest: [0xB1; DIGEST_BYTES],
+            cold_initial_content_digest: [0xB2; DIGEST_BYTES],
+            hot_heap_bytes: 12_288,
+            cold_heap_bytes: 24_576,
+        });
+        let hot_cold_bytes = hot_cold.encode().unwrap();
+        assert_eq!(hot_cold_bytes.len(), DISTANN_READY_RECEIPT_HOT_COLD_BYTES);
+        assert_eq!(
+            u16::from_le_bytes(hot_cold_bytes[..2].try_into().unwrap()),
+            DISTANN_READY_RECEIPT_HOT_COLD_VERSION
+        );
+        assert_eq!(
+            DistannReadyReceipt::decode(&hot_cold_bytes).unwrap(),
+            hot_cold
+        );
+        let mut overlapping = hot_cold;
+        overlapping.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
+            initial_content_digest: [0xC1; DIGEST_BYTES],
+            heap_bytes: 1,
+            index_bytes: 1,
+        });
+        assert!(overlapping.encode().is_err());
     }
 
     #[test]
@@ -1235,6 +1414,49 @@ mod tests {
             .as_mut()
             .unwrap()[0] ^= 1;
         assert!(wrong_global.encode().is_err());
+
+        let mut hot_cold = sample_manifest_v2();
+        for (index, receipt) in hot_cold.participant_receipts.iter_mut().enumerate() {
+            receipt.hot_cold = Some(DistannReadyReceiptHotCold {
+                hot_initial_content_digest: [0xB0 + index as u8; DIGEST_BYTES],
+                cold_initial_content_digest: [0xC0 + index as u8; DIGEST_BYTES],
+                hot_heap_bytes: 12_288 + index as u64,
+                cold_heap_bytes: 24_576 + index as u64,
+            });
+        }
+        hot_cold.graph_record_version = super::super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
+        hot_cold.row_tier_layout_descriptor_digest = Some([0xD7; DIGEST_BYTES]);
+        let (global_hot, global_cold) =
+            DistannEpochManifestV2::hot_cold_global_initial_content_digests(
+                &hot_cold.participant_receipts,
+            )
+            .unwrap();
+        hot_cold.global_hot_tier_initial_content_digest = Some(global_hot);
+        hot_cold.global_cold_tier_initial_content_digest = Some(global_cold);
+        let hot_cold_bytes = hot_cold.encode().unwrap();
+        assert_eq!(
+            u16::from_le_bytes(hot_cold_bytes[..2].try_into().unwrap()),
+            DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+        );
+        assert_eq!(
+            DistannEpochManifestV2::decode(&hot_cold_bytes).unwrap(),
+            hot_cold
+        );
+        let hot_cold_fingerprint = hot_cold.fingerprint().unwrap();
+        assert_eq!(
+            hot_cold_fingerprint.version(),
+            DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+        );
+        assert_eq!(
+            DistannEpochFingerprint::decode(hot_cold_fingerprint.as_bytes()).unwrap(),
+            hot_cold_fingerprint
+        );
+        let mut wrong_cold = hot_cold;
+        wrong_cold
+            .global_cold_tier_initial_content_digest
+            .as_mut()
+            .unwrap()[0] ^= 1;
+        assert!(wrong_cold.encode().is_err());
     }
 
     #[test]
@@ -1527,6 +1749,17 @@ mod tests {
             "distann_ready_receipt_v1.hex",
             &sample_receipt(10, 6).encode().unwrap(),
         );
+        let mut hot_cold_receipt = sample_receipt(10, 6);
+        hot_cold_receipt.hot_cold = Some(DistannReadyReceiptHotCold {
+            hot_initial_content_digest: [0xB1; DIGEST_BYTES],
+            cold_initial_content_digest: [0xB2; DIGEST_BYTES],
+            hot_heap_bytes: 12_288,
+            cold_heap_bytes: 24_576,
+        });
+        emit(
+            "distann_ready_receipt_v3.hex",
+            &hot_cold_receipt.encode().unwrap(),
+        );
         let manifest = sample_manifest_v2();
         emit(
             "distann_manifest_codec_parameters_v1.hex",
@@ -1537,5 +1770,32 @@ mod tests {
             &manifest.build_options.encode().unwrap(),
         );
         emit("distann_epoch_manifest_v2.hex", &manifest.encode().unwrap());
+        let mut hot_cold_manifest = sample_manifest_v2();
+        for (index, receipt) in hot_cold_manifest
+            .participant_receipts
+            .iter_mut()
+            .enumerate()
+        {
+            receipt.hot_cold = Some(DistannReadyReceiptHotCold {
+                hot_initial_content_digest: [0xB0 + index as u8; DIGEST_BYTES],
+                cold_initial_content_digest: [0xC0 + index as u8; DIGEST_BYTES],
+                hot_heap_bytes: 12_288 + index as u64,
+                cold_heap_bytes: 24_576 + index as u64,
+            });
+        }
+        hot_cold_manifest.graph_record_version =
+            crate::am::ec_distann::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION;
+        hot_cold_manifest.row_tier_layout_descriptor_digest = Some([0xD7; DIGEST_BYTES]);
+        let (global_hot, global_cold) =
+            DistannEpochManifestV2::hot_cold_global_initial_content_digests(
+                &hot_cold_manifest.participant_receipts,
+            )
+            .unwrap();
+        hot_cold_manifest.global_hot_tier_initial_content_digest = Some(global_hot);
+        hot_cold_manifest.global_cold_tier_initial_content_digest = Some(global_cold);
+        emit(
+            "distann_epoch_manifest_v4.hex",
+            &hot_cold_manifest.encode().unwrap(),
+        );
     }
 }

@@ -731,6 +731,18 @@ pub(super) fn build_epoch(
                     DistannEpochManifestV2::payload_sidecar_global_initial_content_digest(&receipts)
                 })
                 .transpose()?;
+        let row_tier_layout_descriptor_digest = descriptor
+            .row_tier_layout()
+            .map(|layout| layout.digest())
+            .transpose()?;
+        let (global_hot_tier_initial_content_digest, global_cold_tier_initial_content_digest) =
+            if row_tier_layout_descriptor_digest.is_some() {
+                let (hot, cold) =
+                    DistannEpochManifestV2::hot_cold_global_initial_content_digests(&receipts)?;
+                (Some(hot), Some(cold))
+            } else {
+                (None, None)
+            };
         let manifest = DistannEpochManifestV2 {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
@@ -741,7 +753,7 @@ pub(super) fn build_epoch(
             placement_hash_version: super::super::DISTANN_PLACEMENT_HASH_VERSION,
             roster: roster.clone(),
             index_format_version: super::super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
-            graph_record_version: super::super::DISTANN_GRAPH_RECORD_VERSION,
+            graph_record_version: descriptor.graph_record_version,
             handoff_wire_version: super::super::DISTANN_HANDOFF_WIRE_VERSION,
             codec_parameters,
             build_options: DistannManifestBuildOptions {
@@ -755,6 +767,9 @@ pub(super) fn build_epoch(
             global_row_tier_digest,
             payload_cover_descriptor_digest,
             global_payload_sidecar_initial_content_digest,
+            row_tier_layout_descriptor_digest,
+            global_hot_tier_initial_content_digest,
+            global_cold_tier_initial_content_digest,
             participant_receipts: receipts,
         };
 

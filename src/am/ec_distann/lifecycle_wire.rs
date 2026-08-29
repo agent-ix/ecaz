@@ -251,6 +251,15 @@ impl DistannBuildCandidateV1 {
                 "EC_PUBLISH_DIGEST: manifest payload cover disagrees with descriptor".to_owned(),
             );
         }
+        let descriptor_layout_digest = descriptor
+            .row_tier_layout()
+            .map(|layout| layout.digest())
+            .transpose()?;
+        if manifest.row_tier_layout_descriptor_digest != descriptor_layout_digest {
+            return Err(
+                "EC_PUBLISH_DIGEST: manifest row-tier layout disagrees with descriptor".to_owned(),
+            );
+        }
         if build_spec.epoch != manifest.epoch
             || build_spec.build_id != manifest.build_id
             || build_spec.parent_fingerprint != manifest.parent_fingerprint

@@ -9,7 +9,7 @@ use std::panic::AssertUnwindSafe;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
-use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
+use pgrx::{name, pg_extern, pg_sys, FromDatum, PgRelation, Spi};
 use sha2::{Digest, Sha256};
 
 use crate::am::common::heap_slot::TupleSlotWriter;
@@ -30,8 +30,8 @@ use super::handoff_wire::{
 use super::identity::vec_id_from_source_identity;
 use super::lifecycle_state::GenerationState;
 use super::manifest_v2::{
-    DistannEpochFingerprint, DistannReadyReceipt, DistannReadyReceiptPayloadSidecar,
-    DISTANN_READY_RECEIPT_STATE,
+    DistannEpochFingerprint, DistannReadyReceipt, DistannReadyReceiptHotCold,
+    DistannReadyReceiptPayloadSidecar, DISTANN_READY_RECEIPT_STATE,
 };
 use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::placement::owning_node;
@@ -62,6 +62,8 @@ struct PreparedEntry {
 
 const PERSISTED_GRAPH_DOMAIN: &[u8] = b"ec_distann_persisted_graph_v1\0";
 const PERSISTED_ROW_TIER_DOMAIN: &[u8] = b"ec_distann_persisted_row_tier_v1\0";
+const HOT_TIER_INITIAL_CONTENT_DOMAIN: &[u8] = b"ec_distann_hot_tier_initial_content_v1\0";
+const COLD_TIER_INITIAL_CONTENT_DOMAIN: &[u8] = b"ec_distann_cold_tier_initial_content_v1\0";
 const LOCAL_DIRECTORY_DOMAIN: &[u8] = b"ec_distann_local_directory_v1\0";
 const OWNED_VEC_IDS_DOMAIN: &[u8] = b"ec_distann_owned_vec_ids_v1\0";
 const PAYLOAD_SIDECAR_INITIAL_CONTENT_DOMAIN: &[u8] =
@@ -165,6 +167,33 @@ fn identity_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
             .next()
             .transpose()?
             .ok_or_else(|| "EC_SCHEMA_MISMATCH: control identity attribute is absent".to_owned())
+    })
+}
+
+fn indexed_vector_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT indkey[0]::int4 AS vector_attnum
+                   FROM pg_catalog.pg_index
+                  WHERE indexrelid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_SCHEMA_MISMATCH: vector lookup failed: {error}"))?
+            .map(|row| {
+                let value = row["vector_attnum"]
+                    .value::<i32>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: vector attnum decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: vector attnum is NULL".to_owned())?;
+                u16::try_from(value)
+                    .map_err(|_| "EC_SCHEMA_MISMATCH: indexed vector attnum is invalid".to_owned())
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "EC_SCHEMA_MISMATCH: control index catalog row is absent".to_owned())
     })
 }
 
@@ -655,6 +684,7 @@ fn prepare_legacy_entries(
     entries: &[DistannHandoffEntry],
     shape: DistannHandoffShape,
     identity_attnum: u16,
+    indexed_vector_attnum: u16,
     row_io: &mut [Option<RowAttributeIo>],
     payload_cover: Option<&DistannPayloadCoverDescriptorV1>,
 ) -> Result<Vec<PreparedEntry>, String> {
@@ -677,6 +707,9 @@ fn prepare_legacy_entries(
             if is_null {
                 if attnum == usize::from(identity_attnum) {
                     return Err("EC_SOURCE_IDENTITY: source identity is NULL".to_owned());
+                }
+                if attnum == usize::from(indexed_vector_attnum) {
+                    return Err("EC_SCHEMA_MISMATCH: indexed vector is NULL".to_owned());
                 }
                 datums.push(None);
                 continue;
@@ -812,6 +845,9 @@ fn prepare_hot_cold_entries(
             if is_null {
                 if attribute.attnum == identity_attnum {
                     return Err("EC_SOURCE_IDENTITY: source identity is NULL".to_owned());
+                }
+                if attribute.attnum == layout.indexed_vector_attnum {
+                    return Err("EC_SCHEMA_MISMATCH: indexed vector is NULL".to_owned());
                 }
                 *target = None;
                 continue;
@@ -1187,11 +1223,210 @@ fn fetch_frozen_row(
     Ok((identity, null_bitmap, values))
 }
 
+fn fetch_compact_tier(
+    relation: &HeapRelationGuard,
+    slot: &TupleTableSlotGuard<'_>,
+    row_tid: ItemPointer,
+    expected_vec_id: u64,
+    row_io: &mut [Option<RowAttributeIo>],
+    tier_name: &str,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
+    if row_tid.block_number == pg_sys::InvalidBlockNumber || row_tid.offset_number == 0 {
+        return Err(format!(
+            "EC_BUILD_INCOMPLETE: graph record has an invalid {tier_name}-tier TID"
+        ));
+    }
+    if row_io.is_empty() {
+        return Err(format!(
+            "EC_SCHEMA_MISMATCH: compact {tier_name} tier lacks vec_id"
+        ));
+    }
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        return Err("EC_BUILD_STATE: seal has no active PostgreSQL snapshot".to_owned());
+    }
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(&mut tid, row_tid.block_number, row_tid.offset_number);
+    unsafe { pg_sys::ExecClearTuple(slot.as_ptr()) };
+    let found = unsafe {
+        pg_sys::table_tuple_fetch_row_version(relation.as_ptr(), &mut tid, snapshot, slot.as_ptr())
+    };
+    if !found {
+        return Err(format!(
+            "EC_BUILD_INCOMPLETE: graph record {tier_name}-tier tuple is absent"
+        ));
+    }
+    let natts = i32::try_from(row_io.len())
+        .map_err(|_| format!("EC_SCHEMA_MISMATCH: {tier_name} tier is too wide"))?;
+    unsafe { pg_sys::slot_getsomeattrs_int(slot.as_ptr(), natts) };
+    if unsafe { *(*slot.as_ptr()).tts_isnull } {
+        return Err(format!(
+            "EC_BUILD_INCOMPLETE: {tier_name}-tier vec_id is NULL"
+        ));
+    }
+    let stored_vec_id = unsafe {
+        i64::from_datum(*(*slot.as_ptr()).tts_values, false)
+            .ok_or_else(|| format!("EC_BUILD_INCOMPLETE: {tier_name}-tier vec_id is invalid"))?
+    };
+    if u64::from_le_bytes(stored_vec_id.to_le_bytes()) != expected_vec_id {
+        return Err(format!(
+            "EC_BUILD_INCOMPLETE: {tier_name}-tier vec_id disagrees with graph"
+        ));
+    }
+    let mut values = vec![None; row_io.len()];
+    for (attribute_index, io) in row_io.iter_mut().enumerate().skip(1) {
+        let io = io.as_mut().ok_or_else(|| {
+            format!(
+                "EC_SCHEMA_MISMATCH: compact {tier_name}-tier attribute {} is dropped",
+                attribute_index + 1
+            )
+        })?;
+        if !unsafe { *(*slot.as_ptr()).tts_isnull.add(attribute_index) } {
+            let datum = unsafe { *(*slot.as_ptr()).tts_values.add(attribute_index) };
+            values[attribute_index] = Some(unsafe { send_datum(datum, io, attribute_index + 1)? });
+        }
+    }
+    Ok(values)
+}
+
+struct FrozenHotColdRow {
+    identity: [u8; 16],
+    logical_null_bitmap: Vec<u8>,
+    logical_values: Vec<Vec<u8>>,
+    hot_null_bitmap: Vec<u8>,
+    hot_values: Vec<Vec<u8>>,
+    cold_null_bitmap: Vec<u8>,
+    cold_values: Vec<Vec<u8>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fetch_hot_cold_row(
+    descriptor: &DistannGenerationDescriptor,
+    layout: &DistannRowTierLayoutDescriptorV1,
+    hot_relation: &HeapRelationGuard,
+    hot_slot: &TupleTableSlotGuard<'_>,
+    hot_tid: ItemPointer,
+    hot_io: &mut [Option<RowAttributeIo>],
+    cold_relation: &HeapRelationGuard,
+    cold_slot: &TupleTableSlotGuard<'_>,
+    cold_tid: ItemPointer,
+    cold_io: &mut [Option<RowAttributeIo>],
+    vec_id: u64,
+) -> Result<FrozenHotColdRow, String> {
+    let hot = fetch_compact_tier(hot_relation, hot_slot, hot_tid, vec_id, hot_io, "hot")?;
+    let cold = fetch_compact_tier(cold_relation, cold_slot, cold_tid, vec_id, cold_io, "cold")?;
+    let mut placed = Vec::with_capacity(layout.placements.len());
+    for placement in &layout.placements {
+        let physical_index = usize::from(placement.physical_ordinal)
+            .checked_sub(1)
+            .ok_or_else(|| "EC_SCHEMA_MISMATCH: compact row-tier ordinal is zero".to_owned())?;
+        let value = match placement.tier {
+            DistannRowTierV1::Hot => hot.get(physical_index),
+            DistannRowTierV1::Cold => cold.get(physical_index),
+        }
+        .ok_or_else(|| "EC_SCHEMA_MISMATCH: compact row-tier ordinal exceeds width".to_owned())?
+        .clone();
+        placed.push((placement.attnum, placement.tier, value));
+    }
+
+    let logical_count = descriptor.row_schema.non_dropped_count();
+    let mut logical_null_bitmap = vec![0_u8; logical_count.div_ceil(8)];
+    let mut logical_values = Vec::with_capacity(logical_count);
+    let mut identity = None;
+    let mut logical_position = 0_usize;
+    for attribute in &descriptor.row_schema.attributes {
+        if attribute.dropped {
+            continue;
+        }
+        let value = placed
+            .iter()
+            .find(|(attnum, _, _)| *attnum == attribute.attnum)
+            .ok_or_else(|| {
+                format!(
+                    "EC_SCHEMA_MISMATCH: source attnum {} lacks a compact value",
+                    attribute.attnum
+                )
+            })?
+            .2
+            .as_ref();
+        match value {
+            Some(bytes) => {
+                if attribute.attnum == layout.source_identity_attnum {
+                    identity = Some(bytes.as_slice().try_into().map_err(|_| {
+                        "EC_SOURCE_IDENTITY: frozen identity is not 16 bytes".to_owned()
+                    })?);
+                }
+                logical_values.push(bytes.clone());
+            }
+            None => {
+                logical_null_bitmap[logical_position / 8] |= 1 << (logical_position % 8);
+                if attribute.attnum == layout.source_identity_attnum {
+                    return Err("EC_SOURCE_IDENTITY: frozen source identity is NULL".to_owned());
+                }
+                if attribute.attnum == layout.indexed_vector_attnum {
+                    return Err("EC_SCHEMA_MISMATCH: frozen indexed vector is NULL".to_owned());
+                }
+            }
+        }
+        logical_position += 1;
+    }
+
+    let tier_content = |tier| {
+        let values = placed
+            .iter()
+            .filter(|(_, placement_tier, _)| *placement_tier == tier)
+            .map(|(_, _, value)| value)
+            .collect::<Vec<_>>();
+        let mut null_bitmap = vec![0_u8; values.len().div_ceil(8)];
+        let mut non_null = Vec::with_capacity(values.len());
+        for (position, value) in values.into_iter().enumerate() {
+            if let Some(value) = value {
+                non_null.push(value.clone());
+            } else {
+                null_bitmap[position / 8] |= 1 << (position % 8);
+            }
+        }
+        (null_bitmap, non_null)
+    };
+    let (hot_null_bitmap, hot_values) = tier_content(DistannRowTierV1::Hot);
+    let (cold_null_bitmap, cold_values) = tier_content(DistannRowTierV1::Cold);
+    Ok(FrozenHotColdRow {
+        identity: identity.ok_or_else(|| {
+            "EC_SOURCE_IDENTITY: frozen row does not contain its identity attribute".to_owned()
+        })?,
+        logical_null_bitmap,
+        logical_values,
+        hot_null_bitmap,
+        hot_values,
+        cold_null_bitmap,
+        cold_values,
+    })
+}
+
 fn update_length_prefixed(hasher: &mut Sha256, bytes: &[u8]) -> Result<(), String> {
     let length = u32::try_from(bytes.len())
         .map_err(|_| "EC_BUILD_INCOMPLETE: persisted digest field exceeds u32".to_owned())?;
     hasher.update(length.to_le_bytes());
     hasher.update(bytes);
+    Ok(())
+}
+
+fn update_tier_content_digest(
+    hasher: &mut Sha256,
+    vec_id: u64,
+    null_bitmap: &[u8],
+    values: &[Vec<u8>],
+) -> Result<(), String> {
+    hasher.update(vec_id.to_le_bytes());
+    update_length_prefixed(hasher, null_bitmap)?;
+    hasher.update(
+        u32::try_from(values.len())
+            .map_err(|_| "EC_BUILD_INCOMPLETE: tier value count exceeds u32".to_owned())?
+            .to_le_bytes(),
+    );
+    for value in values {
+        update_length_prefixed(hasher, value)?;
+    }
     Ok(())
 }
 
@@ -1319,6 +1554,8 @@ struct PhysicalSealSummary {
     owner_stream_digest: [u8; 32],
     graph_digest: [u8; 32],
     row_tier_digest: [u8; 32],
+    hot_tier_initial_content_digest: Option<[u8; 32]>,
+    cold_tier_initial_content_digest: Option<[u8; 32]>,
     directory_digest: [u8; 32],
 }
 
@@ -1329,16 +1566,46 @@ fn scan_physical_generation(
     shape: DistannHandoffShape,
     identity_attnum: u16,
     row_relation: &HeapRelationGuard,
+    cold_relation: Option<&HeapRelationGuard>,
     graph_relation: &str,
 ) -> Result<PhysicalSealSummary, String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation)
         .ok_or_else(|| "EC_GENERATION_MISSING: could not allocate seal row slot".to_owned())?;
     let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
+    let cold_slot = cold_relation
+        .map(|relation| {
+            TupleTableSlotGuard::create_for_heap_guard(relation).ok_or_else(|| {
+                "EC_GENERATION_MISSING: could not allocate seal cold-tier slot".to_owned()
+            })
+        })
+        .transpose()?;
+    let mut cold_io = cold_relation
+        .map(|relation| unsafe { row_attribute_io(relation.as_ptr()) })
+        .transpose()?;
+    match (descriptor.row_tier_layout(), cold_relation) {
+        (None, None) | (Some(_), Some(_)) => {}
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: cold relation disagrees with generation descriptor"
+                    .to_owned(),
+            )
+        }
+    }
     let mut owner_hasher = DistannOwnerStreamHasher::new();
     let mut graph_hasher = Sha256::new();
     graph_hasher.update(PERSISTED_GRAPH_DOMAIN);
     let mut row_hasher = Sha256::new();
     row_hasher.update(PERSISTED_ROW_TIER_DOMAIN);
+    let mut hot_hasher = descriptor.row_tier_layout().map(|_| {
+        let mut hasher = Sha256::new();
+        hasher.update(HOT_TIER_INITIAL_CONTENT_DOMAIN);
+        hasher
+    });
+    let mut cold_hasher = descriptor.row_tier_layout().map(|_| {
+        let mut hasher = Sha256::new();
+        hasher.update(COLD_TIER_INITIAL_CONTENT_DOMAIN);
+        hasher
+    });
     let mut directory_hasher = Sha256::new();
     directory_hasher.update(LOCAL_DIRECTORY_DOMAIN);
     let mut record_count = 0_u64;
@@ -1390,8 +1657,9 @@ fn scan_physical_generation(
                         format!("EC_BUILD_INCOMPLETE: graph TID decode failed: {error}")
                     })?
                     .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph TID is NULL".to_owned())?;
-                let node = DistannNodeTuple::decode_physical_v1(
+                let node = DistannNodeTuple::decode_physical_version(
                     &graph_record,
+                    descriptor.graph_record_version,
                     descriptor.graph_degree,
                     shape.code_stride,
                 )?;
@@ -1411,13 +1679,63 @@ fn scan_physical_generation(
                             .to_owned(),
                     );
                 }
-                let (source_identity, row_null_bitmap, row_values) = fetch_frozen_row(
-                    row_relation,
-                    &slot,
-                    node.heap_tid,
-                    identity_attnum,
-                    &mut row_io,
-                )?;
+                let (source_identity, row_null_bitmap, row_values) = match (
+                    descriptor.row_tier_layout(),
+                    cold_relation,
+                    cold_slot.as_ref(),
+                    cold_io.as_deref_mut(),
+                    node.cold_tid,
+                ) {
+                    (None, None, None, None, None) => fetch_frozen_row(
+                        row_relation,
+                        &slot,
+                        node.heap_tid,
+                        identity_attnum,
+                        &mut row_io,
+                    )?,
+                    (
+                        Some(layout),
+                        Some(cold_relation),
+                        Some(cold_slot),
+                        Some(cold_io),
+                        Some(cold_tid),
+                    ) => {
+                        let frozen = fetch_hot_cold_row(
+                            descriptor,
+                            layout,
+                            row_relation,
+                            &slot,
+                            node.heap_tid,
+                            &mut row_io,
+                            cold_relation,
+                            cold_slot,
+                            cold_tid,
+                            cold_io,
+                            vec_id,
+                        )?;
+                        update_tier_content_digest(
+                            hot_hasher.as_mut().expect("hot/cold descriptor"),
+                            vec_id,
+                            &frozen.hot_null_bitmap,
+                            &frozen.hot_values,
+                        )?;
+                        update_tier_content_digest(
+                            cold_hasher.as_mut().expect("hot/cold descriptor"),
+                            vec_id,
+                            &frozen.cold_null_bitmap,
+                            &frozen.cold_values,
+                        )?;
+                        (
+                            frozen.identity,
+                            frozen.logical_null_bitmap,
+                            frozen.logical_values,
+                        )
+                    }
+                    _ => return Err(
+                        "EC_BUILD_INCOMPLETE: graph cold locator disagrees with generation layout"
+                            .to_owned(),
+                    ),
+                };
                 if vec_id_from_source_identity(&source_identity) != vec_id {
                     return Err(
                         "EC_SOURCE_IDENTITY: frozen row identity differs from graph vec_id"
@@ -1469,6 +1787,8 @@ fn scan_physical_generation(
         owner_stream_digest: owner_hasher.digest(),
         graph_digest: graph_hasher.finalize().into(),
         row_tier_digest: row_hasher.finalize().into(),
+        hot_tier_initial_content_digest: hot_hasher.map(|hasher| hasher.finalize().into()),
+        cold_tier_initial_content_digest: cold_hasher.map(|hasher| hasher.finalize().into()),
         directory_digest: directory_hasher.finalize().into(),
     })
 }
@@ -1477,6 +1797,7 @@ fn scan_physical_generation(
 struct GenerationSizes {
     graph_bytes: u64,
     row_tier_bytes: u64,
+    cold_tier_bytes: Option<u64>,
     directory_bytes: u64,
     payload_sidecar_heap_bytes: Option<u64>,
     payload_sidecar_index_bytes: Option<u64>,
@@ -1492,15 +1813,19 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes
                             AS directory_bytes,
                         CASE WHEN $4::oid IS NULL THEN NULL
                              ELSE pg_catalog.pg_table_size($4::oid::regclass)::bigint
-                         END AS payload_sidecar_heap_bytes,
+                         END AS cold_tier_bytes,
                         CASE WHEN $5::oid IS NULL THEN NULL
-                             ELSE pg_catalog.pg_total_relation_size($5::oid::regclass)::bigint
+                             ELSE pg_catalog.pg_table_size($5::oid::regclass)::bigint
+                         END AS payload_sidecar_heap_bytes,
+                        CASE WHEN $6::oid IS NULL THEN NULL
+                             ELSE pg_catalog.pg_total_relation_size($6::oid::regclass)::bigint
                          END AS payload_sidecar_index_bytes",
                 None,
                 &[
                     generation.graph_store_relid.into(),
                     generation.row_tier_relid.into(),
                     generation.directory_relid.into(),
+                    generation.cold_tier_relid.into(),
                     generation.payload_sidecar_relid.into(),
                     generation.payload_sidecar_directory_relid.into(),
                 ],
@@ -1532,6 +1857,7 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes
                 Ok::<GenerationSizes, String>(GenerationSizes {
                     graph_bytes: required("graph_bytes")?,
                     row_tier_bytes: required("row_tier_bytes")?,
+                    cold_tier_bytes: optional("cold_tier_bytes")?,
                     directory_bytes: required("directory_bytes")?,
                     payload_sidecar_heap_bytes: optional("payload_sidecar_heap_bytes")?,
                     payload_sidecar_index_bytes: optional("payload_sidecar_index_bytes")?,
@@ -2241,6 +2567,7 @@ fn ec_distann_stage_epoch_batch(
             .transpose()?;
         reject_existing_vec_ids(&graph_relation, &batch.entries)?;
         let identity_attnum = identity_attnum(index_oid)?;
+        let vector_attnum = indexed_vector_attnum(index_oid)?;
         let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
         let mut cold_io = cold_relation
             .as_ref()
@@ -2261,6 +2588,7 @@ fn ec_distann_stage_epoch_batch(
                     &batch.entries,
                     shape,
                     identity_attnum,
+                    vector_attnum,
                     &mut row_io,
                     descriptor.payload_cover.as_ref(),
                 ),
@@ -2410,6 +2738,16 @@ fn ec_distann_seal_epoch_handoff(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
+        let cold_relation = generation
+            .cold_tier_relid
+            .map(|relation_oid| {
+                HeapRelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| "EC_GENERATION_MISSING: cold-tier relation is absent".to_owned())
+            })
+            .transpose()?;
         let _graph_relation_guard = HeapRelationGuard::try_open(
             generation.graph_store_relid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
@@ -2456,10 +2794,17 @@ fn ec_distann_seal_epoch_handoff(
                 shape,
                 identity_attnum,
                 &row_relation,
+                cold_relation.as_ref(),
                 &graph_relation,
             )
         })?;
         let row_count = relation_row_count(&row_relation_name)?;
+        let cold_count = generation
+            .cold_tier_relid
+            .map(|relation_oid| {
+                qualified_relation_name(relation_oid).and_then(|name| relation_row_count(&name))
+            })
+            .transpose()?;
         let payload_sidecar = match (
             payload_sidecar_relation.as_deref(),
             descriptor.payload_cover.as_ref(),
@@ -2480,6 +2825,7 @@ fn ec_distann_seal_epoch_handoff(
         };
         if physical.record_count != expected_owner_count
             || row_count != expected_owner_count
+            || cold_count.is_some_and(|count| count != expected_owner_count)
             || physical.owner_stream_digest != expected_owner_digest
             || payload_sidecar.is_some_and(|sidecar| sidecar.row_count != expected_owner_count)
         {
@@ -2508,6 +2854,32 @@ fn ec_distann_seal_epoch_handoff(
                 );
             }
         };
+        let hot_cold = match (
+            physical.hot_tier_initial_content_digest,
+            physical.cold_tier_initial_content_digest,
+            sizes.cold_tier_bytes,
+            descriptor.row_tier_layout(),
+        ) {
+            (Some(hot_digest), Some(cold_digest), Some(cold_heap_bytes), Some(_)) => {
+                Some(DistannReadyReceiptHotCold {
+                    hot_initial_content_digest: hot_digest,
+                    cold_initial_content_digest: cold_digest,
+                    hot_heap_bytes: sizes.row_tier_bytes,
+                    cold_heap_bytes,
+                })
+            }
+            (None, None, None, None) => None,
+            _ => {
+                return Err(
+                    "EC_BUILD_INCOMPLETE: hot/cold digests or relation sizes are incomplete"
+                        .to_owned(),
+                )
+            }
+        };
+        let row_tier_bytes = sizes
+            .row_tier_bytes
+            .checked_add(sizes.cold_tier_bytes.unwrap_or(0))
+            .ok_or_else(|| "EC_BUILD_INCOMPLETE: row-tier byte count overflow".to_owned())?;
         let receipt = DistannReadyReceipt {
             node_id: generation.node_id,
             epoch: generation.epoch,
@@ -2522,10 +2894,11 @@ fn ec_distann_seal_epoch_handoff(
             persisted_row_tier_digest: physical.row_tier_digest,
             local_directory_digest: physical.directory_digest,
             graph_bytes: sizes.graph_bytes,
-            row_tier_bytes: sizes.row_tier_bytes,
+            row_tier_bytes,
             directory_bytes: sizes.directory_bytes,
             state: DISTANN_READY_RECEIPT_STATE,
             payload_sidecar,
+            hot_cold,
         };
         let encoded = receipt.encode()?;
         generation_catalog::mark_generation_ready(
