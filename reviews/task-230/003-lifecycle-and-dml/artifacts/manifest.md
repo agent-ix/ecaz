@@ -1,14 +1,72 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `deb245711ad1d2373b6f54903b918292e16e67d5`
+- Head SHA: `ef013450124d58bd9ec694e7e7658b2635e5e87d`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: payload-offset contract and CLI lint gate, seq-09
+- Packet: hot/cold runtime fault and lifecycle evidence, seq-10
 - Timestamp: 2026-08-29 America/Los_Angeles
-- Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
-  row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
-  corpus benchmark or rerank measurement
-- Isolation: pure CLI/suite harness validation; no dynamic fault fixture has
-  run yet, because this runner extension is reviewed before the packet consumes it
+- Lane / fixture / storage format / rerank mode: local PG18 synthetic
+  four-owner read-fault and three-owner write/lifecycle fixtures; descriptor V4
+  / Graph V2 hot/cold row tier; no corpus benchmark or rerank measurement
+- Isolation: two fresh, non-reused fixtures with one hot/cold index surface per
+  table; cluster state was outside the repository and automatically removed
+  after durable artifact capture
+
+## Seq-10 hot/cold runtime fault and lifecycle artifacts
+
+All seq-10 runtime artifacts were produced at
+`ef013450124d58bd9ec694e7e7658b2635e5e87d` on
+2026-08-29T05:33:44-07:00. Both suite steps used isolated fresh fixtures.
+
+### `task230-packet003-runtime-suite.json`
+
+- Purpose: checked-in `ecaz bench suite` config preregistered and pushed before
+  execution. It defines the four-owner read and three-owner write/lifecycle
+  hot/cold fault fixtures and external `~/.ecaz/clusters` run directories.
+- SHA-256: `950d517ecc3fce8c6f124b8b9241ba1e8bc1ada08835ddea8ab037f5008fdae6`
+
+### `cargo-pgrx-install-pg-test-runtime.log`
+
+- Command: `cargo pgrx install --release --pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config --no-default-features --features 'pg18 pg_test distann-head-attribution-benchmark'`
+- Result: exit 0; current release library and SQL entities installed.
+- SHA-256: `2f52ecc5c1030cad5707eafe8949151e8f4b897ea08cb272bd74ad9570f053b5`
+
+### `cargo-build-cli-runtime.log`
+
+- Command: `cargo build -p ecaz-cli`
+- Result: exit 0; only the pre-existing dead-code warning.
+- SHA-256: `c20132a5505fe56f1237e4f1e5cf2a4995c559bd49f51517a19272bc0ede164a`
+
+### `runtime-suite-dry-run.log` and `runtime/suite-dry-run-manifest.json`
+
+- Command: `/home/peter/.cargo-target/debug/ecaz bench suite run --config reviews/task-230/003-lifecycle-and-dml/artifacts/task230-packet003-runtime-suite.json --dry-run --manifest-output reviews/task-230/003-lifecycle-and-dml/artifacts/runtime/suite-dry-run-manifest.json --results-output reviews/task-230/003-lifecycle-and-dml/artifacts/runtime/suite-dry-run-results.jsonl`
+- Result: exit 0; exactly two intended fault-matrix steps expanded.
+- SHA-256: log `d675ed8a2c6f56b977140fc0f0393e39190f72c77afd050dfad8056eaed64947`;
+  manifest `b4595e29710d700bece9771177127b6d1e4e30a49eba0d001f745f3ffac294c2`.
+
+### `runtime-suite-run.log`, `runtime/suite-manifest.json`, and `runtime/suite-results.jsonl`
+
+- Command: `/home/peter/.cargo-target/debug/ecaz bench suite run --config reviews/task-230/003-lifecycle-and-dml/artifacts/task230-packet003-runtime-suite.json --manifest-output reviews/task-230/003-lifecycle-and-dml/artifacts/runtime/suite-manifest.json --results-output reviews/task-230/003-lifecycle-and-dml/artifacts/runtime/suite-results.jsonl`
+- Result: both steps succeeded, exit 0. Results contain 71 rows: 55 drill
+  outcomes, 14 topology rows, and two unanimous release preflights. Both
+  external run directories were removed after capture.
+- SHA-256: log `cc1b3cd5e21d577a055a8c881ef76461e0c2d17578b115a060e3f16ba9a2e46f`;
+  manifest `81733ba56a11a15f12932d728607f63a8ec728c7e1260a9b82ac124f79484b33`;
+  results `82c25a106d269c677ec914fb5d7005f74e8ea474e686241df77ae0cc46130429`.
+
+### `runtime/read-rpc-faults/console.log` and `task234-read-rpc-fault-matrix.log`
+
+- Result: `Task 234 read RPC fault matrix PASS cells=25`; all five RPCs passed
+  all five failure modes with drained work and successful clean retries.
+- SHA-256: console `1ef558f4e1ce41fd9a016216eddb7f5eece2c2defd42f009d3b1aef7e9cb79b5`;
+  compact matrix `dc441309f31253e0037af839955e39c618cdda945d6124c75f73fc65008d1b51`.
+
+### `runtime/write-lifecycle-faults/console.log` and `task235-write-lifecycle-fault-matrix.log`
+
+- Result: `Task 235 write/lifecycle fault matrix PASS scenarios=23 records=110`;
+  12 hot/cold write snapshots were balanced and three retained predecessor
+  reads passed with valid mixed-tier payloads before reclaim.
+- SHA-256: console `15c985dfca5d00841f9c0a1336a38cf331ed3c11adc72dc9a102176c011a74b8`;
+  compact matrix `2c6a2ba02689626a4d88df9e396e7fc489210f11713af21c9de2621909746485`.
 
 ## Seq-09 payload-offset contract and CLI lint gate artifacts
 
@@ -37,8 +95,8 @@ All seq-09 artifacts were produced at
 ### `cargo-clippy-cli-seq-09.log`
 
 - Command: `cargo clippy -p ecaz-cli --all-targets`
-- Result: exit 0 with the pre-existing warning baseline; there is no finding
-  at the seq-09 change.
+- Result: exit 0 with the pre-existing baseline of 77 warnings in the binary
+  target and 78 in the test target; there is no finding at the seq-09 change.
 - SHA-256: `b7564d6ab0c630c27f8107c4df82b7496922bbc1527cad1c163cfbcb2fbd00cc`
 
 ## Seq-08 lifecycle and fault-matrix harness artifacts

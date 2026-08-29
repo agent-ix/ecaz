@@ -5,13 +5,52 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 9
+seq: 10
 ---
 
-# Task 230 packet 003 — payload-offset contract and CLI lint gate
+# Task 230 packet 003 — hot/cold runtime fault and lifecycle evidence
 
-Review code checkpoint `deb245711` as the final static correction before the
-three remaining Packet 003 runtime evidence groups.
+Review the suite-driven runtime evidence at `ef0134501`. There is no code change
+after the accepted seq-09 checkpoint `deb245711`; `ef0134501` preregistered the
+checked-in suite config before any runtime result was read.
+
+## Seq-10 runtime evidence
+
+- The four-owner hot/cold read matrix passed all 25 cells: five production RPCs
+  crossed with remote statement timeout, local query cancellation, local
+  statement timeout, remote-backend termination, and connection reset/owner
+  restart. Every cell drained remote work and completed a clean retry.
+- The three-owner hot/cold write/lifecycle matrix passed 23 scenarios and
+  emitted 110 records. Its remote mutation, prepare, commit/rollback,
+  acknowledgment-loss, partial-commit, missing-intent, owner-death, prepared-
+  slot, publication, retirement, reclaim, and operator-stop cases all passed.
+- All 12 layout-aware write snapshots reported `hot_cold=true` and
+  `cold_pair_balanced=true`; hot and cold tuple totals matched after each
+  recovery disposition.
+- Each of the three owners successfully materialized a retained `Retired`
+  predecessor with attnums 1 and 3, `tuple_payload_missing=false`, two valid
+  cumulative offsets, and nonempty hot-plus-cold payload bytes before reclaim.
+- Both fixtures unanimously admitted the release extension built at
+  `ef0134501` with `pg18,pg-test,distann-head-attribution-benchmark`. The suite
+  removed both external cluster directories after durable artifact capture.
+- Packet 003's remote retry/intent, restart/owner-failure,
+  publication/recovery, and retained-generation runtime obligations are all
+  represented. Request review-close of Packet 003.
+
+## Seq-10 validation and provenance
+
+- Checked-in `ecaz bench suite` config:
+  `artifacts/task230-packet003-runtime-suite.json`.
+- Dry-run: exit 0; exactly the preregistered read and write steps expanded.
+- Real run: both suite steps `succeeded`, exit 0; `suite-results.jsonl` contains
+  71 result rows (55 drill outcomes, 14 topology rows, two release preflights).
+- No production code changed after seq-09, so the seq-09 format/root-clippy/
+  CLI-clippy/test receipts remain the code gates for this runtime checkpoint.
+
+## Seq-09 accepted scope
+
+Reviewer seq-09 closed both static carry-ins as DONE. The accepted scope below
+remains for packet history.
 
 ## Seq-09 payload-offset contract and CLI lint gate
 

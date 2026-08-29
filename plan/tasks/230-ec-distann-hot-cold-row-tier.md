@@ -77,6 +77,14 @@ attribute, no terminal N+1), confirming the packet-002 pgrx assertions were righ
 and the CLI's `= 3` was wrong; both root PG18 and `ecaz-cli` all-target clippy
 receipts are now recorded. **Packet 003's static and harness work is complete;
 only the three runtime evidence groups remain owed.**
+runtime checkpoint 10 implementation complete, packet 003 review-open (seq-10)
+at `ef0134501`: the suite-driven four-owner read matrix passed all 25 RPC/fault
+cells; the three-owner write/lifecycle matrix passed 23 scenarios and 110
+records with 12 balanced hot/cold write snapshots and three successful retained
+mixed-tier predecessor reads; restart/owner-failure, remote retry/intent,
+publication/recovery, and retained-generation obligations are all represented;
+both external cluster directories were removed after capture. Packet 003 is
+ready for review-close; packet 004 full-scale 10k/50k/100k A/B remains owed.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
