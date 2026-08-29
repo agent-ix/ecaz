@@ -85,6 +85,11 @@ write/lifecycle matrix passed 23 scenarios and 110 records with 12
 predecessor reads, and both external cluster directories were removed after
 capture. **Only packet 004's full-scale 10k/50k/100k A/B remains — it decides
 PROMOTE or STOP.**
+Packet 004 preregistration implementation complete, review-open (seq-01) at
+`5837f4bec`: a pushed 20-step standard suite freezes two counterbalanced
+10k/50k/100k primary pairs, isolated 100k exact/cold/mixed/all secondary pairs,
+release/lint entry gates, and numeric PROMOTE/STOP thresholds before any result
+exists. No step permits a debug extension; execution awaits outside review.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
