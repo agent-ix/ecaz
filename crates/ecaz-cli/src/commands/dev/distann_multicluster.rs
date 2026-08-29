@@ -10166,6 +10166,20 @@ fn task230_physical_identity_column(hot_cold: bool) -> &'static str {
     }
 }
 
+fn task230_remote_owner_sample_sql(row_relation: &str, hot_cold: bool) -> String {
+    if hot_cold {
+        format!(
+            "SELECT a_2::text || '|' || (a_4::real[])::text
+               FROM {row_relation} ORDER BY a_2 LIMIT 1"
+        )
+    } else {
+        format!(
+            "SELECT source_id::text || '|' || source::text
+               FROM {row_relation} ORDER BY source_id LIMIT 1"
+        )
+    }
+}
+
 async fn task230_row_tier_io_attribution(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -14136,18 +14150,8 @@ async fn drive_physical_fixture(
             bail!("remote owner {} returned unsafe row relation", node.node_id);
         }
         let identity_column = task230_physical_identity_column(args.hot_cold_row_tier);
-        let sample = capture_psql(
-            psql,
-            socket_dir,
-            node.port,
-            &format!(
-                "SELECT internal.{identity_column}::text || '|' || corpus.source::text
-                   FROM {row_relation} internal
-                   JOIN dm corpus ON corpus.source_id = internal.{identity_column}
-                  ORDER BY internal.{identity_column} LIMIT 1"
-            ),
-        )
-        .await?;
+        let sample_sql = task230_remote_owner_sample_sql(row_relation, args.hot_cold_row_tier);
+        let sample = capture_psql(psql, socket_dir, node.port, &sample_sql).await?;
         let (source_id, vector) = sample
             .trim()
             .split_once('|')
@@ -18458,6 +18462,14 @@ mod tests {
     fn task230_remote_owner_identity_column_tracks_physical_layout() {
         assert_eq!(task230_physical_identity_column(false), "source_id");
         assert_eq!(task230_physical_identity_column(true), "a_2");
+
+        let rowheap = task230_remote_owner_sample_sql("public.rows", false);
+        assert!(rowheap.contains("source_id::text || '|' || source::text"));
+        assert!(!rowheap.contains("a_2"));
+
+        let hotcold = task230_remote_owner_sample_sql("public.hot", true);
+        assert!(hotcold.contains("a_2::text || '|' || (a_4::real[])::text"));
+        assert!(!hotcold.contains("JOIN dm"));
     }
 
     #[test]
