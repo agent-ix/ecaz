@@ -495,6 +495,22 @@ fn distann_stage_batch_fixture_with_entries(
     identity_marker: u8,
     entry_count: usize,
 ) -> (Vec<u8>, Vec<u8>, u64) {
+    distann_stage_batch_fixture_with_entries_and_nulls(
+        fixture,
+        batch_seq,
+        identity_marker,
+        entry_count,
+        &[],
+    )
+}
+
+fn distann_stage_batch_fixture_with_entries_and_nulls(
+    fixture: &DistannPhysicalGenerationFixture,
+    batch_seq: u64,
+    identity_marker: u8,
+    entry_count: usize,
+    null_positions: &[usize],
+) -> (Vec<u8>, Vec<u8>, u64) {
     let descriptor =
         crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor)
             .expect("generation descriptor should decode");
@@ -544,6 +560,24 @@ fn distann_stage_batch_fixture_with_entries(
         let identity_bytes = identity.to_vec();
         let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
         first_vec_id.get_or_insert(vec_id);
+        let mut row_null_bitmap = vec![0; shape.non_dropped_attribute_count.div_ceil(8)];
+        for &position in null_positions {
+            assert!(
+                position < shape.non_dropped_attribute_count,
+                "NULL fixture position must name a non-dropped source attribute"
+            );
+            row_null_bitmap[position / 8] |= 1 << (position % 8);
+        }
+        let row_values = [
+            identity_bytes,
+            payload_bytes.clone(),
+            embedding_bytes.clone(),
+            generated_bytes.clone(),
+        ]
+        .into_iter()
+        .enumerate()
+        .filter_map(|(position, value)| (!null_positions.contains(&position)).then_some(value))
+        .collect();
         entries.push(crate::am::ec_distann::DistannHandoffEntry {
             vec_id,
             source_identity: identity.to_vec(),
@@ -551,13 +585,8 @@ fn distann_stage_batch_fixture_with_entries(
             search_code: vec![0x5a; shape.code_stride],
             neighbor_vec_ids: Vec::new(),
             neighbor_codes: Vec::new(),
-            row_null_bitmap: vec![0],
-            row_values: vec![
-                identity_bytes,
-                payload_bytes.clone(),
-                embedding_bytes.clone(),
-                generated_bytes.clone(),
-            ],
+            row_null_bitmap,
+            row_values,
         });
     }
     entries.sort_by_key(|entry| entry.vec_id);
@@ -6491,6 +6520,82 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
     });
     assert!(missing_both.contains("EC_TEST_ROLLBACK"));
 
+    let null_fixture = create_hot_cold_null_distann_participant_lifecycle_fixture(
+        "ec_distann_hot_cold_null_read",
+        0x7e,
+    );
+    publish_distann_participant(&null_fixture);
+    let null_descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
+        &null_fixture.generation.descriptor,
+    )
+    .expect("NULL hot/cold read descriptor should decode");
+    let null_schema_fingerprint = null_descriptor
+        .row_schema
+        .fingerprint()
+        .expect("NULL hot/cold schema fingerprint should encode");
+    let null_graph_name = canonical_index_locator(null_fixture.relations.1);
+    let null_vec_id = Spi::get_one::<i64>(&format!(
+        "SELECT vec_id FROM {null_graph_name} WHERE is_current"
+    ))
+    .unwrap()
+    .expect("NULL hot/cold fixture should have one current graph row");
+    let null_materialize = |attnums: &str| {
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT tuple_payload_missing, payload_nulls,
+                                payload_offsets, payload_values
+                           FROM ec_distann_materialize_physical_row_payloads(
+                               '{}'::regclass, decode('{}', 'hex'),
+                               ARRAY[{null_vec_id}]::bigint[],
+                               ARRAY[{attnums}]::smallint[],
+                               decode('{}', 'hex'), false
+                           )",
+                        null_fixture.generation.index_name,
+                        hex::encode(&null_fixture.fingerprint),
+                        hex::encode(null_schema_fingerprint),
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("NULL hot/cold materialization should execute")
+                .map(|row| {
+                    (
+                        row["tuple_payload_missing"]
+                            .value::<bool>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_nulls"]
+                            .value::<Vec<bool>>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_offsets"]
+                            .value::<Vec<i64>>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_values"]
+                            .value::<Vec<u8>>()
+                            .unwrap()
+                            .unwrap(),
+                    )
+                })
+                .next()
+                .expect("NULL hot/cold materialization should return one row")
+        })
+    };
+    assert_eq!(
+        null_materialize("2,5"),
+        (false, vec![true, true], vec![0, 0], Vec::new()),
+        "cold-only projection must preserve NULL shape without payload bytes"
+    );
+    let (missing, nulls, offsets, values) = null_materialize("1,2,4,5");
+    assert!(!missing);
+    assert_eq!(nulls, vec![false, true, false, true]);
+    assert_eq!(offsets.len(), 4);
+    assert_eq!(offsets[1], offsets[0]);
+    assert_eq!(offsets[3], offsets[2]);
+    assert_eq!(usize::try_from(offsets[3]).unwrap(), values.len());
 }
 
 #[pg_test]
@@ -7384,6 +7489,7 @@ fn create_covered_distann_participant_lifecycle_fixture(
         true,
         false,
         false,
+        &[],
     )
 }
 
@@ -7398,6 +7504,7 @@ fn create_readable_covered_distann_participant_lifecycle_fixture(
         true,
         true,
         false,
+        &[],
     )
 }
 
@@ -7412,6 +7519,22 @@ fn create_hot_cold_distann_participant_lifecycle_fixture(
         false,
         false,
         true,
+        &[],
+    )
+}
+
+fn create_hot_cold_null_distann_participant_lifecycle_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannParticipantLifecycleFixture {
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        1,
+        false,
+        false,
+        true,
+        &[1, 3],
     )
 }
 
@@ -7427,6 +7550,7 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         false,
         false,
         false,
+        &[],
     )
 }
 
@@ -7437,6 +7561,7 @@ fn create_distann_participant_lifecycle_fixture_configured(
     covered: bool,
     readable_row_tier_schema: bool,
     hot_cold: bool,
+    null_positions: &[usize],
 ) -> DistannParticipantLifecycleFixture {
     assert!(!(covered && hot_cold), "sidecar and hot/cold are exclusive");
     let generation = if hot_cold {
@@ -7461,11 +7586,12 @@ fn create_distann_participant_lifecycle_fixture_configured(
     } else {
         create_distann_physical_generation_fixture(stem, build_marker)
     };
-    let (batch_digest, encoded_batch, _) = distann_stage_batch_fixture_with_entries(
+    let (batch_digest, encoded_batch, _) = distann_stage_batch_fixture_with_entries_and_nulls(
         &generation,
         0,
         build_marker.wrapping_add(1),
         row_count,
+        null_positions,
     );
     let owner_digest = distann_owner_digest_for_batch(&generation, &encoded_batch);
     begin_distann_physical_generation_count(&generation, row_count as i64, &owner_digest);
