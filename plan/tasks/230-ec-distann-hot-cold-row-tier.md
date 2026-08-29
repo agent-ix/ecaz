@@ -135,8 +135,15 @@ implemented comment-only at `1a927c22d`; packet 006 is **REVIEW-CLOSED DONE**
 — the comment sits immediately above `ALL`, which is exactly the uncovered path:
 forgetting `ALL` itself is already a compile error via the `[Self; 61]` length,
 so the failure mode that actually occurred was updating enum and `ALL` correctly
-while forgetting the CLI literal in another crate. **Nothing further blocks the
-restart.** No benchmark result exists yet.
+while forgetting the CLI literal in another crate. Packet 004's next clean
+restart completed one 10k row-heap control, then the first hot/cold arm failed
+closed before measurement because the remote-owner placement proof used logical
+`source_id`/`source` names against compact hot columns. Correction `93615542d`
+selects `source_id` versus `a_2` by physical layout and joins the sampled
+internal identity back to `dm` only for the raw query vector; packet 007 is
+**REVIEW-OPEN** at `reviews/task-230/007-hot-cold-owner-probe/request.md`. The
+partial control is discarded so the accepted rerun uses one CLI head from step
+1. No complete benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
