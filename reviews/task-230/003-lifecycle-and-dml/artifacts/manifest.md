@@ -1,14 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `7ff55c0a3a9aab4d86d56d6c7d67e61f80801e7e`
+- Head SHA: `41a01606063d2ffdee76d7d5a2ac3f4fb01ce3db`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: retained-history and destructive-lifecycle checkpoint, seq-03
+- Packet: multinode hot/cold harness checkpoint, seq-04
 - Timestamp: 2026-08-29 America/Los_Angeles
-- Lane / fixture / storage format / rerank mode: local PG18 pgrx callbacks;
-  descriptor V4, Graph V2, receipt V3, manifest V4, compact paired hot/cold
-  heaps; no corpus benchmark or rerank measurement
-- Isolation: every focused callback creates its own transaction-scoped source
-  index and generation relations; no shared-table benchmark surface
+- Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
+  descriptor V4 / Graph V2 hot/cold selection and topology accounting; no
+  corpus benchmark or rerank measurement
+- Isolation: pure CLI/suite parsing and topology validation tests; no shared
+  table or running PostgreSQL surface
+
+## Seq-04 multinode and suite harness artifacts
+
+All seq-04 artifacts were produced at
+`41a01606063d2ffdee76d7d5a2ac3f4fb01ce3db` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-04.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `b64aad102e7949f9f084c0f797c50a9afb82d7f2a35012597b4552674a6cd4a2`
+
+### `cargo-clippy-seq-04.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 through seq-03; no new finding in the seq-04 changes.
+- SHA-256: `5dae0854b85758819a126e8185e6670021d6b20b6f202eb1d7fdb87cb7f3523d`
+
+### `cargo-test-cli-seq-04.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: three passed, zero failed; 546 filtered out. The tests cover
+  canonical hot attnums, complete hot/cold topology admission, and typed suite
+  expansion.
+- SHA-256: `e07de66c24c316a66338459501d4d6fc0892be962b2f5da24aecc580b2d07f94`
 
 ## Seq-03 retained-history and destructive-lifecycle artifacts
 

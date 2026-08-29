@@ -23,6 +23,10 @@ checkpoint 3 review-closed DONE (seq-03) at `7ff55c0a3` (verdict
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-03-reviewer.md`),
 documenting raw orphan semantics and covering hot/cold DROP, REINDEX, and
 aborted-REINDEX rollback;
+multinode/suite harness checkpoint 4 implementation complete / review-open at
+`41a016060`, adding the explicit hot/cold fixture selection, complete cold-tier
+topology/storage accounting, reuse attestation, and the post-DML diagnostic
+signal clarification;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

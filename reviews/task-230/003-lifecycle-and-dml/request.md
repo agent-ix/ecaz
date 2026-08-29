@@ -5,13 +5,44 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 3
+seq: 4
 ---
 
-# Task 230 packet 003 — retained-history and destructive-lifecycle checkpoint
+# Task 230 packet 003 — multinode hot/cold harness checkpoint
 
-Review code checkpoint `7ff55c0a3` against reviewer seq-02's retained-history
-semantics and remaining local lifecycle carry-ins.
+Review code checkpoint `41a016060` as the production-fixture surface required
+for the remaining remote lifecycle matrix and packet 004 A/B.
+
+## Seq-04 multinode and suite harness scope
+
+- Adds explicit `--hot-cold-row-tier` and canonical
+  `--hot-payload-attnums` options to `ecaz dev distann-multicluster`, including
+  the frozen 1..=1536 dimension bound and fail-closed Task 229 sidecar
+  exclusion.
+- Extends the typed `ecaz bench suite` step schema and command expansion with
+  the same options; no packet-local sweeper or raw-argument escape hatch is
+  needed for the full-scale matrix.
+- Reads all three cold-tier topology columns, rejects missing/incomplete pairs,
+  and includes cold heap bytes in per-owner and aggregate generation storage.
+- Attests hot/cold reloptions when reusing a fixture so a row-heap control
+  cannot be silently reused as the candidate or vice versa.
+- Closes reviewer seq-03's topology interpretation note: receipt digests are
+  initial-content signals only before post-Ready DML; afterward graph
+  current/tombstone state plus successful vec-id/schema-checked locator
+  reconstruction is authoritative.
+
+## Seq-04 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Three focused ecaz-cli tests pass for canonical hot attnums, complete-pair
+  topology validation, and typed suite expansion.
+- Mandatory all-target PG18 clippy reproduces only the same five pre-existing
+  findings; no finding is in the seq-04 changes.
+
+## Seq-03 accepted scope
+
+Reviewer seq-03 closed retained history and local destructive lifecycle as
+DONE. The accepted scope below remains for packet history.
 
 ## Seq-03 retained-history and destructive-lifecycle scope
 
@@ -99,13 +130,15 @@ below remains for packet history.
 
 ## Packet status
 
-This is a reviewable narrow checkpoint, not packet-003 closure. Local
-DROP/REINDEX cleanup and rollback are now covered. Still owed are remote
-retry/intent and fault coverage, publication/recovery and retained-generation
-reads, and restart/owner-failure reads carried from packet 002.
+This is a reviewable harness checkpoint, not packet-003 closure. It makes the
+remaining production matrix selectable and observable. Still owed are the
+actual remote retry/intent and fault run, publication/recovery and
+retained-generation reads, and restart/owner-failure reads carried from packet
+002.
 
 ## Review request
 
-Please verify the raw orphan semantics and the complete hot/cold dependency
-cleanup and rollback matrix. Leave feedback under this packet's `feedback/`
-directory.
+Please verify reloption construction/reuse attestation, complete cold-tier
+topology validation/storage accounting, typed suite expansion, and the
+post-DML diagnostic interpretation. Leave feedback under this packet's
+`feedback/` directory.
