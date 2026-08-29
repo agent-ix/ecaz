@@ -746,10 +746,14 @@ pub struct DistannEpochManifestV2 {
 
 impl DistannEpochManifestV2 {
     pub fn version(&self) -> u16 {
-        if self.row_tier_layout_descriptor_digest.is_some()
-            || self.global_hot_tier_initial_content_digest.is_some()
-            || self.global_cold_tier_initial_content_digest.is_some()
-        {
+        if matches!(
+            (
+                self.row_tier_layout_descriptor_digest,
+                self.global_hot_tier_initial_content_digest,
+                self.global_cold_tier_initial_content_digest,
+            ),
+            (Some(_), Some(_), Some(_))
+        ) {
             DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
         } else if self.payload_cover_descriptor_digest.is_some()
             || self.global_payload_sidecar_initial_content_digest.is_some()
@@ -1451,6 +1455,10 @@ mod tests {
             DistannEpochFingerprint::decode(hot_cold_fingerprint.as_bytes()).unwrap(),
             hot_cold_fingerprint
         );
+        let mut partial_hot_cold = hot_cold.clone();
+        partial_hot_cold.global_cold_tier_initial_content_digest = None;
+        assert_eq!(partial_hot_cold.version(), DISTANN_EPOCH_MANIFEST_VERSION);
+        assert!(partial_hot_cold.encode().is_err());
         let mut wrong_cold = hot_cold;
         wrong_cold
             .global_cold_tier_initial_content_digest

@@ -197,7 +197,7 @@ fn indexed_vector_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
     })
 }
 
-fn compact_tier_schema_matches(
+pub(crate) fn compact_tier_schema_matches(
     physical: &super::row_schema::DistannRowSchemaDescriptor,
     logical: &super::row_schema::DistannRowSchemaDescriptor,
     layout: &DistannRowTierLayoutDescriptorV1,

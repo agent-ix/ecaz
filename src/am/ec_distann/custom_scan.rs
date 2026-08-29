@@ -669,6 +669,7 @@ struct DistannCustomScanExecState {
     payload_send_functions: Vec<String>,
     payload_inputs: Vec<PayloadAttrIo>,
     payload_sidecar_selected: bool,
+    hot_cold_row_tier: bool,
     outputs: Vec<CustomScanOutputRow>,
     next_output: usize,
     loaded: bool,
@@ -728,6 +729,7 @@ fn default_exec_state() -> DistannCustomScanExecState {
         payload_send_functions: Vec::new(),
         payload_inputs: Vec::new(),
         payload_sidecar_selected: false,
+        hot_cold_row_tier: false,
         outputs: Vec::new(),
         next_output: 0,
         loaded: false,
@@ -1419,10 +1421,15 @@ fn materialize_pending_physical_window(
         }
         let active = unsafe { pg_sys::GetActiveSnapshot() };
         if active != unsafe { (*estate).es_snapshot } {
-            pgrx::error!("EC_INTERNAL: local sidecar lookup lost the executor snapshot");
+            pgrx::error!("EC_INTERNAL: local physical payload lookup lost the executor snapshot");
         }
         let mut local_payloads = context
-            .materialize_local_sidecar_pairs(&local_pairs, &state.payload_attnums, false)
+            .materialize_local_payload_pairs(
+                &local_pairs,
+                &state.payload_attnums,
+                state.payload_sidecar_selected,
+                false,
+            )
             .unwrap_or_else(|error| pgrx::error!("{error}"));
         let missing = local_pairs
             .iter()
@@ -1433,7 +1440,12 @@ fn materialize_pending_physical_window(
             if let Some(latest) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() {
                 local_payloads.extend(
                     context
-                        .materialize_local_sidecar_pairs(&missing, &state.payload_attnums, true)
+                        .materialize_local_payload_pairs(
+                            &missing,
+                            &state.payload_attnums,
+                            state.payload_sidecar_selected,
+                            true,
+                        )
                         .unwrap_or_else(|error| pgrx::error!("{error}")),
                 );
                 drop(latest);
@@ -1483,7 +1495,7 @@ fn materialize_pending_physical_window(
                 payload_values: payload.payload_values.clone(),
             },
             None if remote_owner => CustomScanOutputRow::RemoteSkipped { vec_id },
-            None => pgrx::error!("EC_INTERNAL: local sidecar payload disappeared after retry"),
+            None => pgrx::error!("EC_INTERNAL: local physical payload disappeared after retry"),
         };
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1772,6 +1784,7 @@ unsafe fn run_physical_generation_search(
         }
         PayloadAttributeMask::AllColumns(_) => false,
     };
+    state.hot_cold_row_tier = context.uses_hot_cold_row_tier();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::RankedCandidates,
@@ -1780,7 +1793,10 @@ unsafe fn run_physical_generation_search(
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
     let hits = collection.hits;
-    if super::options::materialization_batch_size() > 0 || state.payload_sidecar_selected {
+    if super::options::materialization_batch_size() > 0
+        || state.payload_sidecar_selected
+        || state.hot_cold_row_tier
+    {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let association_started = Instant::now();
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1818,7 +1834,7 @@ unsafe fn run_physical_generation_search(
             .into_iter()
             .map(|hit| {
                 if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
-                    if state.payload_sidecar_selected {
+                    if state.payload_sidecar_selected || state.hot_cold_row_tier {
                         CustomScanOutputRow::FrozenPayloadPending {
                             vec_id: hit.vec_id,
                             row_tid: hit.heap_tid,

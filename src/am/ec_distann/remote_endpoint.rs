@@ -928,6 +928,37 @@ pub(crate) fn build_payload_sql(
     payload_send_functions: &[String],
     typed_locator: bool,
 ) -> Result<String, String> {
+    build_payload_sql_internal(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        false,
+    )
+}
+
+pub(crate) fn build_identified_payload_sql(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+) -> Result<String, String> {
+    build_payload_sql_internal(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        true,
+    )
+}
+
+fn build_payload_sql_internal(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+    identify_tuple: bool,
+) -> Result<String, String> {
     let mut null_exprs = Vec::with_capacity(payload_columns.len());
     let mut value_exprs = Vec::with_capacity(payload_columns.len());
     let mut projected = Vec::with_capacity(payload_columns.len());
@@ -943,8 +974,20 @@ pub(crate) fn build_payload_sql(
                   THEN ''::bytea ELSE {send}(heap.{ident}) END"
         ));
     }
-    let found_projection = if projected.is_empty() {
+    let identity_inner = if identify_tuple {
+        "heap_row.ctid AS __ec_distann_tid, heap_row.vec_id AS __ec_distann_vec_id"
+    } else {
+        ""
+    };
+    let found_projection = if projected.is_empty() && !identify_tuple {
         "true AS __ec_distann_found".to_owned()
+    } else if projected.is_empty() {
+        format!("true AS __ec_distann_found, {identity_inner}")
+    } else if identify_tuple {
+        format!(
+            "true AS __ec_distann_found, {identity_inner}, {}",
+            projected.join(", ")
+        )
     } else {
         format!("true AS __ec_distann_found, {}", projected.join(", "))
     };
@@ -963,18 +1006,38 @@ pub(crate) fn build_payload_sql(
     } else {
         "candidate.ctid_value::tid"
     };
+    let identity_outer = if identify_tuple {
+        "candidate.ctid_value::tid AS requested_tid, \
+         candidate.vec_id_value AS requested_vec_id, \
+         heap.__ec_distann_tid AS stored_tid, \
+         heap.__ec_distann_vec_id AS stored_vec_id, "
+    } else {
+        ""
+    };
+    let request_source = if identify_tuple {
+        format!(
+            "unnest($1::{locator_type}[], $2::bigint[]) WITH ORDINALITY \
+             AS candidate(ctid_value, vec_id_value, ordinality)",
+            locator_type = if typed_locator { "tid" } else { "text" },
+        )
+    } else {
+        format!(
+            "unnest($1::{locator_type}[]) WITH ORDINALITY \
+             AS candidate(ctid_value, ordinality)",
+            locator_type = if typed_locator { "tid" } else { "text" },
+        )
+    };
     Ok(format!(
-        "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
+        "SELECT {identity_outer}heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
                 {null_array} AS payload_nulls, \
                 {value_array} AS payload_values \
-           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
+           FROM {request_source} \
            LEFT JOIN LATERAL ( \
              SELECT {found_projection} \
                FROM {heap_relation} AS heap_row \
               WHERE heap_row.ctid = {locator_match} \
            ) AS heap ON true \
           ORDER BY candidate.ordinality",
-        locator_type = if typed_locator { "tid" } else { "text" },
         locator_match = locator_match,
     ))
 }
@@ -987,6 +1050,37 @@ pub(crate) fn build_packed_payload_sql(
     payload_columns: &[String],
     payload_send_functions: &[String],
     typed_locator: bool,
+) -> Result<String, String> {
+    build_packed_payload_sql_internal(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        false,
+    )
+}
+
+pub(crate) fn build_identified_packed_payload_sql(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+) -> Result<String, String> {
+    build_packed_payload_sql_internal(
+        heap_relation,
+        payload_columns,
+        payload_send_functions,
+        typed_locator,
+        true,
+    )
+}
+
+fn build_packed_payload_sql_internal(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+    identify_tuple: bool,
 ) -> Result<String, String> {
     let mut null_exprs = Vec::with_capacity(payload_columns.len());
     let mut value_exprs = Vec::with_capacity(payload_columns.len());
@@ -1004,8 +1098,20 @@ pub(crate) fn build_packed_payload_sql(
                   THEN ''::bytea ELSE {send}(heap.{ident}) END AS {alias}"
         ));
     }
-    let found_projection = if projected.is_empty() {
+    let identity_inner = if identify_tuple {
+        "heap_row.ctid AS __ec_distann_tid, heap_row.vec_id AS __ec_distann_vec_id"
+    } else {
+        ""
+    };
+    let found_projection = if projected.is_empty() && !identify_tuple {
         "true AS __ec_distann_found".to_owned()
+    } else if projected.is_empty() {
+        format!("true AS __ec_distann_found, {identity_inner}")
+    } else if identify_tuple {
+        format!(
+            "true AS __ec_distann_found, {identity_inner}, {}",
+            projected.join(", ")
+        )
     } else {
         format!("true AS __ec_distann_found, {}", projected.join(", "))
     };
@@ -1045,12 +1151,33 @@ pub(crate) fn build_packed_payload_sql(
     } else {
         "candidate.ctid_value::tid"
     };
+    let identity_outer = if identify_tuple {
+        "candidate.ctid_value::tid AS requested_tid, \
+         candidate.vec_id_value AS requested_vec_id, \
+         heap.__ec_distann_tid AS stored_tid, \
+         heap.__ec_distann_vec_id AS stored_vec_id, "
+    } else {
+        ""
+    };
+    let request_source = if identify_tuple {
+        format!(
+            "unnest($1::{locator_type}[], $2::bigint[]) WITH ORDINALITY \
+             AS candidate(ctid_value, vec_id_value, ordinality)",
+            locator_type = if typed_locator { "tid" } else { "text" },
+        )
+    } else {
+        format!(
+            "unnest($1::{locator_type}[]) WITH ORDINALITY \
+             AS candidate(ctid_value, ordinality)",
+            locator_type = if typed_locator { "tid" } else { "text" },
+        )
+    };
     Ok(format!(
-        "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
+        "SELECT {identity_outer}heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
                 {null_array} AS payload_nulls, \
                 {offsets} AS payload_offsets, \
                 {values} AS payload_values \
-           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
+           FROM {request_source} \
            LEFT JOIN LATERAL ( \
              SELECT {found_projection} \
                FROM {heap_relation} AS heap_row \
@@ -1060,14 +1187,16 @@ pub(crate) fn build_packed_payload_sql(
              SELECT {value_projection} \
           ) AS payload ON true \
           ORDER BY candidate.ordinality",
-        locator_type = if typed_locator { "tid" } else { "text" },
         locator_match = locator_match,
     ))
 }
 
 #[cfg(test)]
 mod packed_payload_sql_tests {
-    use super::{build_packed_payload_sql, build_payload_sql};
+    use super::{
+        build_identified_packed_payload_sql, build_identified_payload_sql,
+        build_packed_payload_sql, build_payload_sql,
+    };
 
     #[test]
     fn production_projection_uses_bytea_array_control_sql() {
@@ -1102,6 +1231,33 @@ mod packed_payload_sql_tests {
         assert!(sql.contains("unnest($1::tid[])"));
         assert!(!sql.contains("ARRAY[CASE"));
         assert!(!sql.contains("::bytea[]"));
+    }
+
+    #[test]
+    fn identified_tier_projection_echoes_requested_and_stored_identity() {
+        for sql in [
+            build_identified_payload_sql(
+                "\"bench\".\"hot\"",
+                &["a_4".to_owned()],
+                &["public.ecvector_send".to_owned()],
+                true,
+            )
+            .expect("valid identified projection"),
+            build_identified_packed_payload_sql(
+                "\"bench\".\"cold\"",
+                &["a_5".to_owned()],
+                &["pg_catalog.textsend".to_owned()],
+                false,
+            )
+            .expect("valid identified packed projection"),
+        ] {
+            assert!(sql.contains("requested_tid"));
+            assert!(sql.contains("requested_vec_id"));
+            assert!(sql.contains("stored_tid"));
+            assert!(sql.contains("stored_vec_id"));
+            assert!(sql.contains("$2::bigint[]"));
+            assert!(sql.contains("heap_row.vec_id"));
+        }
     }
 
     #[test]

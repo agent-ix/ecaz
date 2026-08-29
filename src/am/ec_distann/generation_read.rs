@@ -44,6 +44,73 @@ use super::scan::{
 use super::scan_registry::ScanTokenGuard;
 use super::tuple::DistannNodeTuple;
 
+fn exact_vector_physical_attnum(
+    descriptor: &DistannGenerationDescriptor,
+    source_attnum: i32,
+) -> Result<i32, String> {
+    let Some(layout) = descriptor.row_tier_layout() else {
+        return Ok(source_attnum);
+    };
+    let source_attnum_u16 = u16::try_from(source_attnum)
+        .map_err(|_| "EC_SCHEMA_MISMATCH: indexed vector attnum is invalid".to_owned())?;
+    if source_attnum_u16 != layout.indexed_vector_attnum {
+        return Err(
+            "EC_SCHEMA_MISMATCH: indexed vector differs from the frozen hot/cold layout".to_owned(),
+        );
+    }
+    let placement = layout
+        .placements
+        .iter()
+        .find(|placement| placement.attnum == source_attnum_u16)
+        .ok_or_else(|| {
+            "EC_SCHEMA_MISMATCH: indexed vector is absent from the frozen hot/cold layout"
+                .to_owned()
+        })?;
+    if placement.tier != super::row_layout::DistannRowTierV1::Hot {
+        return Err("EC_SCHEMA_MISMATCH: indexed vector is not stored in the hot tier".to_owned());
+    }
+    Ok(i32::from(placement.physical_ordinal))
+}
+
+fn resolve_retained_row_schema(
+    generation: &GenerationCatalogRow,
+    descriptor: &DistannGenerationDescriptor,
+) -> Result<super::row_schema::ResolvedRowSchema, String> {
+    let Some(layout) = descriptor.row_tier_layout() else {
+        if generation.cold_tier_relid.is_some() {
+            return Err(
+                "EC_GENERATION_MISSING: legacy generation unexpectedly has a cold tier".to_owned(),
+            );
+        }
+        return super::row_schema::resolve_relation_schema(generation.row_tier_relid);
+    };
+    layout.validate_row_schema(&descriptor.row_schema)?;
+    let cold_relid = generation.cold_tier_relid.ok_or_else(|| {
+        "EC_GENERATION_MISSING: hot/cold generation is missing its cold tier".to_owned()
+    })?;
+    let hot = super::row_schema::resolve_relation_schema(generation.row_tier_relid)?;
+    let cold = super::row_schema::resolve_relation_schema(cold_relid)?;
+    if !super::handoff::compact_tier_schema_matches(
+        &hot.descriptor,
+        &descriptor.row_schema,
+        layout,
+        super::row_layout::DistannRowTierV1::Hot,
+    ) || !super::handoff::compact_tier_schema_matches(
+        &cold.descriptor,
+        &descriptor.row_schema,
+        layout,
+        super::row_layout::DistannRowTierV1::Cold,
+    ) {
+        return Err(
+            "EC_SCHEMA_MISMATCH: retained compact tiers differ from the frozen layout".to_owned(),
+        );
+    }
+    Ok(super::row_schema::ResolvedRowSchema {
+        descriptor: descriptor.row_schema.clone(),
+        columns: Vec::new(),
+    })
+}
+
 pub(crate) struct ActiveGenerationIdentity {
     pub(crate) build_id: Uuid,
     pub(crate) fingerprint: [u8; 34],
@@ -126,6 +193,7 @@ fn graph_slot_attr(
 
 fn graph_node_from_slot(
     slot: &TupleTableSlotGuard<'_>,
+    graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
 ) -> Result<DistannNodeTuple, DistannExpandError> {
@@ -148,8 +216,13 @@ fn graph_node_from_slot(
         ));
     }
     let row_tid = unsafe { ptr::read_unaligned(row_tid_ptr) };
-    let node = DistannNodeTuple::decode_physical_v1(record.as_bytes(), graph_degree, code_len)
-        .map_err(DistannExpandError::GenerationMissing)?;
+    let node = DistannNodeTuple::decode_physical_version(
+        record.as_bytes(),
+        graph_record_version,
+        graph_degree,
+        code_len,
+    )
+    .map_err(DistannExpandError::GenerationMissing)?;
     let (block, offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
     if node.vec_id != u64::from_le_bytes(stored_id.to_le_bytes())
         || node.heap_tid
@@ -173,6 +246,7 @@ fn lookup_graph_nodes<F>(
     directory_relation: &IndexRelationGuard,
     snapshot: pg_sys::Snapshot,
     vec_ids: &[u64],
+    graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
     missing: F,
@@ -229,7 +303,7 @@ where
         if !found {
             return Err(missing(*vec_id));
         }
-        let node = graph_node_from_slot(&slot, graph_degree, code_len)?;
+        let node = graph_node_from_slot(&slot, graph_record_version, graph_degree, code_len)?;
         if node.vec_id != *vec_id {
             return Err(DistannExpandError::GenerationMissing(format!(
                 "physical graph directory returned vec_id {:#018x} for requested {vec_id:#018x}",
@@ -385,6 +459,7 @@ fn lookup_graph_nodes_with_reopened_intent_retry<F, O>(
     snapshot: pg_sys::Snapshot,
     vec_ids: &[u64],
     intent_node_ids: &[u32],
+    graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
     graph_relation: HeapRelationGuard,
@@ -429,6 +504,7 @@ where
             &directory_relation,
             snapshot,
             vec_ids,
+            graph_record_version,
             graph_degree,
             code_len,
             missing,
@@ -462,6 +538,7 @@ where
             &next_directory_relation,
             latest.as_ptr(),
             vec_ids,
+            graph_record_version,
             graph_degree,
             code_len,
             missing,
@@ -1259,6 +1336,8 @@ impl RetainedGenerationScan {
                 DistannGenerationDescriptor::decode(&generation.generation_descriptor)
                     .map_err(DistannExpandError::GenerationMissing)?,
             );
+            let source_attnum = exact_vector_physical_attnum(&descriptor, source_attnum)
+                .map_err(DistannExpandError::GenerationMissing)?;
             let roster_entry = descriptor
                 .roster
                 .get(generation.owner_ordinal as usize)
@@ -1284,7 +1363,7 @@ impl RetainedGenerationScan {
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
             let row_schema = Arc::new(
-                super::row_schema::resolve_relation_schema(generation.row_tier_relid)
+                resolve_retained_row_schema(&generation, &descriptor)
                     .map_err(DistannExpandError::GenerationMissing)?,
             );
             let cached = CachedRetainedEpoch {
@@ -1311,12 +1390,19 @@ impl RetainedGenerationScan {
             owner_payload_plans,
             ..
         } = cached;
-        let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
-            .ok_or_else(|| {
-                DistannExpandError::GenerationMissing(
-                    "retained row-tier relation is absent".to_owned(),
-                )
-            })?;
+        let row_relation = if descriptor.row_tier_layout().is_some() {
+            None
+        } else {
+            Some(
+                HeapRelationGuard::try_access_share(generation.row_tier_relid).ok_or_else(
+                    || {
+                        DistannExpandError::GenerationMissing(
+                            "retained row-tier relation is absent".to_owned(),
+                        )
+                    },
+                )?,
+            )
+        };
         let graph_relation = HeapRelationGuard::try_access_share(generation.graph_store_relid)
             .ok_or_else(|| {
                 DistannExpandError::GenerationMissing(
@@ -1339,7 +1425,7 @@ impl RetainedGenerationScan {
             fingerprint,
             descriptor,
             generation,
-            row_relation: Some(row_relation),
+            row_relation,
             graph_relation: Some(graph_relation),
             directory_relation: Some(directory_relation),
             retry_snapshot: None,
@@ -1364,6 +1450,28 @@ impl RetainedGenerationScan {
                 "retained row-tier relation is temporarily released".to_owned(),
             )
         })
+    }
+
+    fn ensure_row_relation(&mut self) -> Result<(), DistannExpandError> {
+        if self.row_relation.is_none() {
+            self.row_relation = Some(
+                HeapRelationGuard::try_access_share(self.generation.row_tier_relid).ok_or_else(
+                    || {
+                        DistannExpandError::GenerationMissing(
+                            "retained hot row-tier relation is absent".to_owned(),
+                        )
+                    },
+                )?,
+            );
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            if self.descriptor.row_tier_layout().is_some() {
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HotTierRelationOpens,
+                    1,
+                );
+            }
+        }
+        Ok(())
     }
 
     fn graph_relation_ref(&self) -> Result<&HeapRelationGuard, DistannExpandError> {
@@ -1417,7 +1525,7 @@ impl RetainedGenerationScan {
     }
 
     fn traversal_replica_chunk(
-        &self,
+        &mut self,
         after_vec_id: Option<i64>,
         limit: usize,
     ) -> Result<Vec<TraversalReplicaChunkRow>, DistannExpandError> {
@@ -1426,6 +1534,7 @@ impl RetainedGenerationScan {
                 "traversal replica chunk limit must be in 1..=4096".to_owned(),
             ));
         }
+        self.ensure_row_relation()?;
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         if snapshot.is_null() {
             return Err(DistannExpandError::Internal(
@@ -1501,8 +1610,9 @@ impl RetainedGenerationScan {
                     )
                 })?;
             let graph_record = record.as_bytes().to_vec();
-            let node = DistannNodeTuple::decode_physical_v1(
+            let node = DistannNodeTuple::decode_physical_version(
                 &graph_record,
+                self.descriptor.graph_record_version,
                 self.descriptor.graph_degree,
                 self.code_len,
             )
@@ -1649,8 +1759,9 @@ impl RetainedGenerationScan {
                         "graph diagnostic record could not be detoasted".to_owned(),
                     )
                 })?;
-            let node = DistannNodeTuple::decode_physical_v1(
+            let node = DistannNodeTuple::decode_physical_version(
                 record.as_bytes(),
+                self.descriptor.graph_record_version,
                 self.descriptor.graph_degree,
                 self.code_len,
             )
@@ -1735,8 +1846,9 @@ impl RetainedGenerationScan {
                         "physical seed graph record is NULL".to_owned(),
                     )
                 })?;
-                let node = DistannNodeTuple::decode_physical_v1(
+                let node = DistannNodeTuple::decode_physical_version(
                     record.as_bytes(),
+                    self.descriptor.graph_record_version,
                     self.descriptor.graph_degree,
                     self.code_len,
                 )
@@ -1781,6 +1893,7 @@ impl RetainedGenerationScan {
         if vec_ids.is_empty() {
             return Ok(Vec::new());
         }
+        self.ensure_row_relation()?;
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         if snapshot.is_null() {
             return Err(DistannExpandError::Internal(
@@ -1940,6 +2053,7 @@ impl RetainedGenerationScan {
             }
             None => {
                 let nodes = self.resolve_nodes(members)?;
+                self.ensure_row_relation()?;
                 let snapshot = self
                     .retry_snapshot
                     .as_ref()
@@ -2129,6 +2243,7 @@ impl RetainedGenerationScan {
         if members.is_empty() {
             return Ok(Vec::new());
         }
+        self.ensure_row_relation()?;
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         if snapshot.is_null() {
             return Err(DistannExpandError::Internal(
@@ -2219,6 +2334,7 @@ impl RetainedGenerationScan {
         // Release all retained relation guards while the owner transaction is
         // given time to publish.  The reopened helper returns fresh graph and
         // directory guards for the caller to retain after the lookup.
+        let reopen_row_relation = self.row_relation.is_some();
         let row_relation = self.row_relation.take();
         drop(row_relation);
         let graph_relation = self.graph_relation.take().ok_or_else(|| {
@@ -2239,6 +2355,7 @@ impl RetainedGenerationScan {
             snapshot,
             vec_ids,
             &intent_node_ids,
+            self.descriptor.graph_record_version,
             self.descriptor.graph_degree,
             self.code_len,
             graph_relation,
@@ -2266,13 +2383,15 @@ impl RetainedGenerationScan {
             },
         )?;
         let (records, graph_relation, directory_relation, retry_snapshot) = records;
-        let row_relation = HeapRelationGuard::try_access_share(self.generation.row_tier_relid)
-            .ok_or_else(|| {
-                DistannExpandError::GenerationMissing(
-                    "retained row-tier relation is absent after retry".to_owned(),
-                )
-            })?;
-        self.row_relation = Some(row_relation);
+        if reopen_row_relation {
+            let row_relation = HeapRelationGuard::try_access_share(self.generation.row_tier_relid)
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "retained row-tier relation is absent after retry".to_owned(),
+                    )
+                })?;
+            self.row_relation = Some(row_relation);
+        }
         self.graph_relation = Some(graph_relation);
         self.directory_relation = Some(directory_relation);
         if let Some(retry_snapshot) = retry_snapshot {
@@ -2380,7 +2499,10 @@ impl RetainedGenerationScan {
         let validate_ns = duration_ns(validate_started.elapsed());
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let lookup_started = Instant::now();
-        let nodes = if let Some(owner_heap_tids) = owner_heap_tids {
+        let hot_cold = self.descriptor.row_tier_layout().is_some();
+        let nodes = if hot_cold {
+            self.resolve_nodes(vec_ids)?
+        } else if let Some(owner_heap_tids) = owner_heap_tids {
             if owner_heap_tids.len() != vec_ids.len() {
                 return Err(DistannExpandError::BadInput(
                     "expanded owner locator count does not match vec_id count".to_owned(),
@@ -2407,7 +2529,7 @@ impl RetainedGenerationScan {
             self.resolve_nodes(vec_ids)?
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        let node_lookup_ns = if owner_heap_tids.is_some() {
+        let node_lookup_ns = if owner_heap_tids.is_some() && !hot_cold {
             0
         } else {
             duration_ns(lookup_started.elapsed())
@@ -2474,6 +2596,43 @@ impl RetainedGenerationScan {
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let payload_sql_started = Instant::now();
+        if hot_cold {
+            let payloads = self.materialize_hot_cold_payloads(
+                &nodes,
+                &canonical_attnums,
+                use_typed_locator,
+                use_packed_payload,
+            )?;
+            let rows = nodes
+                .into_iter()
+                .zip(payloads)
+                .map(|(node, payload)| {
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.tombstoned,
+                        payload.missing,
+                        payload.nulls,
+                        payload.offsets,
+                        payload.values,
+                    )
+                })
+                .collect();
+            return Ok(PhysicalPayloadBatch {
+                rows,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                telemetry: OwnerMaterializationTelemetry {
+                    validate_ns,
+                    node_lookup_ns,
+                    payload_sql_ns: duration_ns(payload_sql_started.elapsed()),
+                    sidecar_selected: false,
+                    sidecar_lookup_ns: 0,
+                    requested_rows: 0,
+                    returned_rows: 0,
+                    missing_rows: 0,
+                    row_tier_visibility_probes: 0,
+                },
+            });
+        }
         let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
             .map_err(DistannExpandError::GenerationMissing)?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -2710,6 +2869,655 @@ impl RetainedGenerationScan {
                 row_tier_visibility_probes: 0,
             },
         })
+    }
+
+    fn fetch_tier_payloads(
+        &self,
+        nodes: &[DistannNodeTuple],
+        tier: super::row_layout::DistannRowTierV1,
+        projection_attnums: &[u16],
+        use_typed_locator: bool,
+        use_packed_payload: bool,
+    ) -> Result<Vec<TierPayload>, DistannExpandError> {
+        let layout = self.descriptor.row_tier_layout().ok_or_else(|| {
+            DistannExpandError::GenerationMissing(
+                "hot/cold tier fetch lost its frozen layout".to_owned(),
+            )
+        })?;
+        let relation_oid = match tier {
+            super::row_layout::DistannRowTierV1::Hot => self.generation.row_tier_relid,
+            super::row_layout::DistannRowTierV1::Cold => {
+                self.generation.cold_tier_relid.ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "hot/cold generation is missing its cold tier".to_owned(),
+                    )
+                })?
+            }
+        };
+        let _relation = HeapRelationGuard::try_access_share(relation_oid).ok_or_else(|| {
+            DistannExpandError::GenerationMissing(format!(
+                "retained {} tier relation is absent",
+                match tier {
+                    super::row_layout::DistannRowTierV1::Hot => "hot",
+                    super::row_layout::DistannRowTierV1::Cold => "cold",
+                }
+            ))
+        })?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record_work(
+            match tier {
+                super::row_layout::DistannRowTierV1::Hot => {
+                    super::stage_counters::DistannMaterializationWork::HotTierRelationOpens
+                }
+                super::row_layout::DistannRowTierV1::Cold => {
+                    super::stage_counters::DistannMaterializationWork::ColdTierRelationOpens
+                }
+            },
+            1,
+        );
+        let relation_name = super::handoff::qualified_relation_name(relation_oid)
+            .map_err(DistannExpandError::GenerationMissing)?;
+        let mut columns = Vec::with_capacity(projection_attnums.len());
+        let mut sends = Vec::with_capacity(projection_attnums.len());
+        for &attnum in projection_attnums {
+            let placement = layout
+                .placements
+                .iter()
+                .find(|placement| placement.attnum == attnum)
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(format!(
+                        "frozen hot/cold layout does not place attnum {attnum}"
+                    ))
+                })?;
+            if placement.tier != tier {
+                return Err(DistannExpandError::Internal(format!(
+                    "attnum {attnum} was routed to the wrong physical tier"
+                )));
+            }
+            let attribute = self
+                .descriptor
+                .row_schema
+                .attributes
+                .iter()
+                .find(|attribute| attribute.attnum == attnum && !attribute.dropped)
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(format!(
+                        "frozen row schema does not contain live attnum {attnum}"
+                    ))
+                })?;
+            columns.push(format!("a_{attnum}"));
+            sends.push(attribute.send_function.clone());
+        }
+        let sql = if use_packed_payload {
+            super::remote_endpoint::build_identified_packed_payload_sql(
+                &relation_name,
+                &columns,
+                &sends,
+                use_typed_locator,
+            )
+        } else {
+            super::remote_endpoint::build_identified_payload_sql(
+                &relation_name,
+                &columns,
+                &sends,
+                use_typed_locator,
+            )
+        }
+        .map_err(DistannExpandError::BadInput)?;
+        let locators = nodes
+            .iter()
+            .map(|node| match tier {
+                super::row_layout::DistannRowTierV1::Hot => Ok(node.heap_tid),
+                super::row_layout::DistannRowTierV1::Cold => node.cold_tid.ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(format!(
+                        "Graph V2 record lacks the cold locator for vec_id {:#018x}",
+                        node.vec_id
+                    ))
+                }),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let typed_tids = locators
+            .iter()
+            .map(|locator| {
+                let mut tid = pg_sys::ItemPointerData::default();
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut tid,
+                    locator.block_number,
+                    locator.offset_number,
+                );
+                tid
+            })
+            .collect::<Vec<_>>();
+        let ctid_texts = typed_tids
+            .iter()
+            .map(|tid| {
+                let (block, offset) = pgrx::itemptr::item_pointer_get_both(*tid);
+                format!("({block},{offset})")
+            })
+            .collect::<Vec<_>>();
+        let ctid_refs = ctid_texts.iter().map(String::as_str).collect::<Vec<_>>();
+        let vec_ids = nodes
+            .iter()
+            .map(|node| i64::from_le_bytes(node.vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let column_count = columns.len();
+        let decoded = Spi::connect(|client| {
+            let rows = if use_typed_locator {
+                client.select(
+                    &sql,
+                    None,
+                    &[typed_tids.clone().into(), vec_ids.as_slice().into()],
+                )
+            } else {
+                client.select(
+                    &sql,
+                    None,
+                    &[ctid_refs.as_slice().into(), vec_ids.as_slice().into()],
+                )
+            };
+            rows.map_err(|error| {
+                DistannExpandError::VectorMissing(format!(
+                    "physical hot/cold payload fetch failed: {error}"
+                ))
+            })?
+            .map(|row| {
+                let requested_tid = row["requested_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical tier requested TID decode failed: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "physical tier requested TID is NULL".to_owned(),
+                        )
+                    })?;
+                let requested_vec_id = row["requested_vec_id"]
+                    .value::<i64>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical tier requested vec_id decode failed: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "physical tier requested vec_id is NULL".to_owned(),
+                        )
+                    })?;
+                let stored_tid = row["stored_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical tier stored TID decode failed: {error}"
+                        ))
+                    })?;
+                let stored_vec_id = row["stored_vec_id"].value::<i64>().map_err(|error| {
+                    DistannExpandError::Internal(format!(
+                        "physical tier stored vec_id decode failed: {error}"
+                    ))
+                })?;
+                let missing = row["tuple_payload_missing"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical tier missing flag decode failed: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "physical tier missing flag is NULL".to_owned(),
+                        )
+                    })?;
+                let nulls = row["payload_nulls"]
+                    .value::<Vec<bool>>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical tier NULL flags decode failed: {error}"
+                        ))
+                    })?
+                    .unwrap_or_default();
+                let (offsets, values) = if use_packed_payload {
+                    let offsets = row["payload_offsets"]
+                        .value::<Vec<i64>>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "physical tier packed offsets decode failed: {error}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    let values = row["payload_values"]
+                        .value::<Vec<u8>>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "physical tier packed values decode failed: {error}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    (offsets, values)
+                } else {
+                    let arrays = row["payload_values"]
+                        .value::<pgrx::datum::Array<&[u8]>>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "physical tier values decode failed: {error}"
+                            ))
+                        })?
+                        .map(|array| {
+                            array
+                                .iter_deny_null()
+                                .map(<[u8]>::to_vec)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let mut offsets = Vec::with_capacity(arrays.len());
+                    let mut values = Vec::new();
+                    for value in arrays {
+                        values.extend_from_slice(&value);
+                        offsets.push(i64::try_from(values.len()).unwrap_or(i64::MAX));
+                    }
+                    (offsets, values)
+                };
+                let final_offset = offsets.last().copied().unwrap_or(0);
+                let offsets_valid = offsets.windows(2).all(|window| window[0] <= window[1])
+                    && final_offset >= 0
+                    && usize::try_from(final_offset)
+                        .ok()
+                        .is_some_and(|end| end == values.len());
+                if nulls.len() != column_count || offsets.len() != column_count || !offsets_valid {
+                    return Err(DistannExpandError::Internal(
+                        "physical tier payload shape mismatch".to_owned(),
+                    ));
+                }
+                Ok::<_, DistannExpandError>((
+                    requested_tid,
+                    requested_vec_id,
+                    stored_tid,
+                    stored_vec_id,
+                    TierPayload {
+                        missing,
+                        nulls,
+                        offsets,
+                        values,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()
+        })?;
+        if decoded.len() != nodes.len() {
+            return Err(DistannExpandError::Internal(
+                "physical tier response count mismatch".to_owned(),
+            ));
+        }
+        let payloads = nodes
+            .iter()
+            .zip(locators.iter().copied())
+            .zip(decoded)
+            .map(|((node, locator), decoded)| {
+                let (requested_tid, requested_vec_id, stored_tid, stored_vec_id, payload) = decoded;
+                let requested = pgrx::itemptr::item_pointer_get_both(requested_tid);
+                let expected_tid = (locator.block_number, locator.offset_number);
+                let expected_vec_id = i64::from_le_bytes(node.vec_id.to_le_bytes());
+                if requested != expected_tid || requested_vec_id != expected_vec_id {
+                    return Err(DistannExpandError::Internal(
+                        "physical tier request identity echo mismatch".to_owned(),
+                    ));
+                }
+                match (payload.missing, stored_tid, stored_vec_id) {
+                    (true, None, None) => Ok(payload),
+                    (false, Some(stored_tid), Some(stored_vec_id)) => {
+                        if pgrx::itemptr::item_pointer_get_both(stored_tid) != expected_tid
+                            || stored_vec_id != expected_vec_id
+                        {
+                            return Err(DistannExpandError::GenerationMissing(
+                                "physical tier stored identity echo mismatch".to_owned(),
+                            ));
+                        }
+                        Ok(payload)
+                    }
+                    _ => Err(DistannExpandError::GenerationMissing(
+                        "physical tier returned incomplete stored identity".to_owned(),
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            use super::stage_counters::DistannMaterializationWork;
+
+            let returned = payloads.iter().filter(|payload| !payload.missing).count();
+            let blocks = locators
+                .iter()
+                .map(|locator| locator.block_number)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            let bytes = payloads.iter().map(|payload| payload.values.len()).sum();
+            let (tuple_metric, block_metric, byte_metric) = match tier {
+                super::row_layout::DistannRowTierV1::Hot => (
+                    DistannMaterializationWork::HotTierTupleReads,
+                    DistannMaterializationWork::HotTierBlocksRequested,
+                    DistannMaterializationWork::HotTierPayloadBytes,
+                ),
+                super::row_layout::DistannRowTierV1::Cold => (
+                    DistannMaterializationWork::ColdTierTupleReads,
+                    DistannMaterializationWork::ColdTierBlocksRequested,
+                    DistannMaterializationWork::ColdTierPayloadBytes,
+                ),
+            };
+            super::stage_counters::record_work(tuple_metric, returned);
+            super::stage_counters::record_work(block_metric, blocks);
+            super::stage_counters::record_work(byte_metric, bytes);
+            if tier == super::row_layout::DistannRowTierV1::Hot {
+                if let Some(vector_index) = projection_attnums
+                    .iter()
+                    .position(|attnum| *attnum == layout.indexed_vector_attnum)
+                {
+                    let vector_bytes = payloads
+                        .iter()
+                        .filter(|payload| !payload.missing && !payload.nulls[vector_index])
+                        .map(|payload| {
+                            let start = if vector_index == 0 {
+                                0
+                            } else {
+                                usize::try_from(payload.offsets[vector_index - 1]).unwrap_or(0)
+                            };
+                            let end =
+                                usize::try_from(payload.offsets[vector_index]).unwrap_or(start);
+                            end.saturating_sub(start)
+                        })
+                        .sum();
+                    super::stage_counters::record_work(
+                        DistannMaterializationWork::ExactVectorReads,
+                        returned,
+                    );
+                    super::stage_counters::record_work(
+                        DistannMaterializationWork::ExactVectorBytes,
+                        vector_bytes,
+                    );
+                }
+            }
+        }
+        Ok(payloads)
+    }
+
+    fn materialize_hot_cold_payloads(
+        &self,
+        nodes: &[DistannNodeTuple],
+        projection_attnums: &[u16],
+        use_typed_locator: bool,
+        use_packed_payload: bool,
+    ) -> Result<Vec<TierPayload>, DistannExpandError> {
+        use super::row_layout::DistannRowTierV1;
+
+        let layout = self.descriptor.row_tier_layout().ok_or_else(|| {
+            DistannExpandError::GenerationMissing(
+                "hot/cold materialization lost its frozen layout".to_owned(),
+            )
+        })?;
+        if projection_attnums.is_empty() {
+            return Ok(nodes
+                .iter()
+                .map(|_| TierPayload {
+                    missing: false,
+                    nulls: Vec::new(),
+                    offsets: Vec::new(),
+                    values: Vec::new(),
+                })
+                .collect());
+        }
+        let mut hot_attnums = Vec::new();
+        let mut cold_attnums = Vec::new();
+        let mut routing = Vec::with_capacity(projection_attnums.len());
+        for &attnum in projection_attnums {
+            let placement = layout
+                .placements
+                .iter()
+                .find(|placement| placement.attnum == attnum)
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(format!(
+                        "frozen hot/cold layout does not place requested attnum {attnum}"
+                    ))
+                })?;
+            let tier_index = match placement.tier {
+                DistannRowTierV1::Hot => {
+                    let index = hot_attnums.len();
+                    hot_attnums.push(attnum);
+                    index
+                }
+                DistannRowTierV1::Cold => {
+                    let index = cold_attnums.len();
+                    cold_attnums.push(attnum);
+                    index
+                }
+            };
+            routing.push((placement.tier, tier_index));
+        }
+        let hot = (!hot_attnums.is_empty())
+            .then(|| {
+                self.fetch_tier_payloads(
+                    nodes,
+                    DistannRowTierV1::Hot,
+                    &hot_attnums,
+                    use_typed_locator,
+                    use_packed_payload,
+                )
+            })
+            .transpose()?;
+        let cold = (!cold_attnums.is_empty())
+            .then(|| {
+                self.fetch_tier_payloads(
+                    nodes,
+                    DistannRowTierV1::Cold,
+                    &cold_attnums,
+                    use_typed_locator,
+                    use_packed_payload,
+                )
+            })
+            .transpose()?;
+
+        for (tier, payloads) in [
+            (DistannRowTierV1::Hot, hot.as_ref()),
+            (DistannRowTierV1::Cold, cold.as_ref()),
+        ] {
+            let Some(payloads) = payloads else {
+                continue;
+            };
+            for (node, payload) in nodes.iter().zip(payloads) {
+                if payload.missing && self.tier_tuple_visible_at_latest(node, tier)? {
+                    return Err(DistannExpandError::OwnedRecordMissing(format!(
+                        "retained physical generation has a newly visible {tier:?} tuple for vec_id {:#018x}",
+                        node.vec_id
+                    )));
+                }
+            }
+        }
+
+        let hot_probe = if cold.is_none()
+            && hot
+                .as_ref()
+                .is_some_and(|payloads| payloads.iter().any(|payload| payload.missing))
+        {
+            Some(self.fetch_tier_payloads(
+                nodes,
+                DistannRowTierV1::Cold,
+                &[],
+                use_typed_locator,
+                use_packed_payload,
+            )?)
+        } else {
+            None
+        };
+        let cold_probe = if hot.is_none()
+            && cold
+                .as_ref()
+                .is_some_and(|payloads| payloads.iter().any(|payload| payload.missing))
+        {
+            Some(self.fetch_tier_payloads(
+                nodes,
+                DistannRowTierV1::Hot,
+                &[],
+                use_typed_locator,
+                use_packed_payload,
+            )?)
+        } else {
+            None
+        };
+
+        let mut reconstructed = Vec::with_capacity(nodes.len());
+        for row_index in 0..nodes.len() {
+            let hot_missing = hot
+                .as_ref()
+                .map(|rows| rows[row_index].missing)
+                .unwrap_or(false);
+            let cold_missing = cold
+                .as_ref()
+                .map(|rows| rows[row_index].missing)
+                .unwrap_or(false);
+            let counterpart_missing = hot_probe
+                .as_ref()
+                .or(cold_probe.as_ref())
+                .map(|rows| rows[row_index].missing);
+            let row_missing = match (hot.as_ref(), cold.as_ref()) {
+                (Some(_), Some(_)) if hot_missing && cold_missing => true,
+                (Some(_), Some(_)) if hot_missing != cold_missing => {
+                    return Err(DistannExpandError::GenerationMissing(format!(
+                        "hot/cold tier visibility diverges for vec_id {:#018x}",
+                        nodes[row_index].vec_id
+                    )))
+                }
+                (Some(_), None) if hot_missing && counterpart_missing == Some(true) => true,
+                (None, Some(_)) if cold_missing && counterpart_missing == Some(true) => true,
+                (Some(_), None) if hot_missing => {
+                    return Err(DistannExpandError::GenerationMissing(format!(
+                        "hot tier is missing while its cold counterpart is visible for vec_id {:#018x}",
+                        nodes[row_index].vec_id
+                    )))
+                }
+                (None, Some(_)) if cold_missing => {
+                    return Err(DistannExpandError::GenerationMissing(format!(
+                        "cold tier is missing while its hot counterpart is visible for vec_id {:#018x}",
+                        nodes[row_index].vec_id
+                    )))
+                }
+                _ => false,
+            };
+            if row_missing {
+                reconstructed.push(TierPayload {
+                    missing: true,
+                    nulls: Vec::new(),
+                    offsets: Vec::new(),
+                    values: Vec::new(),
+                });
+                continue;
+            }
+            let mut nulls = Vec::with_capacity(routing.len());
+            let mut offsets = Vec::with_capacity(routing.len());
+            let mut values = Vec::new();
+            for &(tier, tier_index) in &routing {
+                let payload = match tier {
+                    DistannRowTierV1::Hot => {
+                        &hot.as_ref().expect("hot routing has hot rows")[row_index]
+                    }
+                    DistannRowTierV1::Cold => {
+                        &cold.as_ref().expect("cold routing has cold rows")[row_index]
+                    }
+                };
+                let start = if tier_index == 0 {
+                    0
+                } else {
+                    usize::try_from(payload.offsets[tier_index - 1]).map_err(|_| {
+                        DistannExpandError::Internal(
+                            "physical tier payload offset is negative".to_owned(),
+                        )
+                    })?
+                };
+                let end = usize::try_from(payload.offsets[tier_index]).map_err(|_| {
+                    DistannExpandError::Internal(
+                        "physical tier payload offset is negative".to_owned(),
+                    )
+                })?;
+                let is_null = payload.nulls[tier_index];
+                if is_null && start != end {
+                    return Err(DistannExpandError::Internal(
+                        "physical tier NULL payload contains bytes".to_owned(),
+                    ));
+                }
+                nulls.push(is_null);
+                values.extend_from_slice(&payload.values[start..end]);
+                offsets.push(i64::try_from(values.len()).unwrap_or(i64::MAX));
+            }
+            reconstructed.push(TierPayload {
+                missing: false,
+                nulls,
+                offsets,
+                values,
+            });
+        }
+        Ok(reconstructed)
+    }
+
+    fn tier_tuple_visible_at_latest(
+        &self,
+        node: &DistannNodeTuple,
+        tier: super::row_layout::DistannRowTierV1,
+    ) -> Result<bool, DistannExpandError> {
+        let relation_oid = match tier {
+            super::row_layout::DistannRowTierV1::Hot => self.generation.row_tier_relid,
+            super::row_layout::DistannRowTierV1::Cold => {
+                self.generation.cold_tier_relid.ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "hot/cold generation is missing its cold tier".to_owned(),
+                    )
+                })?
+            }
+        };
+        let locator = match tier {
+            super::row_layout::DistannRowTierV1::Hot => node.heap_tid,
+            super::row_layout::DistannRowTierV1::Cold => node.cold_tid.ok_or_else(|| {
+                DistannExpandError::GenerationMissing(format!(
+                    "Graph V2 record lacks the cold locator for vec_id {:#018x}",
+                    node.vec_id
+                ))
+            })?,
+        };
+        let relation = HeapRelationGuard::try_access_share(relation_oid).ok_or_else(|| {
+            DistannExpandError::GenerationMissing(format!(
+                "retained {tier:?} tier relation is absent during visibility retry"
+            ))
+        })?;
+        let slot = TupleTableSlotGuard::single_for_heap_guard(&relation).ok_or_else(|| {
+            DistannExpandError::Internal(
+                "could not allocate hot/cold visibility-retry slot".to_owned(),
+            )
+        })?;
+        let Some(snapshot) = RegisteredSnapshotGuard::latest() else {
+            return Ok(false);
+        };
+        let mut tid = pg_sys::ItemPointerData::default();
+        pgrx::itemptr::item_pointer_set_all(&mut tid, locator.block_number, locator.offset_number);
+        unsafe { pg_sys::ExecClearTuple(slot.as_ptr()) };
+        let found = unsafe {
+            pg_sys::table_tuple_fetch_row_version(
+                relation.as_ptr(),
+                &mut tid,
+                snapshot.as_ptr(),
+                slot.as_ptr(),
+            )
+        };
+        if !found {
+            return Ok(false);
+        }
+        let mut is_null = false;
+        let stored = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 1, &mut is_null) };
+        if is_null
+            || u64::from_le_bytes(unsafe { pg_sys::DatumGetInt64(stored) }.to_le_bytes())
+                != node.vec_id
+        {
+            return Err(DistannExpandError::GenerationMissing(
+                "hot/cold visibility retry found a mismatched vec_id echo".to_owned(),
+            ));
+        }
+        Ok(true)
     }
 
     fn materialize_sidecar_payloads(
@@ -2951,6 +3759,14 @@ fn ec_distann_debug_retained_epoch_cache_contains(
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<i64>, Vec<u8>);
+
+#[derive(Debug, Clone)]
+struct TierPayload {
+    missing: bool,
+    nulls: Vec<bool>,
+    offsets: Vec<i64>,
+    values: Vec<u8>,
+}
 
 struct PhysicalPayloadBatch {
     rows: Vec<PhysicalPayloadRow>,
@@ -5563,6 +6379,13 @@ impl PhysicalGenerationScan {
                     .ok_or_else(|| {
                         "EC_GENERATION_MISSING: row-tier relation is absent".to_owned()
                     })?;
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                if descriptor.row_tier_layout().is_some() {
+                    super::stage_counters::record_work(
+                        super::stage_counters::DistannMaterializationWork::HotTierRelationOpens,
+                        1,
+                    );
+                }
                 let graph = HeapRelationGuard::try_access_share(generation.graph_store_relid)
                     .ok_or_else(|| {
                         "EC_GENERATION_MISSING: graph-store relation is absent".to_owned()
@@ -5678,6 +6501,7 @@ impl PhysicalGenerationScan {
                 self.descriptor.dimensions
             ));
         }
+        let source_attnum = exact_vector_physical_attnum(&self.descriptor, source_attnum)?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record_scan();
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -6650,10 +7474,15 @@ impl PhysicalGenerationScan {
         cover.covers_projection(&attnums)
     }
 
-    pub(crate) fn materialize_local_sidecar_pairs(
+    pub(crate) fn uses_hot_cold_row_tier(&self) -> bool {
+        self.descriptor.row_tier_layout().is_some()
+    }
+
+    pub(crate) fn materialize_local_payload_pairs(
         &self,
         local_pairs: &[(u64, ItemPointer)],
         projection_attnums: &[pg_sys::AttrNumber],
+        prefer_payload_sidecar: bool,
         retry: bool,
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
@@ -6667,7 +7496,7 @@ impl PhysicalGenerationScan {
             .map(|(_, row_tid)| *row_tid)
             .collect::<Vec<_>>();
         if tids.iter().any(|tid| *tid == ItemPointer::INVALID) {
-            return Err("EC_INTERNAL: local sidecar locator contains an invalid TID".to_owned());
+            return Err("EC_INTERNAL: local physical locator contains an invalid TID".to_owned());
         }
         let projection = projection_attnums
             .iter()
@@ -6677,23 +7506,27 @@ impl PhysicalGenerationScan {
         let schema_fingerprint = self.descriptor.row_schema.fingerprint()?;
         let mut owner = RetainedGenerationScan::open(self.index_oid, &self.fingerprint)
             .map_err(|error| error.to_string())?;
-        let batch = owner
-            .materialize_payloads(
-                &ids,
-                &projection,
-                &schema_fingerprint,
-                true,
-                false,
-                true,
-                true,
-                Some(&tids),
-            )
-            .map_err(|error| error.to_string())?;
+        let batch = match owner.materialize_payloads(
+            &ids,
+            &projection,
+            &schema_fingerprint,
+            prefer_payload_sidecar,
+            false,
+            true,
+            true,
+            Some(&tids),
+        ) {
+            Ok(batch) => batch,
+            Err(DistannExpandError::OwnedRecordMissing(_)) if !retry => {
+                return Ok(HashMap::new());
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         if batch.rows.len() != ids.len() {
-            return Err("EC_INTERNAL: local sidecar response count mismatch".to_owned());
+            return Err("EC_INTERNAL: local physical payload response count mismatch".to_owned());
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        {
+        if prefer_payload_sidecar {
             let stage = if retry {
                 super::stage_counters::DistannQueryStage::MaterializeLocalSidecarRetry
             } else {
@@ -6747,7 +7580,9 @@ impl PhysicalGenerationScan {
         for (requested, row) in ids.into_iter().zip(batch.rows) {
             let vec_id = u64::from_le_bytes(row.0.to_le_bytes());
             if vec_id != requested {
-                return Err("EC_INTERNAL: local sidecar did not preserve request order".to_owned());
+                return Err(
+                    "EC_INTERNAL: local physical payload did not preserve request order".to_owned(),
+                );
             }
             if row.2 || row.1 {
                 continue;
@@ -7328,6 +8163,20 @@ impl GenerationExpander<'_> {
                 "EC_SCHEMA_MISMATCH: frozen source vector dimension mismatch".to_owned(),
             ));
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if self.descriptor.row_tier_layout().is_some() {
+            use super::stage_counters::DistannMaterializationWork;
+            super::stage_counters::record_work(DistannMaterializationWork::HotTierTupleReads, 1);
+            super::stage_counters::record_work(
+                DistannMaterializationWork::HotTierBlocksRequested,
+                1,
+            );
+            super::stage_counters::record_work(DistannMaterializationWork::ExactVectorReads, 1);
+            super::stage_counters::record_work(
+                DistannMaterializationWork::ExactVectorBytes,
+                vector.len().saturating_mul(std::mem::size_of::<f32>()),
+            );
+        }
         Ok(vector)
     }
 
@@ -7384,6 +8233,20 @@ impl GenerationExpander<'_> {
             return Err(DistannExpandError::Internal(
                 "EC_SCHEMA_MISMATCH: frozen source vector dimension mismatch".to_owned(),
             ));
+        }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if self.descriptor.row_tier_layout().is_some() {
+            use super::stage_counters::DistannMaterializationWork;
+            super::stage_counters::record_work(DistannMaterializationWork::HotTierTupleReads, 1);
+            super::stage_counters::record_work(
+                DistannMaterializationWork::HotTierBlocksRequested,
+                1,
+            );
+            super::stage_counters::record_work(DistannMaterializationWork::ExactVectorReads, 1);
+            super::stage_counters::record_work(
+                DistannMaterializationWork::ExactVectorBytes,
+                vector.len().saturating_mul(std::mem::size_of::<f32>()),
+            );
         }
         Ok(-crate::am::ec_diskann::source_inner_product_deterministic(
             self.query, &vector,
@@ -7455,6 +8318,7 @@ impl GenerationExpander<'_> {
             self.snapshot,
             vec_ids,
             &intent_node_ids,
+            self.descriptor.graph_record_version,
             self.descriptor.graph_degree,
             self.code_len,
             graph_relation,

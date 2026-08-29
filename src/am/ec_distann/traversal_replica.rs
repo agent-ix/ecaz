@@ -805,8 +805,9 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                         row.vec_id
                     ));
                 }
-                let node = super::tuple::DistannNodeTuple::decode_physical_v1(
+                let node = super::tuple::DistannNodeTuple::decode_physical_version(
                     &row.graph_record,
+                    descriptor.graph_record_version,
                     descriptor.graph_degree,
                     code_len,
                 )?;
@@ -2396,8 +2397,9 @@ impl<'a> ReadyTraversalReplica<'a> {
                         "traversal replica graph record could not be detoasted".to_owned(),
                     )
                 })?;
-            let node = DistannNodeTuple::decode_physical_v1(
+            let node = DistannNodeTuple::decode_physical_version(
                 graph_record.as_bytes(),
+                self.descriptor.graph_record_version,
                 self.descriptor.graph_degree,
                 self.code_len,
             )

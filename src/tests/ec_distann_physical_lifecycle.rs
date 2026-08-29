@@ -3605,15 +3605,23 @@ fn test_distann_multi_epoch_publish() {
 
 #[pg_test]
 fn test_distann_three_owner_physical_handoff() {
-    run_distann_three_owner_physical_handoff(false);
+    run_distann_three_owner_physical_handoff(false, false);
 }
 
 #[pg_test]
 fn test_distann_payload_projection_contract() {
-    run_distann_three_owner_physical_handoff(true);
+    run_distann_three_owner_physical_handoff(true, false);
 }
 
-fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
+#[pg_test]
+fn test_distann_hot_cold_projection_contract() {
+    run_distann_three_owner_physical_handoff(true, true);
+}
+
+fn run_distann_three_owner_physical_handoff(
+    projection_contract_only: bool,
+    hot_cold_layout: bool,
+) {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
         .expect("physical handoff loopback connection should open");
@@ -3692,7 +3700,10 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                     ),
                     g::bigint,
                     CASE WHEN g % 2 = 0 THEN NULL ELSE g::integer END,
-                    repeat(md5(g::text), 128)
+                    (
+                        SELECT string_agg(md5((g * 10000 + s)::text), '' ORDER BY s)
+                          FROM generate_series(1, 256) AS s
+                    )
                FROM generate_series(1, 30) AS g;
              CREATE INDEX ec_distann_rh_idx ON ec_distann_rh_source
                  USING ec_distann (embedding ecvector_distann_ip_ops)
@@ -3747,7 +3758,18 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                ) participant",
         )
         .expect("three physical owner controls should create and register");
-    if projection_contract_only {
+    if projection_contract_only && hot_cold_layout {
+        client
+            .batch_execute(
+                "ALTER INDEX ec_distann_rh_idx
+                     SET (row_tier_layout = 'hot_cold', hot_payload_attnums = '3,4');
+                 ALTER INDEX ec_distann_rh_owner2_idx
+                     SET (row_tier_layout = 'hot_cold', hot_payload_attnums = '3,4');
+                 ALTER INDEX ec_distann_rh_owner3_idx
+                     SET (row_tier_layout = 'hot_cold', hot_payload_attnums = '3,4');",
+            )
+            .expect("hot/cold projection fixture should opt every owner into the paired layout");
+    } else if projection_contract_only {
         client
             .batch_execute(
                 "ALTER INDEX ec_distann_rh_idx
@@ -3916,7 +3938,57 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
     assert!(published_states
         .iter()
         .all(|row| row.get::<_, String>(0) == "Published"));
-    if projection_contract_only {
+    if projection_contract_only && hot_cold_layout {
+        assert_eq!(
+            client
+                .query_one(
+                    &format!(
+                        "SELECT count(*)
+                           FROM ec_distann_generation
+                          WHERE build_id = '{published_build}'::uuid
+                            AND cold_tier_relid IS NOT NULL
+                            AND payload_sidecar_relid IS NULL
+                            AND payload_sidecar_directory_relid IS NULL"
+                    ),
+                    &[],
+                )
+                .expect("hot/cold participant topology should be inspectable")
+                .get::<_, i64>(0),
+            3,
+            "every participant generation must publish its owner-local hot/cold pair"
+        );
+        let cold_relations = client
+            .query(
+                &format!(
+                    "SELECT cold_tier_relid::regclass::text
+                       FROM ec_distann_generation
+                      WHERE build_id = '{published_build}'::uuid
+                      ORDER BY node_id"
+                ),
+                &[],
+            )
+            .expect("hot/cold cold-tier relations should be inspectable");
+        for row in cold_relations {
+            let cold_relation = row.get::<_, String>(0);
+            let toast_relation = client
+                .query_one(
+                    "SELECT reltoastrelid::regclass::text
+                       FROM pg_catalog.pg_class
+                      WHERE oid = $1::text::regclass",
+                    &[&cold_relation],
+                )
+                .expect("cold-tier TOAST relation should resolve")
+                .get::<_, String>(0);
+            let toast_rows = client
+                .query_one(&format!("SELECT count(*) FROM {toast_relation}"), &[])
+                .expect("cold-tier TOAST rows should be inspectable")
+                .get::<_, i64>(0);
+            assert!(
+                toast_rows > 0,
+                "cold tier {cold_relation} must exercise external TOAST"
+            );
+        }
+    } else if projection_contract_only {
         assert_eq!(
             client
                 .query_one(
@@ -4006,6 +4078,11 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
         "the ordering-only exclusion proof requires no upper Sort consumer: {plan}"
     );
     if projection_contract_only {
+        let hot_projection_source = if hot_cold_layout {
+            "Payload Source: row_tier"
+        } else {
+            "Payload Source: sidecar"
+        };
         let analyzed = client
             .query(
                 "EXPLAIN (ANALYZE, VERBOSE, COSTS OFF, FORMAT TEXT)
@@ -4021,8 +4098,8 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            analyzed.contains("Payload Source: sidecar"),
-            "exact covered projection must select the sidecar: {analyzed}"
+            analyzed.contains(hot_projection_source),
+            "exact hot projection selected the wrong payload source: {analyzed}"
         );
 
         let covered_rows = client
@@ -4068,7 +4145,7 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
             .collect::<Vec<_>>();
         assert_eq!(
             fallback_rows, covered_rows,
-            "covered sidecar and uncovered row-tier paths must return byte-identical common columns"
+            "hot-only and mixed-tier paths must return byte-identical common columns"
         );
 
         for (shape, statement, expected_source) in [
@@ -4079,7 +4156,7 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                    FROM ec_distann_rh_source
                   ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
                   LIMIT 5",
-                "Payload Source: sidecar",
+                hot_projection_source,
             ),
             (
                 "covered qual-only",
@@ -4089,7 +4166,7 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
                   WHERE covered_rank > 0
                   ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
                   LIMIT 5",
-                "Payload Source: sidecar",
+                hot_projection_source,
             ),
             (
                 "uncovered scalar",
@@ -6203,6 +6280,220 @@ fn test_distann_hot_cold_handoff_v2_locator() {
 }
 
 #[pg_test]
+fn test_distann_hot_cold_typed_materialization_and_visibility() {
+    let fixture = create_hot_cold_distann_participant_lifecycle_fixture(
+        "ec_distann_hot_cold_read",
+        0x7d,
+    );
+    publish_distann_participant(&fixture);
+    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
+        &fixture.generation.descriptor,
+    )
+    .expect("hot/cold read descriptor should decode");
+    let schema_fingerprint = descriptor
+        .row_schema
+        .fingerprint()
+        .expect("hot/cold read schema fingerprint should encode");
+    let (hot_oid, graph_oid, _) = fixture.relations;
+    let cold_oid = distann_cold_tier_relation_oid(&fixture.generation);
+    let hot_name = canonical_index_locator(hot_oid);
+    let cold_name = canonical_index_locator(cold_oid);
+    let graph_name = canonical_index_locator(graph_oid);
+    let vec_id = Spi::get_one::<i64>(&format!(
+        "SELECT vec_id FROM {graph_name} WHERE is_current"
+    ))
+    .unwrap()
+    .expect("hot/cold read fixture should have one current graph row");
+    let materialize_sql = |attnums: &[i16]| {
+        let attnums = attnums
+            .iter()
+            .map(i16::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "SELECT tuple_payload_missing, payload_nulls, payload_offsets, payload_values
+               FROM ec_distann_materialize_physical_row_payloads(
+                   '{}'::regclass, decode('{}', 'hex'), ARRAY[{vec_id}]::bigint[],
+                   ARRAY[{attnums}]::smallint[], decode('{}', 'hex'), false
+               )",
+            fixture.generation.index_name,
+            hex::encode(&fixture.fingerprint),
+            hex::encode(schema_fingerprint),
+        )
+    };
+    let materialize = |attnums: &[i16]| {
+        Spi::connect(|client| {
+            client
+                .select(&materialize_sql(attnums), None, &[])
+                .expect("hot/cold materialization should execute")
+                .map(|row| {
+                    (
+                        row["tuple_payload_missing"]
+                            .value::<bool>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_nulls"]
+                            .value::<Vec<bool>>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_offsets"]
+                            .value::<Vec<i64>>()
+                            .unwrap()
+                            .unwrap(),
+                        row["payload_values"]
+                            .value::<Vec<u8>>()
+                            .unwrap()
+                            .unwrap(),
+                    )
+                })
+                .next()
+                .expect("hot/cold materialization should return one row")
+        })
+    };
+    let expected = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT pg_catalog.uuid_send(h.a_1) AS identity,
+                            pg_catalog.textsend(c.a_2) AS payload,
+                            ecvector_send(h.a_4) AS vector,
+                            pg_catalog.textsend(c.a_5) AS generated
+                       FROM {hot_name} h JOIN {cold_name} c USING (vec_id)
+                      WHERE h.vec_id = $1::bigint"
+                ),
+                None,
+                &[vec_id.into()],
+            )
+            .unwrap()
+            .map(|row| {
+                ["identity", "payload", "vector", "generated"]
+                    .into_iter()
+                    .map(|column| row[column].value::<Vec<u8>>().unwrap().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .next()
+            .expect("hot/cold expected values should exist")
+    });
+    let assert_payload = |attnums: &[i16], expected_parts: &[usize]| {
+        let (missing, nulls, offsets, values) = materialize(attnums);
+        assert!(!missing);
+        assert_eq!(nulls, vec![false; expected_parts.len()]);
+        let mut expected_values = Vec::new();
+        let mut expected_offsets = Vec::new();
+        for &part in expected_parts {
+            expected_values.extend_from_slice(&expected[part]);
+            expected_offsets.push(expected_values.len() as i64);
+        }
+        assert_eq!(offsets, expected_offsets);
+        assert_eq!(values, expected_values);
+    };
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    crate::am::ec_distann::stage_counters::reset_stage_scoring();
+    let exact_dist = Spi::get_one::<f32>(&format!(
+        "SELECT exact_dist
+           FROM ec_distann_expand_physical_nodes(
+               '{}'::regclass, decode('{}', 'hex'),
+               ARRAY[1.0,0.0,0.0,0.0]::real[], ARRAY[{vec_id}]::bigint[], NULL, NULL
+           )",
+        fixture.generation.index_name,
+        hex::encode(&fixture.fingerprint),
+    ))
+    .unwrap()
+    .expect("hot/cold exact expansion should return a distance");
+    assert_eq!(exact_dist, -1.0);
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        use crate::am::ec_distann::stage_counters::DistannMaterializationWork;
+        let rows = crate::am::ec_distann::stage_counters::materialization_work_snapshot().1;
+        let counter = |metric| {
+            rows.iter()
+                .find(|row| row.metric == metric)
+                .expect("hot/cold expansion counter should be present")
+                .value
+        };
+        assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 1);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 0);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 0);
+        assert_eq!(counter(DistannMaterializationWork::ExactVectorReads), 1);
+    }
+
+    assert_eq!(materialize(&[]), (false, Vec::new(), Vec::new(), Vec::new()));
+    assert_payload(&[1], &[0]);
+    assert_payload(&[4], &[2]);
+    assert_payload(&[2], &[1]);
+    assert_payload(&[1, 2, 4, 5], &[0, 1, 2, 3]);
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        use crate::am::ec_distann::stage_counters::DistannMaterializationWork;
+
+        let counter = |metric| {
+            crate::am::ec_distann::stage_counters::materialization_work_snapshot()
+                .1
+                .into_iter()
+                .find(|row| row.metric == metric)
+                .expect("hot/cold counter should be present")
+                .value
+        };
+        crate::am::ec_distann::stage_counters::reset_stage_scoring();
+        assert_payload(&[2], &[1]);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 1);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 1);
+        assert_eq!(counter(DistannMaterializationWork::HotTierRelationOpens), 0);
+        assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 0);
+
+        crate::am::ec_distann::stage_counters::reset_stage_scoring();
+        assert_payload(&[4], &[2]);
+        assert_eq!(counter(DistannMaterializationWork::HotTierRelationOpens), 1);
+        assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 1);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 0);
+        assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 0);
+        assert_eq!(counter(DistannMaterializationWork::ExactVectorReads), 1);
+        assert!(counter(DistannMaterializationWork::ExactVectorBytes) > 0);
+    }
+
+    let identity_error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!("UPDATE {cold_name} SET vec_id = vec_id + 1")).unwrap();
+        unsafe { pg_sys::CommandCounterIncrement() };
+        Spi::run(&materialize_sql(&[2])).unwrap();
+    });
+    assert!(
+        identity_error.contains("stored identity echo mismatch")
+            || (identity_error.contains("cold tier is missing")
+                && identity_error.contains("hot counterpart is visible")),
+        "cold identity drift must fail closed: {identity_error}"
+    );
+
+    let half_missing_error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!("DELETE FROM {cold_name}")).unwrap();
+        unsafe { pg_sys::CommandCounterIncrement() };
+        Spi::run(&materialize_sql(&[2])).unwrap();
+    });
+    assert!(
+        half_missing_error.contains("cold tier is missing")
+            && half_missing_error.contains("hot counterpart is visible"),
+        "a half-visible pair must fail closed: {half_missing_error}"
+    );
+
+    let missing_both = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!("DELETE FROM {cold_name}; DELETE FROM {hot_name}")).unwrap();
+        unsafe { pg_sys::CommandCounterIncrement() };
+        assert_eq!(
+            Spi::get_one::<bool>(&format!(
+                "SELECT tuple_payload_missing FROM ({}) materialized",
+                materialize_sql(&[2])
+            ))
+            .unwrap(),
+            Some(true)
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: restore hot/cold pair");
+    });
+    assert!(missing_both.contains("EC_TEST_ROLLBACK"));
+
+}
+
+#[pg_test]
 fn test_distann_cover_sidecar_lifecycle() {
     let fixture =
         create_covered_distann_physical_generation_fixture("ec_distann_cover_lifecycle", 0x2c);
@@ -7086,14 +7377,42 @@ fn create_covered_distann_participant_lifecycle_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannParticipantLifecycleFixture {
-    create_distann_participant_lifecycle_fixture_configured(stem, build_marker, 1, true, false)
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        1,
+        true,
+        false,
+        false,
+    )
 }
 
 fn create_readable_covered_distann_participant_lifecycle_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannParticipantLifecycleFixture {
-    create_distann_participant_lifecycle_fixture_configured(stem, build_marker, 1, true, true)
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        1,
+        true,
+        true,
+        false,
+    )
+}
+
+fn create_hot_cold_distann_participant_lifecycle_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannParticipantLifecycleFixture {
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        1,
+        false,
+        false,
+        true,
+    )
 }
 
 fn create_distann_participant_lifecycle_fixture_with_rows(
@@ -7107,6 +7426,7 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         row_count,
         false,
         false,
+        false,
     )
 }
 
@@ -7116,8 +7436,15 @@ fn create_distann_participant_lifecycle_fixture_configured(
     row_count: usize,
     covered: bool,
     readable_row_tier_schema: bool,
+    hot_cold: bool,
 ) -> DistannParticipantLifecycleFixture {
-    let generation = if readable_row_tier_schema {
+    assert!(!(covered && hot_cold), "sidecar and hot/cold are exclusive");
+    let generation = if hot_cold {
+        assert_eq!(row_count, 1, "hot/cold lifecycle fixture is single-row");
+        let mut generation = create_distann_physical_generation_fixture(stem, build_marker);
+        configure_hot_cold_generation_fixture(&mut generation, &[]);
+        generation
+    } else if readable_row_tier_schema {
         assert!(covered, "readable sidecar fixture must be covered");
         assert_eq!(row_count, 1, "readable covered fixture is single-row");
         create_readable_covered_distann_physical_generation_fixture(stem, build_marker)
@@ -7177,7 +7504,7 @@ fn create_distann_participant_lifecycle_fixture_configured(
         placement_hash_version: crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
         roster: descriptor.roster.clone(),
         index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
-        graph_record_version: crate::am::ec_distann::DISTANN_GRAPH_RECORD_VERSION,
+        graph_record_version: descriptor.graph_record_version,
         handoff_wire_version: crate::am::ec_distann::DISTANN_HANDOFF_WIRE_VERSION,
         codec_parameters: crate::am::ec_distann::DistannManifestCodecParameters {
             codec_kind: descriptor.codec_artifact.codec_kind(),
@@ -7213,9 +7540,29 @@ fn create_distann_participant_lifecycle_fixture_configured(
         global_row_tier_digest: receipt.persisted_row_tier_digest,
         payload_cover_descriptor_digest,
         global_payload_sidecar_initial_content_digest,
-        row_tier_layout_descriptor_digest: None,
-        global_hot_tier_initial_content_digest: None,
-        global_cold_tier_initial_content_digest: None,
+        row_tier_layout_descriptor_digest: descriptor
+            .row_tier_layout()
+            .map(|layout| layout.digest())
+            .transpose()
+            .expect("participant lifecycle row-tier layout should digest"),
+        global_hot_tier_initial_content_digest: descriptor
+            .row_tier_layout()
+            .map(|_| {
+                crate::am::ec_distann::DistannEpochManifestV2::hot_cold_global_initial_content_digests(
+                    std::slice::from_ref(&receipt),
+                ).map(|digests| digests.0)
+            })
+            .transpose()
+            .expect("participant lifecycle hot receipts should digest"),
+        global_cold_tier_initial_content_digest: descriptor
+            .row_tier_layout()
+            .map(|_| {
+                crate::am::ec_distann::DistannEpochManifestV2::hot_cold_global_initial_content_digests(
+                    std::slice::from_ref(&receipt),
+                ).map(|digests| digests.1)
+            })
+            .transpose()
+            .expect("participant lifecycle cold receipts should digest"),
         participant_receipts: vec![receipt],
     };
     let manifest_bytes = manifest.encode().unwrap();

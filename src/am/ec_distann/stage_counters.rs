@@ -244,10 +244,20 @@ pub(crate) enum DistannMaterializationWork {
     LocalSidecarRetryRowsMissing,
     LocalSidecarRetryPayloadBytes,
     LocalSidecarRetryRowTierVisibilityProbes,
+    HotTierRelationOpens,
+    ColdTierRelationOpens,
+    HotTierTupleReads,
+    ColdTierTupleReads,
+    HotTierBlocksRequested,
+    ColdTierBlocksRequested,
+    HotTierPayloadBytes,
+    ColdTierPayloadBytes,
+    ExactVectorReads,
+    ExactVectorBytes,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 51] = [
+    pub(crate) const ALL: [Self; 61] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -299,6 +309,16 @@ impl DistannMaterializationWork {
         Self::LocalSidecarRetryRowsMissing,
         Self::LocalSidecarRetryPayloadBytes,
         Self::LocalSidecarRetryRowTierVisibilityProbes,
+        Self::HotTierRelationOpens,
+        Self::ColdTierRelationOpens,
+        Self::HotTierTupleReads,
+        Self::ColdTierTupleReads,
+        Self::HotTierBlocksRequested,
+        Self::ColdTierBlocksRequested,
+        Self::HotTierPayloadBytes,
+        Self::ColdTierPayloadBytes,
+        Self::ExactVectorReads,
+        Self::ExactVectorBytes,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -360,6 +380,16 @@ impl DistannMaterializationWork {
             Self::LocalSidecarRetryRowTierVisibilityProbes => {
                 "local_sidecar_retry_row_tier_visibility_probes"
             }
+            Self::HotTierRelationOpens => "hot_tier_relation_opens",
+            Self::ColdTierRelationOpens => "cold_tier_relation_opens",
+            Self::HotTierTupleReads => "hot_tier_tuple_reads",
+            Self::ColdTierTupleReads => "cold_tier_tuple_reads",
+            Self::HotTierBlocksRequested => "hot_tier_blocks_requested",
+            Self::ColdTierBlocksRequested => "cold_tier_blocks_requested",
+            Self::HotTierPayloadBytes => "hot_tier_payload_bytes",
+            Self::ColdTierPayloadBytes => "cold_tier_payload_bytes",
+            Self::ExactVectorReads => "exact_vector_reads",
+            Self::ExactVectorBytes => "exact_vector_bytes",
         }
     }
 
@@ -416,6 +446,16 @@ impl DistannMaterializationWork {
             Self::LocalSidecarRetryRowsMissing => 48,
             Self::LocalSidecarRetryPayloadBytes => 49,
             Self::LocalSidecarRetryRowTierVisibilityProbes => 50,
+            Self::HotTierRelationOpens => 51,
+            Self::ColdTierRelationOpens => 52,
+            Self::HotTierTupleReads => 53,
+            Self::ColdTierTupleReads => 54,
+            Self::HotTierBlocksRequested => 55,
+            Self::ColdTierBlocksRequested => 56,
+            Self::HotTierPayloadBytes => 57,
+            Self::ColdTierPayloadBytes => 58,
+            Self::ExactVectorReads => 59,
+            Self::ExactVectorBytes => 60,
         }
     }
 }
