@@ -679,6 +679,12 @@ struct DistannLocalMultinodeStep {
     /// generation-owned payload cover.
     #[serde(default)]
     covering_payload_attnums: Option<String>,
+    /// Task 230 vertically partitioned authoritative row-tier format.
+    #[serde(default)]
+    hot_cold_row_tier: bool,
+    /// Optional additional hot scalar physical attnums for Task 230.
+    #[serde(default)]
+    hot_payload_attnums: Option<String>,
     /// Preregistered fresh-build position in a counterbalanced format pair.
     #[serde(default)]
     counterbalance_position: Option<String>,
@@ -5227,6 +5233,18 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.hot_cold_row_tier && step.covering_payload_attnums.is_some() {
+                    bail!(
+                        "distann-local-multinode step {:?} hot_cold_row_tier and covering_payload_attnums are mutually exclusive",
+                        step.name
+                    )
+                }
+                if !step.hot_cold_row_tier && step.hot_payload_attnums.is_some() {
+                    bail!(
+                        "distann-local-multinode step {:?} hot_payload_attnums requires hot_cold_row_tier",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only && step.materialization_correctness {
                     bail!(
                         "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
@@ -6382,6 +6400,14 @@ fn expand_distann_local_multinode(
         &mut args,
         "--covering-payload-attnums",
         step.covering_payload_attnums.as_deref(),
+    );
+    if step.hot_cold_row_tier {
+        args.push("--hot-cold-row-tier".into());
+    }
+    push_opt_arg(
+        &mut args,
+        "--hot-payload-attnums",
+        step.hot_payload_attnums.as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -8250,6 +8276,36 @@ psql header noise\n\
                 "artifacts/tls/task236-tls-security-matrix.log"
             )]
         );
+    }
+
+    #[test]
+    fn task230_distann_local_multinode_expands_hot_cold_row_tier() {
+        let raw = r#"{
+          "name": "task230-hot-cold",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate",
+            "hot_cold_row_tier": true,
+            "hot_payload_attnums": "1"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--hot-cold-row-tier".into()));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--hot-payload-attnums", "1"]));
+
+        let invalid = raw.replace("\"hot_cold_row_tier\": true,", "");
+        let config: SuiteConfig = serde_json::from_str(&invalid).expect("suite parses");
+        assert!(validate_config(&config)
+            .expect_err("hot payload without layout must fail")
+            .to_string()
+            .contains("hot_payload_attnums requires hot_cold_row_tier"));
     }
 
     #[test]

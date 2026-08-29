@@ -1939,7 +1939,11 @@ struct PhysicalTopologySummary {
 /// `cold_tier_orphan_row_count` are raw physical-history counts: valid
 /// same-identity replacement tuples retained for snapshot-pinned readers are
 /// included along with genuinely unreferenced tuples. They are storage/churn
-/// attribution, not by themselves a corruption signal.
+/// attribution, not by themselves a corruption signal. Receipt digest equality
+/// is an initial-content integrity signal only before post-Ready DML; after
+/// DML, operators must trust graph current/tombstone state plus successful
+/// vec-id- and schema-checked locator reconstruction, while receipt digests and
+/// raw orphan counts remain historical attribution.
 fn diagnose_physical_generation(
     generation: &GenerationCatalogRow,
     descriptor: &DistannGenerationDescriptor,

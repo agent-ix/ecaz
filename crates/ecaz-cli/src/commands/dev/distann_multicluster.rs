@@ -86,6 +86,15 @@ pub struct LocalMultinodePg18Args {
     /// covers the benchmark id column).
     #[arg(long)]
     pub covering_payload_attnums: Option<String>,
+    /// Task 230 opt-in generation format that vertically partitions the
+    /// authoritative source row into compact hot and cold heaps.
+    #[arg(long, default_value_t = false)]
+    pub hot_cold_row_tier: bool,
+    /// Task 230 optional additional hot scalar physical attnums. The standard
+    /// id-only decision fixture uses `1`; vector and source identity are
+    /// mandatory implicit hot attributes and must not be named here.
+    #[arg(long)]
+    pub hot_payload_attnums: Option<String>,
     /// Preregistered fresh-build position within a counterbalanced format
     /// pair (for example `pair-a-first` or `pair-a-second`).
     #[arg(long)]
@@ -744,6 +753,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
+    }
+    if args.hot_cold_row_tier && args.covering_payload_attnums.is_some() {
+        bail!("--hot-cold-row-tier and --covering-payload-attnums are mutually exclusive");
+    }
+    if !args.hot_cold_row_tier && args.hot_payload_attnums.is_some() {
+        bail!("--hot-payload-attnums requires --hot-cold-row-tier");
     }
     if args.queries == 0 {
         bail!("--queries must be at least 1");
@@ -2097,6 +2112,17 @@ fn canonical_covering_payload_attnums(raw: &str) -> Result<String> {
         .join(","))
 }
 
+fn canonical_hot_payload_attnums(raw: &str) -> Result<String> {
+    canonical_covering_payload_attnums(raw).map_err(|error| {
+        color_eyre::eyre::eyre!(
+            "{}",
+            error
+                .to_string()
+                .replace("--covering-payload-attnums", "--hot-payload-attnums")
+        )
+    })
+}
+
 fn canonical_benchmark_position_label(raw: &str) -> Result<String> {
     if raw.is_empty()
         || raw.len() > 64
@@ -2138,6 +2164,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         args.dim
     };
+    if args.hot_cold_row_tier && !(1..=1_536).contains(&physical_dim) {
+        bail!("--hot-cold-row-tier requires a physical dimension in 1..=1536");
+    }
     let correctness_column = if args.materialization_correctness {
         ", payload_note text"
     } else {
@@ -2253,6 +2282,18 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         .transpose()?
         .map(|attnums| format!(", covering_payload_attnums = '{attnums}'"))
         .unwrap_or_default();
+    let hot_payload = args
+        .hot_payload_attnums
+        .as_deref()
+        .map(canonical_hot_payload_attnums)
+        .transpose()?
+        .map(|attnums| format!(", hot_payload_attnums = '{attnums}'"))
+        .unwrap_or_default();
+    let row_tier_layout = if args.hot_cold_row_tier {
+        format!(", row_tier_layout = 'hot_cold'{hot_payload}")
+    } else {
+        String::new()
+    };
     Ok(format!(
         "{prefix}
          {load}
@@ -2269,13 +2310,14 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
                    graph_degree = {}, head_index_cap = {},
                    build_shards = {},
                    head_construction = '{}',
-                   neighbor_code_format = 'rabitq'{}{});",
+                   neighbor_code_format = 'rabitq'{}{}{});",
         args.graph_degree,
         args.head_index_cap,
         args.build_shards,
         args.head_construction,
         head_sizing,
         payload_cover,
+        row_tier_layout,
     ))
 }
 
@@ -2296,6 +2338,9 @@ struct PhysicalTopologyRow {
     sidecar_rows: i64,
     sidecar_heap_bytes: i64,
     sidecar_index_bytes: i64,
+    cold_rows: i64,
+    cold_orphan_rows: i64,
+    cold_bytes: i64,
 }
 
 async fn physical_topology(
@@ -2311,12 +2356,15 @@ async fn physical_topology(
                 row_tier_bytes, directory_bytes, control_index_bytes,
                 coalesce(payload_sidecar_row_count, -1),
                 coalesce(payload_sidecar_heap_bytes, -1),
-                coalesce(payload_sidecar_index_bytes, -1))
+                coalesce(payload_sidecar_index_bytes, -1),
+                coalesce(cold_tier_row_count, -1),
+                coalesce(cold_tier_orphan_row_count, -1),
+                coalesce(cold_tier_bytes, -1))
            FROM {selector_sql}"
     );
     let raw = capture_psql(psql, socket_dir, node.port, &sql).await?;
     let fields = raw.trim().split('|').collect::<Vec<_>>();
-    if fields.len() != 15 {
+    if fields.len() != 18 {
         bail!(
             "physical topology node {} returned malformed row {:?}",
             node.node_id,
@@ -2344,6 +2392,9 @@ async fn physical_topology(
         sidecar_rows: number(12, "payload_sidecar_row_count")?,
         sidecar_heap_bytes: number(13, "payload_sidecar_heap_bytes")?,
         sidecar_index_bytes: number(14, "payload_sidecar_index_bytes")?,
+        cold_rows: number(15, "cold_tier_row_count")?,
+        cold_orphan_rows: number(16, "cold_tier_orphan_row_count")?,
+        cold_bytes: number(17, "cold_tier_bytes")?,
     })
 }
 
@@ -2353,6 +2404,7 @@ fn validate_physical_topology(
     expected_state: &str,
     source_count: i64,
     expect_sidecar: bool,
+    expect_hot_cold: bool,
 ) -> Result<()> {
     if topology.is_empty()
         || topology.iter().any(|row| {
@@ -2371,6 +2423,11 @@ fn validate_physical_topology(
                     row.sidecar_rows != -1
                         || row.sidecar_heap_bytes != -1
                         || row.sidecar_index_bytes != -1
+                }
+                || if expect_hot_cold {
+                    row.cold_rows != row.records || row.cold_orphan_rows != 0 || row.cold_bytes <= 0
+                } else {
+                    row.cold_rows != -1 || row.cold_orphan_rows != -1 || row.cold_bytes != -1
                 }
         })
         || topology.iter().map(|row| row.records).sum::<i64>() != source_count
@@ -9512,7 +9569,12 @@ async fn run_physical_benchmarks(
             .iter()
             .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
             .sum::<i64>();
-        let owner_row_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
+        let owner_hot_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
+        let owner_cold_tier_bytes = published
+            .iter()
+            .map(|row| row.cold_bytes.max(0))
+            .sum::<i64>();
+        let owner_row_tier_bytes = owner_hot_tier_bytes + owner_cold_tier_bytes;
         let owner_sidecar_heap_bytes = published
             .iter()
             .map(|row| row.sidecar_heap_bytes.max(0))
@@ -9537,6 +9599,7 @@ async fn run_physical_benchmarks(
                     + row.control_bytes
                     + row.sidecar_heap_bytes.max(0)
                     + row.sidecar_index_bytes.max(0)
+                    + row.cold_bytes.max(0)
             })
             .sum::<i64>();
         let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
@@ -9633,22 +9696,26 @@ async fn run_physical_benchmarks(
             let sidecar_heap_bytes = row.sidecar_heap_bytes.max(0);
             let sidecar_index_bytes = row.sidecar_index_bytes.max(0);
             let sidecar_bytes = sidecar_heap_bytes + sidecar_index_bytes;
+            let cold_tier_bytes = row.cold_bytes.max(0);
+            let row_tier_bytes = row.row_bytes + cold_tier_bytes;
             lines.push(format!(
-                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} hot_tier_rows={} hot_tier_bytes={} cold_tier_rows={} cold_tier_bytes={cold_tier_bytes} row_tier_bytes={row_tier_bytes} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
                 row.node_id,
                 row.graph_bytes,
                 row.directory_bytes,
                 row.control_bytes,
+                row.rows,
                 row.row_bytes,
+                row.cold_rows,
                 row.sidecar_rows.max(0),
-                graph_side_bytes + row.row_bytes + sidecar_bytes,
+                graph_side_bytes + row_tier_bytes + sidecar_bytes,
             ));
         }
         lines.push(format!(
             "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} crown_resident_bytes={crown_resident_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_hot_tier_bytes={owner_hot_tier_bytes} owner_cold_tier_bytes={owner_cold_tier_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
             published.len(),
         ));
         lines.push(format!(
@@ -10063,14 +10130,18 @@ async fn validate_reused_physical_fixture(
             .await
             .wrap_err("connecting to reused physical fixture")?;
     let connection_task = tokio::spawn(async move { connection.await });
-    let reloptions = coordinator
+    let reloptions_row = coordinator
         .query_one(
-            "SELECT coalesce(array_to_string(reloptions, ','), '')
-               FROM pg_class WHERE oid = 'public.dm_idx'::regclass",
+            "SELECT coalesce(array_to_string(c.reloptions, ','), ''),
+                    coalesce((SELECT option_value
+                                FROM pg_options_to_table(c.reloptions)
+                               WHERE option_name = 'hot_payload_attnums'), '')
+               FROM pg_class c WHERE c.oid = 'public.dm_idx'::regclass",
             &[],
         )
-        .await?
-        .get::<_, String>(0);
+        .await?;
+    let reloptions = reloptions_row.get::<_, String>(0);
+    let hot_payload_reloption = reloptions_row.get::<_, String>(1);
     let options = reloptions.replace(' ', "");
     if !options
         .split(',')
@@ -10085,6 +10156,30 @@ async fn validate_reused_physical_fixture(
     if !options.contains("neighbor_code_format=rabitq") {
         connection_task.abort();
         bail!("--reuse-fixture codec mismatch: existing index is not rabitq");
+    }
+    let existing_hot_cold = options
+        .split(',')
+        .any(|option| option == "row_tier_layout=hot_cold");
+    if existing_hot_cold != args.hot_cold_row_tier {
+        connection_task.abort();
+        bail!(
+            "--reuse-fixture row-tier layout mismatch: requested hot_cold={}, existing reloptions={reloptions}",
+            args.hot_cold_row_tier
+        );
+    }
+    let expected_hot_payload = args
+        .hot_payload_attnums
+        .as_deref()
+        .map(canonical_hot_payload_attnums)
+        .transpose()?;
+    let existing_hot_payload = (!hot_payload_reloption.is_empty()).then_some(hot_payload_reloption);
+    if existing_hot_payload != expected_hot_payload {
+        connection_task.abort();
+        bail!(
+            "--reuse-fixture hot payload mismatch: requested {:?}, existing {:?}",
+            expected_hot_payload,
+            existing_hot_payload
+        );
     }
     let physical_corpus = format!("task179_physical_{scale}_corpus");
     let source_count = coordinator
@@ -10156,6 +10251,7 @@ async fn drive_reused_physical_fixture(
         "Published",
         source_count,
         args.covering_payload_attnums.is_some(),
+        args.hot_cold_row_tier,
     )?;
     crate::ecaz_println!(
         "[distann-multicluster] fixture_decision action=reuse run_dir={} scale={} source_rows={} extension_git_sha={} extension_build_profile={}",
@@ -10197,7 +10293,7 @@ async fn drive_reused_physical_fixture(
     );
     for row in &published {
         summary.push_str(&format!(
-            "[distann-multicluster] physical_topology phase=reused node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
+            "[distann-multicluster] physical_topology phase=reused node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}\n",
             row.node_id,
             row.state,
             row.records,
@@ -10211,6 +10307,9 @@ async fn drive_reused_physical_fixture(
             row.sidecar_rows,
             row.sidecar_heap_bytes,
             row.sidecar_index_bytes,
+            row.cold_rows,
+            row.cold_orphan_rows,
+            row.cold_bytes,
         ));
     }
     for line in &benchmark_lines {
@@ -13174,7 +13273,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &ready_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}",
+            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -13188,6 +13287,9 @@ async fn drive_physical_fixture(
             row.sidecar_rows,
             row.sidecar_heap_bytes,
             row.sidecar_index_bytes,
+            row.cold_rows,
+            row.cold_orphan_rows,
+            row.cold_bytes,
         );
         ready.push(row);
     }
@@ -13197,6 +13299,7 @@ async fn drive_physical_fixture(
         "Ready",
         source_count,
         args.covering_payload_attnums.is_some(),
+        args.hot_cold_row_tier,
     )?;
 
     coordinator
@@ -13249,7 +13352,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &published_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}",
+            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -13263,6 +13366,9 @@ async fn drive_physical_fixture(
             row.sidecar_rows,
             row.sidecar_heap_bytes,
             row.sidecar_index_bytes,
+            row.cold_rows,
+            row.cold_orphan_rows,
+            row.cold_bytes,
         );
         published.push(row);
     }
@@ -13272,6 +13378,7 @@ async fn drive_physical_fixture(
         "Published",
         source_count,
         args.covering_payload_attnums.is_some(),
+        args.hot_cold_row_tier,
     )?;
 
     let query_limit = i64::from(args.top_k.max(1));
@@ -13682,7 +13789,7 @@ async fn drive_physical_fixture(
         for (phase, rows) in [("ready", &ready), ("published", &published)] {
             for row in rows {
                 summary.push_str(&format!(
-                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
+                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}\n",
                     row.node_id,
                     row.state,
                     row.records,
@@ -13696,6 +13803,9 @@ async fn drive_physical_fixture(
                     row.sidecar_rows,
                     row.sidecar_heap_bytes,
                     row.sidecar_index_bytes,
+                    row.cold_rows,
+                    row.cold_orphan_rows,
+                    row.cold_bytes,
                 ));
             }
         }
@@ -13851,7 +13961,7 @@ async fn drive_physical_fixture(
     for (phase, rows) in [("ready", &ready), ("published", &published)] {
         for row in rows {
             summary.push_str(&format!(
-                "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={}\n",
+                "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}\n",
                 row.node_id,
                 row.state,
                 row.records,
@@ -13865,6 +13975,9 @@ async fn drive_physical_fixture(
                 row.sidecar_rows,
                 row.sidecar_heap_bytes,
                 row.sidecar_index_bytes,
+                row.cold_rows,
+                row.cold_orphan_rows,
+                row.cold_bytes,
             ));
         }
     }
@@ -17632,6 +17745,75 @@ mod tests {
             canonical_covering_payload_attnums("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn task230_hot_payload_attnums_require_canonical_physical_order() {
+        assert_eq!(canonical_hot_payload_attnums("1").unwrap(), "1");
+        assert_eq!(canonical_hot_payload_attnums("1,3,5").unwrap(), "1,3,5");
+        for invalid in ["", "0", "01", "1,1", "2,1", "1,", "1, 2", "1;DROP"] {
+            let error = canonical_hot_payload_attnums(invalid)
+                .expect_err("invalid hot attnums must be rejected")
+                .to_string();
+            assert!(
+                error.contains("--hot-payload-attnums"),
+                "{invalid:?} returned the wrong option diagnostic: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn task230_hot_cold_topology_requires_the_complete_pair() {
+        let mut row = PhysicalTopologyRow {
+            node_id: 1,
+            state: "Published".to_owned(),
+            records: 3,
+            rows: 3,
+            non_owned_live: 0,
+            non_owned_tombstones: 0,
+            orphan_records: 0,
+            orphan_rows: 0,
+            graph_bytes: 8_192,
+            row_bytes: 8_192,
+            directory_bytes: 8_192,
+            control_bytes: 8_192,
+            sidecar_rows: -1,
+            sidecar_heap_bytes: -1,
+            sidecar_index_bytes: -1,
+            cold_rows: 3,
+            cold_orphan_rows: 0,
+            cold_bytes: 8_192,
+        };
+        assert!(validate_physical_topology(
+            "test",
+            std::slice::from_ref(&row),
+            "Published",
+            3,
+            false,
+            true,
+        )
+        .is_ok());
+        row.cold_rows = -1;
+        row.cold_orphan_rows = -1;
+        row.cold_bytes = -1;
+        assert!(validate_physical_topology(
+            "test",
+            std::slice::from_ref(&row),
+            "Published",
+            3,
+            false,
+            true,
+        )
+        .is_err());
+        assert!(validate_physical_topology(
+            "test",
+            std::slice::from_ref(&row),
+            "Published",
+            3,
+            false,
+            false,
+        )
+        .is_ok());
     }
 
     #[test]
