@@ -100,12 +100,19 @@ shown; and (2) §6 pre-committed exact-vector to *improve*, but §4 only guards 
 against regression, so a flat result would silently pass — state that a
 pre-committed direction contradicted by the data is reported as a falsified
 prediction regardless of its guardrail. Execution awaits these two fixes.
-Packet 004 preregistration seq-02 corrections implementation complete,
-review-open against unchanged config `5837f4bec`: published hot main-heap bytes
-are gated at 1.35× emitted raw-vector bytes, total generation bytes at 1.15×
-matched row-heap control with the 100k arithmetic stated, and every §6 timing
-direction must be reported supported or falsified independent of its guardrail.
-No benchmark result exists; execution awaits outside review.
+Packet 004 preregistration seq-02 **review-closed DONE** against unchanged
+config `5837f4bec` (verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-02-reviewer.md`) —
+**THE FULL-SCALE RUN IS AUTHORIZED.** Both seq-01 findings closed: hot main-heap
+bytes gated at 1.35× emitted raw-vector bytes (8192/6144 = 1.3333, so ~1.2%
+headroom — a gate that can actually fail), total generation bytes at 1.15×
+matched control with the 100k arithmetic stated (≈ +190 MB on 2,498 MB ≈ 1.08×),
+and new §5 requiring every §6 timing direction to be reported supported or
+falsified independent of its guardrail — including the symmetric case the
+reviewer did not name, where an unexpectedly *faster* cold/mixed/all result is
+also falsified rather than rewritten as success. Reviewer confirmed the suite
+config is byte-unchanged, so only the interpretation rules moved and they moved
+before any result existed. No benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -673,6 +680,28 @@ the generation, so the gate cannot fail for the intended design; (2) no
 disposition is stated for a §6 direction the data contradicts, so a flat
 exact-vector result would pass every gate while falsifying the clearest timing
 test of the mechanism.
+
+Packet 004 seq-02 corrected decision policy: unchanged config `5837f4bec`;
+request at seq-02; verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-02-reviewer.md`
+— **DONE, full-scale run authorized.** The reviewer verified the commit touches
+only `request.md`, the packet manifest, and bookkeeping — nothing under
+`crates/ecaz-cli/suites/` — so the audited 20-step matrix stands and only the
+decision math changed, before any result existed. Storage is now two gates with
+two denominators: per-tier hot main-heap ≤ 1.35× `raw_vector_bytes`, which sits
+~1.2% above the derived 8192/6144 = 1.3333 and can therefore fail if PLAIN
+amplification exceeds the prediction; and whole-generation ≤ 1.15× control
+against a stated ≈ 1.08× expectation. New §5 makes prediction accounting explicit
+in both directions and keeps it separate from the gates: "Prediction
+classification is part of the decision record; the numeric gates above still
+determine PROMOTE versus STOP." **Standard fixed for reading the results**, per
+the verdict: entry gates actually ran (release SHA, `debug_override=false`,
+clippy baseline not grown); byte-identical prediction files within every primary
+pair; both 100k mean wins conjunctively at ≥5.0% and ≥0.50 ms with no tie-break;
+zero cold-tier accesses on id-only/exact-vector and zero hot-tier on cold-only;
+both storage gates against their own denominators; the §5 table honest in both
+directions; and run dirs distinct, under `~/.ecaz/clusters`, removed after
+capture.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
