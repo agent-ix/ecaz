@@ -5,9 +5,10 @@ descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 (seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
-`885b86be0`; packet 002 remains open for receipt/manifest identity and read
-admission; seq-07 format/clippy artifact debt closed immediately after verdict;
-persisted-format implementation authorized; entry condition 3 satisfied**
+`885b86be0`; receipt V3 / manifest V4 sealing checkpoint review-open (seq-08)
+at `5214b6d98`; packet 002 remains open for production read admission; seq-07
+format/clippy artifact debt closed immediately after verdict; persisted-format
+implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts

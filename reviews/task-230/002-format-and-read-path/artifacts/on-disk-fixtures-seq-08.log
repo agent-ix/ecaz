@@ -1,0 +1,36 @@
+Script started on 2026-08-28 21:07:08-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 26 tests
+test distann_abandoned_binding_set_v1_fixture_decodes_independently_and_rejects_count_swap ... [32mok(B[m
+test distann_abandon_binding_audit_v1_fixture_decodes_independently_and_rejects_version_swap ... [32mok(B[m
+test distann_build_spec_v1_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_build_registration_v1_fixture_decodes_and_digests_independently ... [32mok(B[m
+test distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_cancel_publish_audit_v1_fixture_decodes_independently_and_rejects_version_swap ... [32mok(B[m
+test distann_generation_descriptor_v1_fixture_is_rebuild_only_and_rejected ... [32mok(B[m
+test distann_manifest_subrecord_fixtures_decode_and_reject_swap ... [32mok(B[m
+test distann_generation_descriptor_v2_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_handoff_entry_and_batch_v1_fixtures_decode_independently ... [32mok(B[m
+test distann_metadata_v4_and_control_v5_fixtures_decode_independently ... [32mok(B[m
+test distann_epoch_manifest_v4_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_metadata_versions_reject_byte_swap ... [32mok(B[m
+test distann_generation_descriptor_v4_fixture_binds_layout_and_graph_v2 ... [32mok(B[m
+test distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap ... [32mok(B[m
+test distann_owner_stream_hash_state_v1_fixture_is_independent_and_fixed ... [32mok(B[m
+test distann_physical_graph_record_v2_fixture_appends_cold_tid ... [32mok(B[m
+test distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_ready_receipt_v3_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_row_tier_layout_v1_fixture_decodes_independently ... [32mok(B[m
+test distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap ... [32mok(B[m
+test distann_retire_decision_v1_fixture_decodes_independently_and_rejects_version_swap ... [32mok(B[m
+test distann_successor_activation_v1_fixture_decodes_independently_and_rejects_version_swap ... [32mok(B[m
+test distann_build_candidate_v1_fixture_decodes_independently_and_rejects_version_swap ... [32mok(B[m
+
+test result: [32mok(B[m. 26 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 21:07:08-07:00 [COMMAND_EXIT_CODE="0"]

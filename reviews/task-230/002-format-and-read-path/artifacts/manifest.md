@@ -1,13 +1,61 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `885b86be0ac9d86ccd840fa42b40921108c1f4e3`
+- Head SHA: `5214b6d98a76340c9ceed38c95386c776da19286`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Generation-owned hot/cold handoff checkpoint
+- Packet: Receipt V3 / manifest V4 sealing checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 callback plus pure
-  format/descriptor tests; hot/cold handoff through Graph V2; rerank not applicable
+  format/descriptor tests; hot/cold sealing through receipt V3 / manifest V4;
+  rerank not applicable
 - Isolation: focused pgrx test creates transaction-scoped source/index fixtures;
   no corpus or benchmark fixture was created
+
+## Seq-08 receipt V3 / manifest V4 sealing artifacts
+
+All seq-08 artifacts below were produced at
+`5214b6d98a76340c9ceed38c95386c776da19286` on 2026-08-28 PDT.
+
+### `receipt-manifest-tests-seq-08.log`
+
+- Command: `cargo test --no-default-features --features pg18 manifest_v2::tests`
+- Cited result: `8 passed; 0 failed; 1 ignored`; legacy V1/V2 and covered V2/V3
+  bytes remain canonical, while receipt V3, manifest V4, fingerprint V4,
+  mutual-exclusion, and digest-corruption checks pass.
+
+### `on-disk-fixtures-seq-08.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test on_disk_fixtures distann_`
+- Cited result: all 26 DistANN independent persisted-format fixtures pass,
+  including field-by-field V3/V4 walkers, exact production re-encoding, and
+  byte-swapped version rejection.
+
+### `upgrade-matrix-seq-08.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test upgrade_matrix`
+- Cited result: `2 passed; 0 failed` after adding exact 383-byte Ready V3 SQL
+  admission.
+
+### `hot-cold-seal-pg18-seq-08.log`
+
+- Command: `cargo pgrx test pg18 test_distann_hot_cold_handoff_v2_locator`
+- Cited result: focused callback test `1 passed; 0 failed`; Graph V2 locator
+  integrity and paired row materialization still hold, then seal reconstructs
+  the unchanged logical digest and emits Ready V3 with nonzero per-tier digests
+  and exact positive heap bytes.
+
+### `format-check-seq-08.log`
+
+- Command: `cargo fmt --all -- --check`
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures).
+
+### `clippy-seq-08.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1069`, and `ec_distann_physical_lifecycle.rs:8314`; no
+  failure is in a seq-08 touched line.
 
 ## Seq-07 hot/cold handoff artifacts
 

@@ -5,16 +5,47 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 07
+seq: 08
 ---
 
-# Task 230 packet 002 — generation-owned hot/cold handoff
+# Task 230 packet 002 — receipt V3 and manifest V4 sealing
 
-Review code checkpoint `885b86be0` against the review-closed packet-001
-contract and reviewer seq-06, which accepted paired relation creation. This
-remains a narrow packet-002 checkpoint: it partitions the unchanged handoff
-wire into the paired heaps and writes Graph V2 locators, but does not yet seal
-the generation into receipt V3/manifest V4 or admit it on production reads.
+Review code checkpoint `5214b6d98` against the review-closed packet-001
+contract and reviewer seq-07, which accepted paired handoff and authorized
+receipt V3 / manifest V4 sealing. This remains a narrow packet-002 checkpoint:
+it seals and binds the paired heaps, but production read admission remains the
+next slice.
+
+## Seq-08 receipt/manifest scope
+
+- Adds append-only Ready receipt V3 while preserving V1 and Task 229 V2 bytes.
+  V3 retains the logical row digest used for unchanged handoff completeness and
+  appends separate initial hot/cold content digests and heap bytes. The legacy
+  physical row-byte field becomes the sum of the two authoritative heaps; the
+  appended fields preserve exact per-tier attribution.
+- Sealing decodes Graph V2, validates both real locators and both internal
+  `vec_id` echoes under the active snapshot, reconstructs source attributes in
+  original attnum order, and recomputes the unchanged owner-stream/logical-row
+  digests. It separately hashes each tier's NULL shape and canonical values in
+  ascending vec_id order and requires equal graph/hot/cold counts.
+- Adds epoch manifest V4 and fingerprint version 4. V4 binds the row-tier
+  layout-descriptor digest plus roster-ordered global hot and cold initial
+  content digests; the existing global logical row digest remains the build
+  specification's source/handoff completeness identity.
+- Build-candidate validation now binds the descriptor layout to the manifest.
+  The coordinator uses the descriptor's graph-record version rather than
+  hard-coding V1. Legacy V2 and covered V3 manifest/fingerprint bytes remain
+  admitted unchanged.
+- Extends the bootstrap Ready-receipt constraint with the exact 383-byte V3
+  shape and retains exact 303-byte V1 / 351-byte V2 dispatch.
+- Adds deterministic V3/V4 golden fixtures with independent field walkers,
+  byte-swap rejection, production decode/re-encode equality, and V4 fingerprint
+  admission. All 26 DistANN persisted-format fixtures pass.
+- Closes reviewer seq-07's inherited write-layer gap: both legacy and hot/cold
+  handoff now reject a NULL indexed vector before any physical write.
+- Extends the PG18 handoff callback through seal and proves V3 length/version,
+  nonzero distinct tier digests, positive exact per-tier bytes, and summed
+  logical row storage.
 
 ## Seq-07 handoff scope
 
@@ -160,8 +191,17 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-07 output and provenance are recorded in
+Packet-local seq-08 output and provenance are recorded in
 `artifacts/manifest.md`:
+
+- eight active receipt/manifest tests pass (one deterministic emitter ignored);
+- all 26 DistANN independent on-disk fixture tests pass;
+- the two-test extension upgrade matrix passes;
+- the focused PG18 hot/cold handoff-and-seal callback passes;
+- formatting passes, and all-target PG18 clippy records only the same five
+  pre-existing repository failures, with none in a seq-08 touched line.
+
+Prior seq-07 evidence remains recorded in the same manifest:
 
 - the focused PG18 hot/cold handoff and Graph V2 locator test passes;
 - the focused legacy PG18 stage/replay/directory regression test passes;
@@ -189,15 +229,15 @@ Prior seq-05 evidence remains recorded in the same manifest:
   repository failures already identified in seq-02; none is in a seq-05
   touched line.
 
-No benchmark is claimed for this handoff slice. Receipt/manifest identity,
-production reads, DML, full lifecycle, and benchmark coverage remain required
-before Task 230 closes.
+No benchmark is claimed for this sealing slice. Production reads, DML, full
+lifecycle, and benchmark coverage remain required before Task 230 closes.
 
 ## Review request
 
-Please review compact schema admission, unchanged-wire tier routing, cold-first
-tuple insertion, descriptor-versioned graph encoding, Graph V2 locator
-integrity, and legacy handoff preservation at `885b86be0`. If DONE, the next
-packet-002 slice will carry both tier identities through receipt V3/manifest V4
-and implement production read admission. Legacy tag-guarded `expand.rs`,
-`reader.rs`, and `insert.rs` paths remain unversioned V1.
+Please review append-only receipt/manifest dispatch, logical versus physical
+tier digest separation, paired-locator sealing and reconstruction, global
+roster-ordered tier digests, descriptor/manifest binding, SQL length admission,
+golden fixtures, and NULL-vector rejection at `5214b6d98`. If DONE, the next
+packet-002 slice will implement production exact-vector and typed payload read
+admission. Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths
+remain unversioned V1.

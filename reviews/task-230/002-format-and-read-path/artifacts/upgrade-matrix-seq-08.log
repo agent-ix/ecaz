@@ -1,0 +1,12 @@
+Script started on 2026-08-28 21:07:17-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-e5af4b0dbd263a57)
+
+running 2 tests
+test upgrade_matrix_has_unique_entries_and_existing_fixtures ... [32mok(B[m
+test upgrade_matrix_names_current_writable_formats ... [32mok(B[m
+
+test result: [32mok(B[m. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 21:07:17-07:00 [COMMAND_EXIT_CODE="0"]

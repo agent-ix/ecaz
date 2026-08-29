@@ -1,0 +1,92 @@
+Script started on 2026-08-28 21:01:43-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 29s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-1dc08d755a3f3721)
+
+running 9 tests
+test am::ec_distann::manifest_v2::tests::emit_distann_golden_fixture_hex ... [33mignored(B[m
+test am::ec_distann::manifest_v2::tests::manifest_build_options_preserve_legacy_bytes_and_round_trip_trained_policy ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::codec_and_build_parameter_subrecords_reject_unknown_versions ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::manifest_rejects_unknown_versions_receipt_reorder_and_bad_parent ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::source_snapshot_digest_binds_full_xid_epoch_bits ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::source_snapshot_round_trip_and_digest_are_canonical ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::manifest_round_trip_binds_roster_receipts_and_v2_fingerprint ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::ready_receipt_round_trip_verifies_digest_state_and_counts ... [32mok(B[m
+test am::ec_distann::manifest_v2::tests::manifest_preserves_legacy_v2_and_round_trips_covered_v3_fingerprints ... [32mok(B[m
+
+test result: [32mok(B[m. 8 passed; 0 failed; 1 ignored; 0 measured; 2619 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (/home/peter/.cargo-target/debug/deps/approx_score_study-f3c6d1849033ace9)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (/home/peter/.cargo-target/debug/deps/pgrx_embed_ecaz-dd5a8e316ccd7570)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (/home/peter/.cargo-target/debug/deps/simd_bench-641e2bf17c2d317f)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (/home/peter/.cargo-target/debug/deps/kani_item_pointer-46247604c84712a3)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 79 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (/home/peter/.cargo-target/debug/deps/proptest_page-905f76eccf8786f1)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (/home/peter/.cargo-target/debug/deps/proptest_quant-3c0ca27c95b97182)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (/home/peter/.cargo-target/debug/deps/recall_integration-ef2b8393b62a8bf0)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (/home/peter/.cargo-target/debug/deps/simd_diff-efdd6350e0a19d15)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (/home/peter/.cargo-target/debug/deps/size_of_assertions-24c645aa991e2100)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-e5af4b0dbd263a57)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (/home/peter/.cargo-target/debug/deps/wal_policy-83d8f3d293b81b4d)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 21:07:01-07:00 [COMMAND_EXIT_CODE="0"]
