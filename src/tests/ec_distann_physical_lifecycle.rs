@@ -9141,6 +9141,63 @@ fn test_distann_hot_cold_dml_atomicity() {
 }
 
 #[pg_test]
+fn test_distann_hot_cold_topology_reports_both_tiers() {
+    let fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_topology", 0x7c);
+    publish_distann_participant(&fixture);
+    let topology = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT record_count, row_count, cold_tier_row_count,
+                            orphan_record_count, orphan_row_count,
+                            cold_tier_orphan_row_count, row_tier_digest,
+                            row_tier_bytes, cold_tier_bytes
+                       FROM ec_distann_epoch_topology(
+                           '{}'::regclass, decode('{}', 'hex')
+                       )",
+                    fixture.generation.index_name,
+                    hex::encode(&fixture.fingerprint),
+                ),
+                None,
+                &[],
+            )
+            .expect("hot/cold topology should execute")
+            .map(|row| {
+                (
+                    row["record_count"].value::<i64>().unwrap().unwrap(),
+                    row["row_count"].value::<i64>().unwrap().unwrap(),
+                    row["cold_tier_row_count"].value::<i64>().unwrap().unwrap(),
+                    row["orphan_record_count"].value::<i64>().unwrap().unwrap(),
+                    row["orphan_row_count"].value::<i64>().unwrap().unwrap(),
+                    row["cold_tier_orphan_row_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    row["row_tier_digest"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["row_tier_bytes"].value::<i64>().unwrap().unwrap(),
+                    row["cold_tier_bytes"].value::<i64>().unwrap().unwrap(),
+                )
+            })
+            .next()
+            .expect("hot/cold topology should return its published generation")
+    });
+    assert_eq!(topology.0, 1);
+    assert_eq!(topology.1, 1);
+    assert_eq!(topology.2, 1);
+    assert_eq!(topology.3, 0);
+    assert_eq!(topology.4, 0);
+    assert_eq!(topology.5, 0);
+    assert_eq!(
+        topology.6,
+        fixture.manifest.global_row_tier_digest.to_vec(),
+        "topology must reconstruct the frozen logical row across both compact tiers"
+    );
+    assert!(topology.7 > 0);
+    assert!(topology.8 > 0);
+}
+
+#[pg_test]
 fn test_distann_generation_topology_reports_ready_and_building() {
     use sha2::Digest;
 

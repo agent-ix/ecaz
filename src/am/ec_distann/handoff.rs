@@ -1926,6 +1926,7 @@ struct PhysicalTopologySummary {
     non_owned_tombstone_count: u64,
     orphan_record_count: u64,
     orphan_row_count: u64,
+    cold_orphan_row_count: Option<u64>,
 }
 
 /// Read-only diagnostic scan of a physical generation. Unlike the strict seal
@@ -1941,12 +1942,31 @@ fn diagnose_physical_generation(
     shape: DistannHandoffShape,
     identity_attnum: u16,
     row_relation: &HeapRelationGuard,
+    cold_relation: Option<&HeapRelationGuard>,
     graph_relation: &str,
     row_count: u64,
+    cold_row_count: Option<u64>,
 ) -> Result<PhysicalTopologySummary, String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation)
         .ok_or_else(|| "EC_GENERATION_MISSING: could not allocate topology row slot".to_owned())?;
     let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
+    let cold_slot = cold_relation
+        .map(|relation| {
+            TupleTableSlotGuard::create_for_heap_guard(relation).ok_or_else(|| {
+                "EC_GENERATION_MISSING: could not allocate topology cold-tier slot".to_owned()
+            })
+        })
+        .transpose()?;
+    let mut cold_io = cold_relation
+        .map(|relation| unsafe { row_attribute_io(relation.as_ptr()) })
+        .transpose()?;
+    match (descriptor.row_tier_layout(), cold_relation, cold_row_count) {
+        (None, None, None) | (Some(_), Some(_), Some(_)) => {}
+        _ => return Err(
+            "EC_GENERATION_MISSING: cold topology relation disagrees with generation descriptor"
+                .to_owned(),
+        ),
+    }
     let mut owned_vec_id_hasher = Sha256::new();
     owned_vec_id_hasher.update(OWNED_VEC_IDS_DOMAIN);
     let mut graph_hasher = Sha256::new();
@@ -1989,8 +2009,9 @@ fn diagnose_physical_generation(
                         format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
                     })?
                     .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
-                let node = DistannNodeTuple::decode_physical_v1(
+                let node = DistannNodeTuple::decode_physical_version(
                     &graph_record,
+                    descriptor.graph_record_version,
                     descriptor.graph_degree,
                     shape.code_stride,
                 )?;
@@ -2021,13 +2042,46 @@ fn diagnose_physical_generation(
                 // Owned and live: the frozen row must be co-located and share the
                 // record's vec_id identity. Any failure is a co-location defect
                 // (orphaned record), not a hard error in the diagnostic path.
-                match fetch_frozen_row(
-                    row_relation,
-                    &slot,
-                    node.heap_tid,
-                    identity_attnum,
-                    &mut row_io,
+                let frozen = match (
+                    descriptor.row_tier_layout(),
+                    cold_relation,
+                    cold_slot.as_ref(),
+                    cold_io.as_deref_mut(),
+                    node.cold_tid,
                 ) {
+                    (None, None, None, None, None) => fetch_frozen_row(
+                        row_relation,
+                        &slot,
+                        node.heap_tid,
+                        identity_attnum,
+                        &mut row_io,
+                    ),
+                    (
+                        Some(layout),
+                        Some(cold_relation),
+                        Some(cold_slot),
+                        Some(cold_io),
+                        Some(cold_tid),
+                    ) => fetch_hot_cold_row(
+                        descriptor,
+                        layout,
+                        row_relation,
+                        &slot,
+                        node.heap_tid,
+                        &mut row_io,
+                        cold_relation,
+                        cold_slot,
+                        cold_tid,
+                        cold_io,
+                        vec_id,
+                    )
+                    .map(|row| (row.identity, row.logical_null_bitmap, row.logical_values)),
+                    _ => Err(
+                        "EC_BUILD_INCOMPLETE: graph cold locator disagrees with generation layout"
+                            .to_owned(),
+                    ),
+                };
+                match frozen {
                     Ok((source_identity, row_null_bitmap, row_values)) => {
                         if vec_id_from_source_identity(&source_identity) != vec_id {
                             orphan_record_count += 1;
@@ -2055,6 +2109,8 @@ fn diagnose_physical_generation(
     })?;
     // Row-tier tuples with no co-located owned-live record are orphaned rows.
     let orphan_row_count = row_count.saturating_sub(colocated_row_count);
+    let cold_orphan_row_count =
+        cold_row_count.map(|count| count.saturating_sub(colocated_row_count));
     Ok(PhysicalTopologySummary {
         record_count,
         owned_vec_id_digest: owned_vec_id_hasher.finalize().into(),
@@ -2064,10 +2120,11 @@ fn diagnose_physical_generation(
         non_owned_tombstone_count,
         orphan_record_count,
         orphan_row_count,
+        cold_orphan_row_count,
     })
 }
 
-/// The 19-column physical topology row shared by the by-build-id and
+/// The 22-column physical topology row shared by the by-build-id and
 /// by-fingerprint inspection endpoints.
 type DistannTopologyRow = (
     i32,
@@ -2089,9 +2146,12 @@ type DistannTopologyRow = (
     Option<Vec<u8>>,
     Option<i64>,
     Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
 );
 
-/// Diagnose one already-resolved physical generation and emit its 19-column
+/// Diagnose one already-resolved physical generation and emit its 22-column
 /// topology row. Decodes and identity-checks the descriptor, locks the physical
 /// relations against concurrent reclaim, recomputes the counts/digests from
 /// storage, and reads the exact relation sizes.
@@ -2118,6 +2178,13 @@ fn build_topology_row(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )
     .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
+    let cold_relation = generation
+        .cold_tier_relid
+        .map(|relation_oid| {
+            HeapRelationGuard::try_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                .ok_or_else(|| "EC_GENERATION_MISSING: cold-tier relation is absent".to_owned())
+        })
+        .transpose()?;
     let _graph_relation_guard = HeapRelationGuard::try_open(
         generation.graph_store_relid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
@@ -2148,8 +2215,16 @@ fn build_topology_row(
     validate_generation_relations(generation, &descriptor, control_owner)?;
     let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
     let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
+    let cold_relation_name = generation
+        .cold_tier_relid
+        .map(qualified_relation_name)
+        .transpose()?;
     let identity_attnum = identity_attnum(index_oid)?;
     let row_count = relation_row_count(&row_relation_name)?;
+    let cold_row_count = cold_relation_name
+        .as_deref()
+        .map(relation_row_count)
+        .transpose()?;
     let payload_sidecar = match (
         generation.payload_sidecar_relid,
         descriptor.payload_cover.as_ref(),
@@ -2175,8 +2250,10 @@ fn build_topology_row(
             shape,
             identity_attnum,
             &row_relation,
+            cold_relation.as_ref(),
             &graph_relation,
             row_count,
+            cold_row_count,
         )
     })?;
     let sizes = generation_sizes(generation)?;
@@ -2216,6 +2293,17 @@ fn build_topology_row(
             .payload_sidecar_index_bytes
             .map(|bytes| to_i64(bytes, "payload_sidecar_index_bytes"))
             .transpose()?,
+        cold_row_count
+            .map(|count| to_i64(count, "cold_tier_row_count"))
+            .transpose()?,
+        summary
+            .cold_orphan_row_count
+            .map(|count| to_i64(count, "cold_tier_orphan_row_count"))
+            .transpose()?,
+        sizes
+            .cold_tier_bytes
+            .map(|bytes| to_i64(bytes, "cold_tier_bytes"))
+            .transpose()?,
     ))
 }
 
@@ -2254,6 +2342,9 @@ fn ec_distann_generation_topology(
         name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
         name!(payload_sidecar_heap_bytes, Option<i64>),
         name!(payload_sidecar_index_bytes, Option<i64>),
+        name!(cold_tier_row_count, Option<i64>),
+        name!(cold_tier_orphan_row_count, Option<i64>),
+        name!(cold_tier_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
@@ -2325,6 +2416,9 @@ fn ec_distann_epoch_topology(
         name!(payload_sidecar_live_content_digest, Option<Vec<u8>>),
         name!(payload_sidecar_heap_bytes, Option<i64>),
         name!(payload_sidecar_index_bytes, Option<i64>),
+        name!(cold_tier_row_count, Option<i64>),
+        name!(cold_tier_orphan_row_count, Option<i64>),
+        name!(cold_tier_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
