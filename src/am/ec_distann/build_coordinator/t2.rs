@@ -238,7 +238,6 @@ pub(super) fn build_epoch(
             index_oid,
             &row_schema,
             indexed_vector_attnum,
-            metadata.dimensions,
             &options,
         )?;
         let row_tier_layout_descriptor_digest = resolved_row_tier_layout

@@ -333,7 +333,6 @@ pub(super) fn begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             index_oid,
             &row_schema,
             indexed_vector_attnum,
-            metadata.dimensions,
             &options,
         )?;
         let row_tier_layout_descriptor_digest = resolved_row_tier_layout

@@ -77,13 +77,25 @@ fn resolve_row_tier_layout_descriptor(
     index_oid: pg_sys::Oid,
     row_schema: &DistannRowSchemaDescriptor,
     indexed_vector_attnum: u16,
-    dimensions: u16,
     options: &super::options::EcDistannOptions,
 ) -> Result<Option<super::row_layout::DistannRowTierLayoutDescriptorV1>, String> {
     match options.row_tier_layout {
         super::options::RowTierLayout::RowHeap => Ok(None),
         super::options::RowTierLayout::HotCold => {
             let identity_attnum = source_identity_attnum(index_oid)?;
+            let vector_typmod = row_schema
+                .attributes
+                .iter()
+                .find(|attribute| attribute.attnum == indexed_vector_attnum)
+                .ok_or_else(|| {
+                    "EC_SCHEMA_UNSUPPORTED: indexed vector is absent from the frozen row schema"
+                        .to_owned()
+                })?
+                .typmod;
+            let dimensions = u16::try_from(vector_typmod).map_err(|_| {
+                "EC_SCHEMA_UNSUPPORTED: indexed vector must declare dimensions in its typmod"
+                    .to_owned()
+            })?;
             super::row_layout::resolve_hot_cold_layout(
                 row_schema,
                 indexed_vector_attnum,

@@ -1580,6 +1580,58 @@ fn test_distann_begin_build_lock_lifecycle() {
 }
 
 #[pg_test]
+fn test_distann_begin_build_binds_hot_cold_row_layout() {
+    const SECRET_NAME: &str = "DISTANN_BEGIN_HOT_COLD";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BEGIN_HOT_COLD";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let coordinator = create_distann_physical_generation_fixture_with_payload_type(
+        "ec_distann_begin_hot_cold_coordinator",
+        0x89,
+        "bigint",
+    );
+    let participant = create_distann_physical_generation_fixture_with_payload_type(
+        "ec_distann_begin_hot_cold_participant",
+        0x8a,
+        "bigint",
+    );
+    Spi::run(&format!(
+        "ALTER INDEX {} SET (row_tier_layout = 'hot_cold')",
+        coordinator.index_name
+    ))
+    .expect("coordinator hot/cold layout should configure");
+    Spi::run(&format!(
+        "ALTER INDEX {} SET (row_tier_layout = 'hot_cold')",
+        participant.index_name
+    ))
+    .expect("participant hot/cold layout should configure");
+    configure_distann_participant_identity(&participant, "begin-hot-cold/node-17");
+    register_distann_node(
+        &coordinator,
+        0,
+        17,
+        "begin-hot-cold/node-17",
+        SECRET_NAME,
+        &participant.canonical_index_regclass,
+        true,
+    );
+
+    let begin = || {
+        Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 '{}'::regclass, 7, '{}'::uuid
+             )",
+            coordinator.index_name, coordinator.build_id,
+        ))
+        .unwrap()
+        .expect("hot/cold begin-build should return its registration digest")
+    };
+    let first = begin();
+    assert_eq!(first.len(), 32);
+    assert_eq!(begin(), first, "exact hot/cold replay must be stable");
+}
+
+#[pg_test]
 fn test_distann_begin_build_rejects_inherited_source_topology() {
     const SECRET_NAME: &str = "DISTANN_BEGIN_INHERITANCE";
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BEGIN_INHERITANCE";
