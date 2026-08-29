@@ -52,10 +52,22 @@ all, drops `embedding` from the control's cold-only so the A/B compares like wit
 like, pins every mapping in a table-driven test, and emits
 `physical_projection_rule=mirrors_end_to_end_projection` in both log lines; no
 packet-004 result has been read and nothing now blocks the matrix;
-hot/cold lifecycle/fault harness checkpoint 8 review-open at `c4b96fe89`,
+hot/cold lifecycle/fault harness checkpoint 8 review-closed DONE (seq-08) at
+`c4b96fe89` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-08-reviewer.md`),
 adding suite-driven read/write fault switches, four-relation lifecycle
-accounting, hot/cold DML parity, and retained predecessor materialization;
-the three actual runtime evidence groups remain owed;
+accounting, hot/cold tuple-total parity across 2PC recovery
+(`cold_pair_balanced=true`), and retained-predecessor materialization in the only
+window where it is observable; the three actual runtime evidence groups remain
+owed; **reviewer gate-coverage correction:** the mandatory clippy command runs
+from the workspace root and therefore lints only the root `ecaz` package, never
+`crates/ecaz-cli`, so seq-04..seq-08's ~1000 lines of harness code were ungated
+by both coder and reviewer — the reviewer ran the missing gate and confirmed
+Task 230's CLI code adds no warnings (the three `suite.rs` findings all blame to
+commits already in `23fb9b7ba`), but
+`cargo clippy -p ecaz-cli --all-targets` must join the packet gate set with a
+recorded baseline; `-D warnings` is not yet usable there because `ecaz-cloud`
+and the two known `ecaz` lib errors fail first;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -539,6 +551,24 @@ materializes projection attnums 1 and 3 on every owner after retirement and
 before reclaim, forcing mixed hot/cold reconstruction from a `Retired`
 generation. Format and six focused CLI tests pass; mandatory clippy contains
 only the same five pre-existing findings. No runtime matrix has run yet.
+
+Packet 003 seq-08 lifecycle and fault-matrix harness checkpoint: code
+`c4b96fe89`; request at seq-08; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-08-reviewer.md`
+— **DONE**. The cross-tier invariant is the right one: hot and cold tuple totals
+must stay equal before, during, and after 2PC recovery, which is the
+characteristic failure mode of a two-relation write path and is caught by nothing
+else in the suite. The retained-generation read is correctly placed after
+successor publication and predecessor retirement but before reclaim — the only
+window where retained predecessors are observable — and requesting attnums 1 and
+3 forces genuine hot-plus-cold reconstruction. **To reconcile before packet 004
+cites either:** the CLI asserts `array_length(payload_offsets, 1) = 3` for a
+two-attnum request, while the packet-002 seq-10 pgrx tests assert two offsets for
+two attnums and four for four. Both suites are green, so they cannot be checking
+the same function under the same convention; state which arity is authoritative
+for `ec_distann_materialize_physical_row_payloads` and make both assert it the
+same way, since an offsets off-by-one produces correct-looking rows with shifted
+attribute boundaries.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
