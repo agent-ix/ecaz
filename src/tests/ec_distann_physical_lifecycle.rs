@@ -9085,6 +9085,20 @@ fn test_distann_hot_cold_dml_atomicity() {
         Some(true),
         "replacement must retain the old pair and publish a new pair"
     );
+    assert_eq!(
+        Spi::get_three::<i64, i64, i64>(&format!(
+            "SELECT record_count, orphan_row_count,
+                    cold_tier_orphan_row_count
+               FROM ec_distann_epoch_topology(
+                   '{}'::regclass, decode('{}', 'hex')
+               )",
+            fixture.generation.index_name,
+            hex::encode(&fixture.fingerprint),
+        ))
+        .unwrap(),
+        (Some(2), Some(1), Some(1)),
+        "healthy replacement history is intentionally reported as one retained physical tuple in each tier"
+    );
 
     assert!(unsafe {
         crate::am::ec_distann::tombstone_owner_record_for_test(
@@ -9796,6 +9810,115 @@ fn insert_distann_publish_predecessor_chain(
         .expect("predecessor-chain catalog fixture should insert");
         predecessor = Some((build_id, epoch, fingerprint_marker, manifest_marker));
     }
+}
+
+#[pg_test]
+fn test_distann_hot_cold_drop_reindex_rollback() {
+    let relation_count = |relations: [pg_sys::Oid; 4]| {
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {}, {})",
+            u32::from(relations[0]),
+            u32::from(relations[1]),
+            u32::from(relations[2]),
+            u32::from(relations[3]),
+        ))
+        .unwrap()
+        .unwrap()
+    };
+    let generation_relations = |fixture: &DistannParticipantLifecycleFixture| {
+        [
+            fixture.relations.0,
+            fixture.relations.1,
+            fixture.relations.2,
+            distann_cold_tier_relation_oid(&fixture.generation),
+        ]
+    };
+
+    let drop_fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_drop", 0x52);
+    let dropped = generation_relations(&drop_fixture);
+    assert_eq!(relation_count(dropped), 4);
+    Spi::run(&format!(
+        "DROP INDEX {}",
+        drop_fixture.generation.index_name
+    ))
+    .unwrap();
+    assert_eq!(relation_count(dropped), 0);
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {} WHERE index_oid = {}",
+            distann_generation_catalog_name(),
+            u32::from(drop_fixture.generation.index_oid),
+        ))
+        .unwrap(),
+        Some(0),
+        "DROP must remove the hot/cold generation catalog row"
+    );
+
+    let reindex_fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_reindex", 0x62);
+    let reindexed = generation_relations(&reindex_fixture);
+    let old_uuid = reindex_fixture.generation.logical_index_uuid;
+    Spi::run(&format!(
+        "REINDEX INDEX {}",
+        reindex_fixture.generation.index_name
+    ))
+    .unwrap();
+    assert_eq!(relation_count(reindexed), 0);
+    let new_uuid = Spi::get_one::<pgrx::datum::Uuid>(&format!(
+        "SELECT logical_index_uuid
+           FROM ec_distann_control_identity('{}'::regclass)",
+        reindex_fixture.generation.index_name,
+    ))
+    .unwrap()
+    .unwrap();
+    assert_ne!(new_uuid, old_uuid, "REINDEX must mint a fresh control UUID");
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {} WHERE index_oid = {}",
+            distann_generation_catalog_name(),
+            u32::from(reindex_fixture.generation.index_oid),
+        ))
+        .unwrap(),
+        Some(0),
+        "REINDEX must remove every old hot/cold catalog binding"
+    );
+
+    let rollback_fixture = create_hot_cold_distann_participant_lifecycle_fixture(
+        "ec_distann_hot_cold_reindex_rollback",
+        0x72,
+    );
+    let rollback_relations = generation_relations(&rollback_fixture);
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "REINDEX INDEX {}",
+            rollback_fixture.generation.index_name
+        ))
+        .expect("nested hot/cold REINDEX should execute before rollback");
+        pgrx::error!("EC_TEST_ROLLBACK: restore hot/cold generation");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    assert_eq!(relation_count(rollback_relations), 4);
+    assert_eq!(
+        Spi::get_one::<pgrx::datum::Uuid>(&format!(
+            "SELECT logical_index_uuid
+               FROM ec_distann_control_identity('{}'::regclass)",
+            rollback_fixture.generation.index_name,
+        ))
+        .unwrap(),
+        Some(rollback_fixture.generation.logical_index_uuid),
+        "rolled-back REINDEX must restore the old control identity"
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {} WHERE index_oid = {} AND cold_tier_relid IS NOT NULL",
+            distann_generation_catalog_name(),
+            u32::from(rollback_fixture.generation.index_oid),
+        ))
+        .unwrap(),
+        Some(1),
+        "rolled-back REINDEX must restore the cataloged cold relation"
+    );
 }
 
 #[pg_test]

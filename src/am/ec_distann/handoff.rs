@@ -1935,7 +1935,11 @@ struct PhysicalTopologySummary {
 /// coordinator and operators can audit a Building/Ready generation. Every
 /// digest is recomputed from the physical relations and equals the Ready
 /// receipt exactly when the generation is clean (all records owned, live, and
-/// co-located with a single row-tier tuple).
+/// co-located with a single row-tier tuple). `orphan_row_count` and
+/// `cold_tier_orphan_row_count` are raw physical-history counts: valid
+/// same-identity replacement tuples retained for snapshot-pinned readers are
+/// included along with genuinely unreferenced tuples. They are storage/churn
+/// attribution, not by themselves a corruption signal.
 fn diagnose_physical_generation(
     generation: &GenerationCatalogRow,
     descriptor: &DistannGenerationDescriptor,
