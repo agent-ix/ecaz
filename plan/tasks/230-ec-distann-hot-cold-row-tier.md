@@ -6,8 +6,8 @@ descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
 `885b86be0`; packet 002 remains open for receipt/manifest identity and read
-admission, and owes `clippy-seq-07.log` + `format-check-seq-07.log`; persisted-format implementation authorized; entry condition 3
-satisfied**
+admission; seq-07 format/clippy artifact debt closed immediately after verdict;
+persisted-format implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts

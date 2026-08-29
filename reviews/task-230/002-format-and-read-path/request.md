@@ -164,7 +164,11 @@ Packet-local seq-07 output and provenance are recorded in
 `artifacts/manifest.md`:
 
 - the focused PG18 hot/cold handoff and Graph V2 locator test passes;
-- the focused legacy PG18 stage/replay/directory regression test passes.
+- the focused legacy PG18 stage/replay/directory regression test passes;
+- formatting passes, and the all-target PG18 clippy command records only the
+  same five pre-existing repository failures, with none in a seq-07 touched
+  line. These two artifacts were added immediately after the seq-07 verdict to
+  close the reviewer's required evidence debt.
 
 Prior seq-06 evidence remains recorded in the same manifest:
 

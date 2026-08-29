@@ -27,6 +27,24 @@ All seq-07 artifacts below were produced at
 - Cited result: focused callback test `1 passed; 0 failed`; legacy full-row
   staging, exact replay, graph/directory insertion, and atomicity are preserved.
 
+### `format-check-seq-07.log`
+
+- Command: `cargo fmt --all -- --check`
+- Produced after the seq-07 review verdict at `5547fca02`; reviewed code remains
+  `885b86be0`.
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures).
+
+### `clippy-seq-07.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Produced after the seq-07 review verdict at `5547fca02`; reviewed code remains
+  `885b86be0`.
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1069`, and `ec_distann_physical_lifecycle.rs:8289`; no
+  failure is in a seq-07 touched line.
+
 ## Seq-06 relation-creation artifacts
 
 All seq-06 artifacts below were produced at

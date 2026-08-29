@@ -1,0 +1,106 @@
+Script started on 2026-08-28 20:19:54-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+error: this `if` statement can be collapsed
+   --> src/am/ec_distann/ambuild.rs:139:9
+    |
+139 | /         if training.is_none() {
+140 | |             if self.head_construction == super::options::HeadConstruction::PartitionUnion {
+141 | |                 let partitions = self.head_partition_nodes.as_deref().ok_or_else(|| {
+142 | |                     "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned()
+...   |
+152 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+139 ~         if training.is_none()
+140 ~             && self.head_construction == super::options::HeadConstruction::PartitionUnion {
+141 |                 let partitions = self.head_partition_nodes.as_deref().ok_or_else(|| {
+...
+150 |                 );
+151 ~             }
+    |
+
+error: called `expect` on `self.head_sizing` after checking its variant with `is_some`
+   --> src/am/ec_distann/generation_descriptor.rs:872:31
+    |
+868 |         if self.head_sizing.is_some() {
+    |         ----------------------------- help: try: `if let Some(<item>) = self.head_sizing`
+...
+872 |             let attestation = self.head_sizing.expect("checked above");
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_unwrap
+    = note: `-D clippy::unnecessary-unwrap` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unnecessary_unwrap)]`
+
+error: could not compile `ecaz` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: the loop variable `owner_ordinal` is used to index `reference`
+    --> src/am/ec_distann/head_sample.rs:1818:30
+     |
+1818 |         for owner_ordinal in 0..owner_count {
+     |                              ^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_range_loop
+     = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator and enumerate()
+     |
+1818 -         for owner_ordinal in 0..owner_count {
+1818 +         for (owner_ordinal, <item>) in reference.iter().enumerate().take(owner_count) {
+     |
+
+error: items after a test module
+    --> src/am/ec_distann/remote_endpoint.rs:1069:1
+     |
+1069 |   mod packed_payload_sql_tests {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1125 |   fn validate_send_function(name: &str) -> Result<String, String> {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1144 | / fn expand_nodes_impl(
+1145 | |     index_oid: pg_sys::Oid,
+1146 | |     epoch_fingerprint: &[u8],
+1147 | |     query: &[f32],
+...    |
+1150 | |     candidate_limit: Option<i32>,
+1151 | | ) -> Result<Vec<ExpandRow>, DistannExpandError> {
+     | |_______________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#items_after_test_module
+     = note: `-D clippy::items-after-test-module` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::items_after_test_module)]`
+     = help: move the items to before the test module was defined
+
+error: used `assert_eq!` with a literal bool
+    --> src/tests/ec_distann_physical_lifecycle.rs:8289:5
+     |
+8289 | /     assert_eq!(
+8290 | |         Spi::connect(|client| {
+8291 | |             client
+8292 | |                 .select(
+...    |
+8311 | |         "insert must append one matching sidecar before graph publication"
+8312 | |     );
+     | |_____^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#bool_assert_comparison
+     = note: `-D clippy::bool-assert-comparison` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::bool_assert_comparison)]`
+help: replace it with `assert!(..)`
+     |
+8289 ~     assert!(
+8290 |         Spi::connect(|client| {
+ ...
+8308 |                 .unwrap()
+8309 ~         }),
+     |
+
+error: could not compile `ecaz` (lib test) due to 5 previous errors
+
+Script done on 2026-08-28 20:21:05-07:00 [COMMAND_EXIT_CODE="101"]
