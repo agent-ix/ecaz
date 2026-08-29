@@ -1,14 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `95448fa7530f35346c03e76f11e43307a9e49e3c`
+- Head SHA: `c4b96fe89e8cde09ed015ecccbe8cba33dd4c2d9`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: projection-mirrored row-tier I/O attribution fix, seq-07
+- Packet: hot/cold lifecycle and fault-matrix harness, seq-08
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
   row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
   corpus benchmark or rerank measurement
-- Isolation: pure CLI projection validation; the dynamic fresh-fixture
-  measurement remains deferred until this corrected harness is reviewed
+- Isolation: pure CLI/suite harness validation; no dynamic fault fixture has
+  run yet, because this runner extension is reviewed before the packet consumes it
+
+## Seq-08 lifecycle and fault-matrix harness artifacts
+
+All seq-08 artifacts were produced at
+`c4b96fe89e8cde09ed015ecccbe8cba33dd4c2d9` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-08.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `a2edfecda929be428ef204afacc2a781da472a9665ce86474ac281e959706315`
+
+### `cargo-clippy-seq-08.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 through seq-07; no new finding in the seq-08 changes.
+- SHA-256: `f17ef6e87ac4f9cd24f14c036328fec3f9cea5709c1accb65bee85135e3a3e7f`
+
+### `cargo-test-cli-seq-08.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: six passed, zero failed; 546 filtered out. The new suite test covers
+  typed read/write fault flags, packet-local expected artifacts, hot/cold
+  expansion, and the four-node read-matrix minimum.
+- SHA-256: `7f9b46c9ce2c7f0c9668718c4eb51b511d4ec9493963c7c32b8d58ed3b9c94cf`
 
 ## Seq-07 projection-mirror fix artifacts
 

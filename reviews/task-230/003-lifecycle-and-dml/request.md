@@ -5,13 +5,47 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 7
+seq: 8
 ---
 
-# Task 230 packet 003 — projection-mirrored I/O attribution fix
+# Task 230 packet 003 — hot/cold lifecycle and fault-matrix harness
 
-Review code checkpoint `95448fa75` against reviewer seq-06's cold-only
-projection finding.
+Review code checkpoint `c4b96fe89` as the suite/harness prerequisite for the
+three remaining Packet 003 runtime evidence groups.
+
+## Seq-08 lifecycle and fault-matrix harness
+
+- Adds typed `read_rpc_fault_matrix` and `write_lifecycle_fault_matrix` fields
+  to `ecaz bench suite`, including the CLI-equivalent node/debug/mutual-
+  exclusion validation, command expansion, and packet-local expected logs.
+- Extends the Task 235 lifecycle status reader to count `cold_tier_relid`.
+  Hot/cold Ready/Published/Retired partial and final states therefore require
+  four live generation relations, while row-heap remains three.
+- Makes every write-fault snapshot layout-aware: hot identity is read from
+  compact `a_2`, presence of the cold tier is mandatory for this arm, and
+  total hot/cold tuple counts must remain equal before, during, and after 2PC
+  recovery. Result lines emit the totals and `cold_pair_balanced=true`.
+- Adds a retained-predecessor production materialization on every owner after
+  successor publication and predecessor retirement but before reclaim. It
+  requests attnums 1 and 3 together, forcing hot plus cold reconstruction, and
+  asserts one complete row, a three-entry offset array, nonempty payload bytes,
+  `Retired` admission, and the hot/cold catalog shape.
+- Leaves the Task 234 read-RPC matrix itself unchanged; running it on the
+  hot/cold fixture exercises all five production RPCs across cancellation,
+  remote-backend death, owner connection reset/restart, and clean retry.
+
+## Seq-08 validation
+
+- `cargo check -p ecaz-cli`: exit 0; only the pre-existing dead-code warning.
+- `cargo fmt --all -- --check`: exit 0.
+- Six focused ecaz-cli tests pass, including typed fault-matrix expansion.
+- Mandatory all-target PG18 clippy reproduces only the same five pre-existing
+  findings; no finding is in the seq-08 changes.
+
+## Seq-07 accepted scope
+
+Reviewer seq-07 closed the projection-mirror fix as DONE. The accepted scope
+below remains for packet history.
 
 ## Seq-07 projection-mirror fix
 
@@ -221,13 +255,13 @@ below remains for packet history.
 
 ## Packet status
 
-This requests closure of the seq-06 projection finding but is not packet-003
-closure. Still owed are the actual remote retry/intent and fault run,
+This requests approval of the runtime harness but is not packet-003 closure.
+Still owed after approval are the actual remote retry/intent and fault run,
 publication/recovery and retained-generation reads, and restart/owner-failure
 reads carried from packet 002.
 
 ## Review request
 
-Please verify the stated projection-mirror rule, all six helper mappings, and
-especially that cold-only has no hot query and the control projects only
-`payload_note`. Leave feedback under this packet's `feedback/` directory.
+Please verify the suite typing/validation, four-relation lifecycle accounting,
+hot/cold DML parity checks, and retained predecessor materialization. Leave
+feedback under this packet's `feedback/` directory.

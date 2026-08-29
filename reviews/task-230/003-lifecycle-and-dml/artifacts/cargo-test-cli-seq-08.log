@@ -1,0 +1,18 @@
+Script started on 2026-08-29 04:25:51-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 11s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-539c0ee31ae6ca2b)
+
+running 6 tests
+test commands::dev::distann_multicluster::tests::task230_hot_cold_topology_requires_the_complete_pair ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task230_io_counter_delta_covers_heap_toast_and_tidx ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task230_hot_payload_attnums_require_canonical_physical_order ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task230_io_projections_mirror_all_six_end_to_end_shapes ... [32mok(B[m
+test commands::bench::suite::tests::task230_distann_suite_expands_read_and_write_fault_matrices ... [32mok(B[m
+test commands::bench::suite::tests::task230_distann_local_multinode_expands_hot_cold_row_tier ... [32mok(B[m
+
+test result: [32mok(B[m. 6 passed; 0 failed; 0 ignored; 0 measured; 546 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-29 04:27:01-07:00 [COMMAND_EXIT_CODE="0"]

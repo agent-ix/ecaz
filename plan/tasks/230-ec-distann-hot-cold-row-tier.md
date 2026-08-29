@@ -52,6 +52,10 @@ all, drops `embedding` from the control's cold-only so the A/B compares like wit
 like, pins every mapping in a table-driven test, and emits
 `physical_projection_rule=mirrors_end_to_end_projection` in both log lines; no
 packet-004 result has been read and nothing now blocks the matrix;
+hot/cold lifecycle/fault harness checkpoint 8 review-open at `c4b96fe89`,
+adding suite-driven read/write fault switches, four-relation lifecycle
+accounting, hot/cold DML parity, and retained predecessor materialization;
+the three actual runtime evidence groups remain owed;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -524,6 +528,17 @@ because `id` is the only additional hot scalar the fixture schema admits, so §6
 six predictions resolve to five distinct measurements; report the two rows as one
 measurement under two labels rather than letting equal numbers read as
 independent corroboration.
+
+Packet 003 seq-08 hot/cold lifecycle and fault-matrix harness checkpoint: code
+`c4b96fe89`; request at seq-08, review-open. Adds typed suite fields for the
+Task 234 read-RPC and Task 235 write/lifecycle matrices before this packet
+consumes them. Hot/cold lifecycle states now require four live relations; every
+write-fault snapshot requires the compact hot identity, a present cold tier,
+and equal total hot/cold tuple counts. Retained predecessor coverage now
+materializes projection attnums 1 and 3 on every owner after retirement and
+before reclaim, forcing mixed hot/cold reconstruction from a `Retired`
+generation. Format and six focused CLI tests pass; mandatory clippy contains
+only the same five pre-existing findings. No runtime matrix has run yet.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
