@@ -11546,6 +11546,8 @@ struct Task235WriteSnapshot {
     owner_graph_rows: i64,
     owner_current_rows: i64,
     owner_row_rows: i64,
+    owner_row_total: i64,
+    owner_cold_rows: Option<i64>,
     directory_valid: bool,
     prepared_xacts: i64,
     nonterminal_intents: i64,
@@ -12050,6 +12052,7 @@ async fn task235_prepared_slot_saturation_cell(
         &before,
         false,
         false,
+        args.hot_cold_row_tier,
         Some(false),
         Some(true),
     )?;
@@ -12060,6 +12063,7 @@ async fn task235_prepared_slot_saturation_cell(
         &candidate,
         false,
         false,
+        args.hot_cold_row_tier,
         secure_transport_fixture,
     )
     .await?;
@@ -12068,6 +12072,7 @@ async fn task235_prepared_slot_saturation_cell(
         &after,
         false,
         false,
+        args.hot_cold_row_tier,
         Some(false),
         Some(false),
     )?;
@@ -12315,6 +12320,7 @@ async fn task235_write_snapshot(
         .query_one(
             "SELECT graph_store_relid::regclass::text,
                     row_tier_relid::regclass::text,
+                    cold_tier_relid::regclass::text,
                     directory_relid::regclass::text,
                     i.indisvalid AND i.indisready
                FROM ec_distann_generation g
@@ -12326,10 +12332,14 @@ async fn task235_write_snapshot(
         .await?;
     let graph_relation: String = relations.get(0);
     let row_relation: String = relations.get(1);
-    let directory_relation: String = relations.get(2);
-    let directory_valid: bool = relations.get(3);
+    let cold_relation = relations.try_get::<_, Option<String>>(2)?;
+    let directory_relation: String = relations.get(3);
+    let directory_valid: bool = relations.get(4);
     if !task235_safe_relation_name(&graph_relation)
         || !task235_safe_relation_name(&row_relation)
+        || cold_relation
+            .as_deref()
+            .is_some_and(|relation| !task235_safe_relation_name(relation))
         || !task235_safe_relation_name(&directory_relation)
     {
         owner_task.abort();
@@ -12350,12 +12360,33 @@ async fn task235_write_snapshot(
     let owner_row_rows = owner
         .query_one(
             &format!(
-                "SELECT count(*)::bigint FROM {row_relation} WHERE source_id = $1::text::uuid"
+                "SELECT count(*)::bigint FROM {row_relation} WHERE {} = $1::text::uuid",
+                if cold_relation.is_some() {
+                    "a_2"
+                } else {
+                    "source_id"
+                }
             ),
             &[&candidate.source_id],
         )
         .await?
         .get(0);
+    let owner_row_total = owner
+        .query_one(&format!("SELECT count(*)::bigint FROM {row_relation}"), &[])
+        .await?
+        .get(0);
+    let owner_cold_rows = match cold_relation {
+        Some(cold_relation) => Some(
+            owner
+                .query_one(
+                    &format!("SELECT count(*)::bigint FROM {cold_relation}"),
+                    &[],
+                )
+                .await?
+                .get(0),
+        ),
+        None => None,
+    };
     owner_task.abort();
 
     let mut prepared_xacts = 0_i64;
@@ -12418,6 +12449,8 @@ async fn task235_write_snapshot(
         owner_graph_rows,
         owner_current_rows,
         owner_row_rows,
+        owner_row_total,
+        owner_cold_rows,
         directory_valid,
         prepared_xacts,
         nonterminal_intents,
@@ -12492,6 +12525,7 @@ async fn task235_recover_until_terminal(
     candidate: &Task235WriteCandidate,
     source_applied: bool,
     owner_applied: bool,
+    expect_hot_cold: bool,
     secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<(Task235WriteSnapshot, Vec<String>, usize)> {
     let started = Instant::now();
@@ -12506,7 +12540,15 @@ async fn task235_recover_until_terminal(
         // xid may correctly remain fenced as in-progress. Every retry must
         // nevertheless preserve the logical source/owner state, and recovery
         // must converge once PostgreSQL exposes a terminal xid decision.
-        task235_assert_snapshot(cell, &snapshot, source_applied, owner_applied, None, None)?;
+        task235_assert_snapshot(
+            cell,
+            &snapshot,
+            source_applied,
+            owner_applied,
+            expect_hot_cold,
+            None,
+            None,
+        )?;
         if snapshot.prepared_xacts == 0 && snapshot.nonterminal_intents == 0 {
             return Ok((snapshot, reports, attempts));
         }
@@ -12526,6 +12568,7 @@ fn task235_assert_snapshot(
     snapshot: &Task235WriteSnapshot,
     source_applied: bool,
     owner_applied: bool,
+    expect_hot_cold: bool,
     prepared: Option<bool>,
     nonterminal: Option<bool>,
 ) -> Result<()> {
@@ -12542,6 +12585,10 @@ fn task235_assert_snapshot(
         || snapshot.owner_graph_rows != expected_owner
         || snapshot.owner_current_rows != expected_owner
         || snapshot.owner_row_rows != expected_owner
+        || snapshot.owner_cold_rows.is_some() != expect_hot_cold
+        || snapshot
+            .owner_cold_rows
+            .is_some_and(|cold_rows| cold_rows != snapshot.owner_row_total)
         || !snapshot.directory_valid
         || !prepared_ok
         || !nonterminal_ok
@@ -12575,7 +12622,8 @@ async fn task235_generation_statuses(
         let row = client
             .query_one(
                 "WITH live AS (
-                     SELECT state, row_tier_relid, graph_store_relid, directory_relid
+                     SELECT state, row_tier_relid, cold_tier_relid,
+                            graph_store_relid, directory_relid
                        FROM ec_distann_generation
                       WHERE index_oid = 'dm_idx'::regclass::oid
                         AND build_id = $1::text::uuid
@@ -12594,6 +12642,7 @@ async fn task235_generation_statuses(
                             SELECT count(*)::bigint FROM pg_class c, live
                              WHERE c.oid IN (
                                  live.row_tier_relid,
+                                 live.cold_tier_relid,
                                  live.graph_store_relid,
                                  live.directory_relid)
                         ), 0)",
@@ -12936,12 +12985,91 @@ async fn task235_operator_status_stop_cell(
     )])
 }
 
+async fn task230_assert_retained_generation_reads(
+    socket_dir: &Path,
+    nodes: &[Node],
+    fingerprint: &[u8],
+    schema_fingerprint: &[u8],
+    hot_cold: bool,
+) -> Result<Vec<String>> {
+    let mut lines = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let generation = client
+            .query_one(
+                "SELECT state, graph_store_relid::regclass::text,
+                        cold_tier_relid IS NOT NULL
+                   FROM ec_distann_generation
+                  WHERE index_oid = 'dm_idx'::regclass::oid
+                    AND epoch_fingerprint = $1::bytea",
+                &[&fingerprint],
+            )
+            .await?;
+        let state = generation.get::<_, String>(0);
+        let graph_relation = generation.get::<_, String>(1);
+        let has_cold = generation.get::<_, bool>(2);
+        if state != "Retired"
+            || has_cold != hot_cold
+            || !task235_safe_relation_name(&graph_relation)
+        {
+            connection_task.abort();
+            bail!(
+                "Task 230 retained generation shape mismatch on node {}: state={state} has_cold={has_cold} graph={graph_relation:?}",
+                node.node_id
+            );
+        }
+        let vec_id = client
+            .query_one(
+                &format!(
+                    "SELECT vec_id FROM {graph_relation} WHERE is_current ORDER BY vec_id LIMIT 1"
+                ),
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
+        let materialized = client
+            .query_one(
+                "SELECT count(*)::bigint,
+                        bool_and(NOT tuple_payload_missing),
+                        bool_and(array_length(payload_offsets, 1) = 3),
+                        coalesce(sum(octet_length(payload_values)), 0)::bigint
+                   FROM ec_distann_materialize_physical_row_payloads(
+                        'dm_idx'::regclass, $1::bytea, ARRAY[$2::bigint],
+                        ARRAY[1,3]::smallint[], $3::bytea, false)",
+                &[&fingerprint, &vec_id, &schema_fingerprint],
+            )
+            .await?;
+        let rows = materialized.get::<_, i64>(0);
+        let complete = materialized.get::<_, Option<bool>>(1).unwrap_or(false);
+        let offsets_valid = materialized.get::<_, Option<bool>>(2).unwrap_or(false);
+        let payload_bytes = materialized.get::<_, i64>(3);
+        if rows != 1 || !complete || !offsets_valid || payload_bytes <= 0 {
+            connection_task.abort();
+            bail!(
+                "Task 230 retained generation read failed on node {}: rows={rows} complete={complete} offsets_valid={offsets_valid} payload_bytes={payload_bytes}",
+                node.node_id
+            );
+        }
+        lines.push(format!(
+            "task230_retained_generation_read node={} pass=true state=Retired hot_cold={} projection_attnums=1,3 rows={rows} tuple_payload_missing=false offsets_valid=true payload_bytes={payload_bytes}",
+            node.node_id, hot_cold,
+        ));
+        connection_task.abort();
+    }
+    Ok(lines)
+}
+
 async fn task235_run_lifecycle_fault_matrix(
+    args: &LocalMultinodePg18Args,
     socket_dir: &Path,
     nodes: &[Node],
 ) -> Result<Vec<String>> {
     let (client, connection_task) = task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
     let mut lines = Vec::new();
+    let live_relation_count = if args.hot_cold_row_tier { 4 } else { 3 };
 
     let build_cells = [
         (
@@ -13002,7 +13130,7 @@ async fn task235_run_lifecycle_fault_matrix(
         task235_build_epoch(&client, replacement_epoch, &replacement_build).await?;
         let replacement_ready =
             task235_generation_statuses(socket_dir, nodes, &replacement_build).await?;
-        task235_assert_generation_statuses(cell, &replacement_ready, "Ready", 3)?;
+        task235_assert_generation_statuses(cell, &replacement_ready, "Ready", live_relation_count)?;
         task235_abort_build(&client, &replacement_build).await?;
         task235_abort_build(&client, &replacement_build).await?;
         let replacement_final =
@@ -13070,7 +13198,12 @@ async fn task235_run_lifecycle_fault_matrix(
     task235_recover_publish(&client, publish_build).await?;
     task235_recover_publish(&client, publish_build).await?;
     let publish_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
-    task235_assert_generation_statuses("epoch_publish", &publish_final, "Published", 3)?;
+    task235_assert_generation_statuses(
+        "epoch_publish",
+        &publish_final,
+        "Published",
+        live_relation_count,
+    )?;
     let publish_final_state = task235_publish_state(&client, publish_build).await?;
     if publish_final_state != ("Applied".to_owned(), "Published".to_owned(), true) {
         bail!("Task 235 epoch_publish did not converge: {publish_final_state:?}");
@@ -13112,7 +13245,12 @@ async fn task235_run_lifecycle_fault_matrix(
     task235_recover_publish(&client, retirement_build).await?;
     task235_recover_publish(&client, retirement_build).await?;
     let predecessor_final = task235_generation_statuses(socket_dir, nodes, publish_build).await?;
-    task235_assert_generation_statuses("predecessor_retirement", &predecessor_final, "Retired", 3)?;
+    task235_assert_generation_statuses(
+        "predecessor_retirement",
+        &predecessor_final,
+        "Retired",
+        live_relation_count,
+    )?;
     if task235_publish_state(&client, retirement_build).await?.0 != "Applied" {
         bail!("Task 235 predecessor retirement decision did not become Applied");
     }
@@ -13130,6 +13268,24 @@ async fn task235_run_lifecycle_fault_matrix(
         )
         .await?
         .get::<_, Vec<u8>>(0);
+    let predecessor_schema_fingerprint = client
+        .query_one(
+            "SELECT row_schema_fingerprint FROM ec_distann_build_registration
+              WHERE build_id = $1::text::uuid",
+            &[&publish_build],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    lines.extend(
+        task230_assert_retained_generation_reads(
+            socket_dir,
+            nodes,
+            &predecessor_fingerprint,
+            &predecessor_schema_fingerprint,
+            args.hot_cold_row_tier,
+        )
+        .await?,
+    );
     client
         .execute(
             "SELECT ec_distann_retire_epoch('dm_idx'::regclass, $1::bytea)",
@@ -13147,9 +13303,9 @@ async fn task235_run_lifecycle_fault_matrix(
     if !retire_partial
         .iter()
         .any(|status| status.state == "Reclaimed" && status.relations_present == 0)
-        || !retire_partial
-            .iter()
-            .any(|status| status.state == "Retired" && status.relations_present == 3)
+        || !retire_partial.iter().any(|status| {
+            status.state == "Retired" && status.relations_present == live_relation_count
+        })
     {
         bail!(
             "Task 235 epoch_retire_apply partial state mismatch: {}",
@@ -13208,9 +13364,9 @@ async fn task235_run_lifecycle_fault_matrix(
     if !cancelled_partial
         .iter()
         .any(|status| status.state == "CancelledReclaimed" && status.relations_present == 0)
-        || !cancelled_partial
-            .iter()
-            .any(|status| status.state == "Ready" && status.relations_present == 3)
+        || !cancelled_partial.iter().any(|status| {
+            status.state == "Ready" && status.relations_present == live_relation_count
+        })
     {
         bail!(
             "Task 235 cancelled_generation_reclaim partial state mismatch: {}",
@@ -13269,7 +13425,7 @@ async fn run_task235_write_fault_matrix(
     secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
 ) -> Result<Vec<String>> {
     let target_owner = 1_usize;
-    let mut lines = task235_run_lifecycle_fault_matrix(socket_dir, nodes).await?;
+    let mut lines = task235_run_lifecycle_fault_matrix(args, socket_dir, nodes).await?;
     lines.extend(
         task235_operator_status_stop_cell(socket_dir, nodes, secure_transport_fixture).await?,
     );
@@ -13427,6 +13583,7 @@ async fn run_task235_write_fault_matrix(
             &before,
             final_commit,
             final_commit && !expect_prepared,
+            args.hot_cold_row_tier,
             prepared_expectation,
             Some(expect_nonterminal),
         )?;
@@ -13437,6 +13594,7 @@ async fn run_task235_write_fault_matrix(
             &candidate,
             final_commit,
             final_commit,
+            args.hot_cold_row_tier,
             secure_transport_fixture,
         )
         .await?;
@@ -13455,6 +13613,7 @@ async fn run_task235_write_fault_matrix(
             &after,
             final_commit,
             final_commit,
+            args.hot_cold_row_tier,
             Some(false),
             Some(false),
         )?;
@@ -13463,10 +13622,15 @@ async fn run_task235_write_fault_matrix(
             bail!("Task 235 {cell} duplicate recovery was not idempotent: {duplicate:?}");
         }
         lines.push(format!(
-            "task235_write_fault cell={cell} fault={} pass=true source={} owner={} before_prepared={} before_nonterminal={} recovery_attempts={} recovery_reports={} duplicate_actions=0 vec_id={} owner_ordinal={}",
+            "task235_write_fault cell={cell} fault={} pass=true source={} owner={} hot_cold={} owner_row_total={} owner_cold_rows={} cold_pair_balanced=true before_prepared={} before_nonterminal={} recovery_attempts={} recovery_reports={} duplicate_actions=0 vec_id={} owner_ordinal={}",
             fault.unwrap_or("none"),
             after.source_rows,
             after.owner_current_rows,
+            args.hot_cold_row_tier,
+            after.owner_row_total,
+            after
+                .owner_cold_rows
+                .map_or_else(|| "none".to_owned(), |rows| rows.to_string()),
             before.prepared_xacts,
             before.nonterminal_intents,
             recovery_attempts,

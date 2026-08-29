@@ -689,6 +689,12 @@ struct DistannLocalMultinodeStep {
     /// rotation matrix.
     #[serde(default)]
     tls_security_matrix: bool,
+    /// Task 234 production read-RPC cancellation/restart fault matrix.
+    #[serde(default)]
+    read_rpc_fault_matrix: bool,
+    /// Task 235 remote write/2PC and generation-lifecycle fault matrix.
+    #[serde(default)]
+    write_lifecycle_fault_matrix: bool,
     #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
@@ -4544,6 +4550,49 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.read_rpc_fault_matrix
+                    && (step.nodes.unwrap_or(3) < 4
+                        || step.coordinator_outside_roster
+                        || !step.allow_debug_extension)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} read_rpc_fault_matrix requires at least four owner nodes, an in-roster coordinator, and allow_debug_extension",
+                        step.name
+                    )
+                }
+                if step.write_lifecycle_fault_matrix
+                    && (step.nodes.unwrap_or(3) < 3
+                        || step.coordinator_outside_roster
+                        || !step.allow_debug_extension)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} write_lifecycle_fault_matrix requires at least three owner nodes, an in-roster coordinator, and allow_debug_extension",
+                        step.name
+                    )
+                }
+                if (step.read_rpc_fault_matrix || step.write_lifecycle_fault_matrix)
+                    && (step.physical_benchmark || step.reuse_fixture)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} cannot combine a read/write fault matrix with physical_benchmark or reuse_fixture",
+                        step.name
+                    )
+                }
+                if [
+                    step.tls_security_matrix,
+                    step.read_rpc_fault_matrix,
+                    step.write_lifecycle_fault_matrix,
+                ]
+                .into_iter()
+                .filter(|enabled| *enabled)
+                .count()
+                    > 1
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} diagnostic security/read/write matrices are mutually exclusive",
+                        step.name
+                    )
+                }
                 if step.build_shards.is_some_and(|value| value > 4096) {
                     bail!(
                         "distann-local-multinode step {:?} must set build_shards in 0..=4096",
@@ -5654,6 +5703,17 @@ impl SuiteStep {
                     }
                     return artifacts;
                 }
+                if step.read_rpc_fault_matrix || step.write_lifecycle_fault_matrix {
+                    let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
+                    if let Some(dir) = &step.artifact_dir {
+                        artifacts.push(dir.join(if step.read_rpc_fault_matrix {
+                            "task234-read-rpc-fault-matrix.log"
+                        } else {
+                            "task235-write-lifecycle-fault-matrix.log"
+                        }));
+                    }
+                    return artifacts;
+                }
                 if step.compact_artifacts {
                     return step
                         .artifact_dir
@@ -6451,6 +6511,12 @@ fn expand_distann_local_multinode(
     }
     if step.tls_security_matrix {
         args.push("--tls-security-matrix".into());
+    }
+    if step.read_rpc_fault_matrix {
+        args.push("--read-rpc-fault-matrix".into());
+    }
+    if step.write_lifecycle_fault_matrix {
+        args.push("--write-lifecycle-fault-matrix".into());
     }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
@@ -8412,6 +8478,67 @@ psql header noise\n\
             .expect_err("hot payload without layout must fail")
             .to_string()
             .contains("hot_payload_attnums requires hot_cold_row_tier"));
+    }
+
+    #[test]
+    fn task230_distann_suite_expands_read_and_write_fault_matrices() {
+        let raw = r#"{
+          "name": "task230-hot-cold-faults",
+          "schema_version": 1,
+          "steps": [
+            {
+              "kind": "distann-local-multinode",
+              "name": "read-faults",
+              "artifact_dir": "reviews/task-230/read",
+              "nodes": 4,
+              "allow_debug_extension": true,
+              "hot_cold_row_tier": true,
+              "hot_payload_attnums": "1",
+              "read_rpc_fault_matrix": true
+            },
+            {
+              "kind": "distann-local-multinode",
+              "name": "write-faults",
+              "artifact_dir": "reviews/task-230/write",
+              "nodes": 3,
+              "allow_debug_extension": true,
+              "hot_cold_row_tier": true,
+              "hot_payload_attnums": "1",
+              "write_lifecycle_fault_matrix": true
+            }
+          ]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("fault suite parses");
+        validate_config(&config).expect("fault suite validates");
+        let read = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("read matrix expands");
+        assert!(read.contains(&"--read-rpc-fault-matrix".into()));
+        assert!(read.contains(&"--hot-cold-row-tier".into()));
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from(
+                "reviews/task-230/read/task234-read-rpc-fault-matrix.log"
+            )]
+        );
+        let write = config.steps[1]
+            .expand(&config.defaults, &conn())
+            .expect("write matrix expands");
+        assert!(write.contains(&"--write-lifecycle-fault-matrix".into()));
+        assert!(write.contains(&"--hot-cold-row-tier".into()));
+        assert_eq!(
+            config.steps[1].expected_artifacts(),
+            vec![PathBuf::from(
+                "reviews/task-230/write/task235-write-lifecycle-fault-matrix.log"
+            )]
+        );
+
+        let invalid = raw.replace("\"nodes\": 4", "\"nodes\": 3");
+        let config: SuiteConfig = serde_json::from_str(&invalid).expect("invalid suite parses");
+        assert!(validate_config(&config)
+            .expect_err("read matrix with three nodes must fail")
+            .to_string()
+            .contains("read_rpc_fault_matrix requires at least four owner nodes"));
     }
 
     #[test]
