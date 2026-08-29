@@ -257,6 +257,9 @@ pub(crate) enum DistannMaterializationWork {
 }
 
 impl DistannMaterializationWork {
+    // Keep DISTANN_WORK_ROWS in
+    // crates/ecaz-cli/src/commands/dev/distann_multicluster.rs synchronized:
+    // the CLI contract is this server count plus client_result_rows.
     pub(crate) const ALL: [Self; 61] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
