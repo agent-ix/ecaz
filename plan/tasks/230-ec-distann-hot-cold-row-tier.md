@@ -23,10 +23,14 @@ checkpoint 3 review-closed DONE (seq-03) at `7ff55c0a3` (verdict
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-03-reviewer.md`),
 documenting raw orphan semantics and covering hot/cold DROP, REINDEX, and
 aborted-REINDEX rollback;
-multinode/suite harness checkpoint 4 implementation complete / review-open at
-`41a016060`, adding the explicit hot/cold fixture selection, complete cold-tier
+multinode/suite harness checkpoint 4 review-closed DONE (seq-04) at
+`41a016060` (verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-04-reviewer.md`),
+adding the explicit hot/cold fixture selection, complete cold-tier
 topology/storage accounting, reuse attestation, and the post-DML diagnostic
-signal clarification;
+signal clarification — **but `pg_statio_all_tables` TOAST/tidx delta capture is
+still missing and MUST land before the packet-004 matrix runs, not merely before
+packet 004 closes**;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -375,6 +379,33 @@ packet-001 §5 fixes receipt digests as immutable initial content, so on a
 generation that has taken post-Ready DML neither the orphan columns nor digest
 equality is by itself a corruption signal. State which signal an operator should
 trust before packet 004 reads these columns per DML arm.
+
+Packet 003 seq-04 multinode and suite harness checkpoint: code `41a016060`;
+request at seq-04; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-04-reviewer.md`
+— **DONE** for the claimed scope. Follows CLAUDE.md's benchmark rule exactly:
+the suite runner is extended in `ecaz-cli` as its own commit *before* the packet
+consumes it, with typed `hot_cold_row_tier` / `hot_payload_attnums` step options,
+mutual exclusion against `covering_payload_attnums`, and a negative test — no
+packet-local sweeper and no raw-argument escape hatch. The highest-value guard is
+the fixture-reuse attestation, which makes it impossible to silently reuse a
+row-heap control as the candidate; Task 229 lost three of its four gates to
+exactly that class of arm contamination. Cold heap bytes now flow into per-owner
+and aggregate storage, and the topology reader rejects incomplete cold-column
+triples. The reviewer's seq-03 fault-signal carry-in is closed by naming graph
+current/tombstone state plus vec-id/schema-checked locator reconstruction as
+authoritative after post-Ready DML, with receipt digests and raw orphan counts
+demoted to historical attribution. Also confirmed:
+`validate_distann_suite_run_dir` already enforces that a step's `run_dir` is a
+strict child of `ECAZ_CLUSTER_ROOT`, codifying the disk-fill rule for the many
+arms packet 004 will run. **Time-critical gap:** the only
+`pg_statio_all_tables` use in the CLI is
+`distann_multicluster.rs:9632-9646`, reading `heap_blks_read`/`hit` only as a
+cache-residency proxy — there is no `toast_blks_read`/`hit` or
+`tidx_blks_read`/`hit` and no per-arm, per-query-shape pre/post delta capture.
+Those are the columns that attribute the mechanism (control doing TOAST fetches,
+candidate not). Land them as their own `ecaz-cli` commit before the matrix runs;
+a matrix run without them has to be run again.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
