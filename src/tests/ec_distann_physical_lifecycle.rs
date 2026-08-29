@@ -847,9 +847,7 @@ fn distann_payload_sidecar_relation_oids(
     })
 }
 
-fn distann_cold_tier_relation_oid(
-    fixture: &DistannPhysicalGenerationFixture,
-) -> pg_sys::Oid {
+fn distann_cold_tier_relation_oid(fixture: &DistannPhysicalGenerationFixture) -> pg_sys::Oid {
     let catalog = distann_generation_catalog_name();
     Spi::get_one_with_args::<pg_sys::Oid>(
         &format!(
@@ -3647,10 +3645,7 @@ fn test_distann_hot_cold_projection_contract() {
     run_distann_three_owner_physical_handoff(true, true);
 }
 
-fn run_distann_three_owner_physical_handoff(
-    projection_contract_only: bool,
-    hot_cold_layout: bool,
-) {
+fn run_distann_three_owner_physical_handoff(projection_contract_only: bool, hot_cold_layout: bool) {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
         .expect("physical handoff loopback connection should open");
@@ -4306,8 +4301,7 @@ fn run_distann_three_owner_physical_handoff(
             && cached_plan.contains("Ordering Projection: elided"),
         "the forced generic plan must preserve the exact payload contract: {cached_plan}"
     );
-    let cached_query =
-        "EXECUTE task222_cached_projection (ARRAY[30.0, 2.0, 0.0, 1.0]::real[])";
+    let cached_query = "EXECUTE task222_cached_projection (ARRAY[30.0, 2.0, 0.0, 1.0]::real[])";
     let first_cached_ids = client
         .query(cached_query, &[])
         .expect("first generic cached execution should succeed")
@@ -6117,7 +6111,10 @@ fn test_distann_hot_cold_relation_ddl_and_abort() {
     ))
     .unwrap()
     .unwrap();
-    assert!(catalog_shape, "hot/cold and Task 229 shapes must be exclusive");
+    assert!(
+        catalog_shape,
+        "hot/cold and Task 229 shapes must be exclusive"
+    );
 
     let relation_shape = Spi::get_one::<bool>(&format!(
         "SELECT
@@ -6148,7 +6145,10 @@ fn test_distann_hot_cold_relation_ddl_and_abort() {
     ))
     .unwrap()
     .unwrap();
-    assert!(relation_shape, "hot/cold relation DDL must match the layout");
+    assert!(
+        relation_shape,
+        "hot/cold relation DDL must match the layout"
+    );
 
     let dependency_count = Spi::get_one::<i64>(&format!(
         "SELECT count(*) FROM pg_depend
@@ -6270,7 +6270,9 @@ fn test_distann_hot_cold_handoff_v2_locator() {
         &graph_record,
         descriptor.graph_record_version,
         descriptor.graph_degree,
-        binding.code_len(usize::from(descriptor.dimensions)).unwrap(),
+        binding
+            .code_len(usize::from(descriptor.dimensions))
+            .unwrap(),
     )
     .unwrap();
     let (cold_block, cold_offset) = pgrx::itemptr::item_pointer_get_both(cold_tid);
@@ -6310,15 +6312,12 @@ fn test_distann_hot_cold_handoff_v2_locator() {
 
 #[pg_test]
 fn test_distann_hot_cold_typed_materialization_and_visibility() {
-    let fixture = create_hot_cold_distann_participant_lifecycle_fixture(
-        "ec_distann_hot_cold_read",
-        0x7d,
-    );
+    let fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_read", 0x7d);
     publish_distann_participant(&fixture);
-    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
-        &fixture.generation.descriptor,
-    )
-    .expect("hot/cold read descriptor should decode");
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .expect("hot/cold read descriptor should decode");
     let schema_fingerprint = descriptor
         .row_schema
         .fingerprint()
@@ -6328,11 +6327,9 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
     let hot_name = canonical_index_locator(hot_oid);
     let cold_name = canonical_index_locator(cold_oid);
     let graph_name = canonical_index_locator(graph_oid);
-    let vec_id = Spi::get_one::<i64>(&format!(
-        "SELECT vec_id FROM {graph_name} WHERE is_current"
-    ))
-    .unwrap()
-    .expect("hot/cold read fixture should have one current graph row");
+    let vec_id = Spi::get_one::<i64>(&format!("SELECT vec_id FROM {graph_name} WHERE is_current"))
+        .unwrap()
+        .expect("hot/cold read fixture should have one current graph row");
     let materialize_sql = |attnums: &[i16]| {
         let attnums = attnums
             .iter()
@@ -6361,18 +6358,9 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
                             .value::<bool>()
                             .unwrap()
                             .unwrap(),
-                        row["payload_nulls"]
-                            .value::<Vec<bool>>()
-                            .unwrap()
-                            .unwrap(),
-                        row["payload_offsets"]
-                            .value::<Vec<i64>>()
-                            .unwrap()
-                            .unwrap(),
-                        row["payload_values"]
-                            .value::<Vec<u8>>()
-                            .unwrap()
-                            .unwrap(),
+                        row["payload_nulls"].value::<Vec<bool>>().unwrap().unwrap(),
+                        row["payload_offsets"].value::<Vec<i64>>().unwrap().unwrap(),
+                        row["payload_values"].value::<Vec<u8>>().unwrap().unwrap(),
                     )
                 })
                 .next()
@@ -6442,12 +6430,18 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
                 .value
         };
         assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 1);
-        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 0);
+        assert_eq!(
+            counter(DistannMaterializationWork::ColdTierRelationOpens),
+            0
+        );
         assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 0);
         assert_eq!(counter(DistannMaterializationWork::ExactVectorReads), 1);
     }
 
-    assert_eq!(materialize(&[]), (false, Vec::new(), Vec::new(), Vec::new()));
+    assert_eq!(
+        materialize(&[]),
+        (false, Vec::new(), Vec::new(), Vec::new())
+    );
     assert_payload(&[1], &[0]);
     assert_payload(&[4], &[2]);
     assert_payload(&[2], &[1]);
@@ -6467,7 +6461,10 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
         };
         crate::am::ec_distann::stage_counters::reset_stage_scoring();
         assert_payload(&[2], &[1]);
-        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 1);
+        assert_eq!(
+            counter(DistannMaterializationWork::ColdTierRelationOpens),
+            1
+        );
         assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 1);
         assert_eq!(counter(DistannMaterializationWork::HotTierRelationOpens), 0);
         assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 0);
@@ -6476,7 +6473,10 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
         assert_payload(&[4], &[2]);
         assert_eq!(counter(DistannMaterializationWork::HotTierRelationOpens), 1);
         assert_eq!(counter(DistannMaterializationWork::HotTierTupleReads), 1);
-        assert_eq!(counter(DistannMaterializationWork::ColdTierRelationOpens), 0);
+        assert_eq!(
+            counter(DistannMaterializationWork::ColdTierRelationOpens),
+            0
+        );
         assert_eq!(counter(DistannMaterializationWork::ColdTierTupleReads), 0);
         assert_eq!(counter(DistannMaterializationWork::ExactVectorReads), 1);
         assert!(counter(DistannMaterializationWork::ExactVectorBytes) > 0);
@@ -6566,18 +6566,9 @@ fn test_distann_hot_cold_typed_materialization_and_visibility() {
                             .value::<bool>()
                             .unwrap()
                             .unwrap(),
-                        row["payload_nulls"]
-                            .value::<Vec<bool>>()
-                            .unwrap()
-                            .unwrap(),
-                        row["payload_offsets"]
-                            .value::<Vec<i64>>()
-                            .unwrap()
-                            .unwrap(),
-                        row["payload_values"]
-                            .value::<Vec<u8>>()
-                            .unwrap()
-                            .unwrap(),
+                        row["payload_nulls"].value::<Vec<bool>>().unwrap().unwrap(),
+                        row["payload_offsets"].value::<Vec<i64>>().unwrap().unwrap(),
+                        row["payload_values"].value::<Vec<u8>>().unwrap().unwrap(),
                     )
                 })
                 .next()
@@ -6679,7 +6670,10 @@ fn test_distann_cover_sidecar_lifecycle() {
     ))
     .unwrap()
     .unwrap();
-    assert!(stored_shape, "handoff did not persist one canonical sidecar row");
+    assert!(
+        stored_shape,
+        "handoff did not persist one canonical sidecar row"
+    );
 
     let encoded_receipt = seal_distann_physical_generation(&fixture, 1, &owner_digest);
     assert_eq!(
@@ -8402,11 +8396,77 @@ fn test_distann_participant_retire_reclaim_and_rollback() {
 }
 
 #[pg_test]
-fn test_distann_cover_sidecar_retire_reclaim_rollback() {
-    let fixture = create_covered_distann_participant_lifecycle_fixture(
-        "ec_distann_cover_participant",
-        0x6a,
+fn test_distann_hot_cold_retire_reclaim_rollback() {
+    let fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_retire", 0x69);
+    let generation_relations = [
+        fixture.relations.0,
+        fixture.relations.1,
+        fixture.relations.2,
+        distann_cold_tier_relation_oid(&fixture.generation),
+    ];
+
+    assert_eq!(publish_distann_participant(&fixture), fixture.fingerprint);
+    mark_distann_participant_retired(&fixture);
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "retirement must retain both row tiers until reclaim"
+        );
+    }
+
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &fixture.retire_decision_bytes,
+            &fixture.retire_decision_digest,
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: hot/cold reclaim transaction rollback");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "rollback must restore both row tiers"
+        );
+    }
+
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
     );
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    for relation in generation_relations {
+        assert_eq!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "reclaim must drop both row tiers and graph relations"
+        );
+    }
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 '{}'::regclass, '{}'::uuid
+             )",
+            fixture.generation.index_name, fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Reclaimed")
+    );
+}
+
+#[pg_test]
+fn test_distann_cover_sidecar_retire_reclaim_rollback() {
+    let fixture =
+        create_covered_distann_participant_lifecycle_fixture("ec_distann_cover_participant", 0x6a);
     let sidecar_relations = fixture
         .payload_sidecar_relations
         .expect("covered participant must own its sidecar pair");
@@ -8504,7 +8564,7 @@ fn test_distann_cover_sidecar_retire_reclaim_rollback() {
     );
 }
 
-fn distann_covered_owner_payload(
+fn distann_owner_payload(
     identity: [u8; 16],
     payload: &str,
     source_vector: &[f32],
@@ -8527,14 +8587,8 @@ fn distann_covered_owner_payload(
             .map(|row| {
                 (
                     row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
-                    row["embedding_bytes"]
-                        .value::<Vec<u8>>()
-                        .unwrap()
-                        .unwrap(),
-                    row["generated_bytes"]
-                        .value::<Vec<u8>>()
-                        .unwrap()
-                        .unwrap(),
+                    row["embedding_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["generated_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
                 )
             })
             .next()
@@ -8549,7 +8603,7 @@ fn distann_covered_owner_payload(
     (vec![false; 4], offsets, packed)
 }
 
-fn apply_distann_covered_owner_insert(
+fn apply_distann_owner_insert(
     fixture: &DistannParticipantLifecycleFixture,
     identity: [u8; 16],
     payload: &str,
@@ -8557,8 +8611,7 @@ fn apply_distann_covered_owner_insert(
     allow_replacement: bool,
 ) {
     let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
-    let (nulls, offsets, packed) =
-        distann_covered_owner_payload(identity, payload, &source_vector);
+    let (nulls, offsets, packed) = distann_owner_payload(identity, payload, &source_vector);
     let mut planned_forward = b"EPI1".to_vec();
     planned_forward.extend_from_slice(&0_u32.to_le_bytes());
     planned_forward.extend_from_slice(&4_u32.to_le_bytes());
@@ -8598,15 +8651,12 @@ fn test_distann_cover_sidecar_owner_materialization_fail_closed() {
     let row_name = canonical_index_locator(row_oid);
     let graph_name = canonical_index_locator(graph_oid);
     let sidecar_name = canonical_index_locator(sidecar_oid);
-    let vec_id = Spi::get_one::<i64>(&format!(
-        "SELECT vec_id FROM {graph_name} WHERE is_current"
-    ))
-    .unwrap()
-    .expect("covered read fixture should have one current graph row");
-    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
-        &fixture.generation.descriptor,
-    )
-    .expect("covered read descriptor should decode");
+    let vec_id = Spi::get_one::<i64>(&format!("SELECT vec_id FROM {graph_name} WHERE is_current"))
+        .unwrap()
+        .expect("covered read fixture should have one current graph row");
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .expect("covered read descriptor should decode");
     let schema_fingerprint = descriptor
         .row_schema
         .fingerprint()
@@ -8747,10 +8797,8 @@ fn test_distann_cover_sidecar_dml_atomicity() {
         .expect("covered DML fixture should install its immutable roster");
     Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
         .expect("covered DML fixture should identify its sole immutable owner");
-    let fixture = create_covered_distann_participant_lifecycle_fixture(
-        "ec_distann_cover_dml",
-        0x7a,
-    );
+    let fixture =
+        create_covered_distann_participant_lifecycle_fixture("ec_distann_cover_dml", 0x7a);
     publish_distann_participant(&fixture);
     let (row_oid, graph_oid, _) = fixture.relations;
     let sidecar_oid = fixture
@@ -8773,7 +8821,7 @@ fn test_distann_cover_sidecar_dml_atomicity() {
     let identity = distann_test_v4_uuid(0x8a);
     let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
     let signed_vec_id = i64::from_le_bytes(vec_id.to_le_bytes());
-    apply_distann_covered_owner_insert(
+    apply_distann_owner_insert(
         &fixture,
         identity,
         "inserted payload",
@@ -8798,7 +8846,10 @@ fn test_distann_cover_sidecar_dml_atomicity() {
                           WHERE g.vec_id = $1"
                     ),
                     None,
-                    &[signed_vec_id.into(), expected_sidecar_payload.clone().into()],
+                    &[
+                        signed_vec_id.into(),
+                        expected_sidecar_payload.clone().into(),
+                    ],
                 )
                 .unwrap()
                 .map(|row| row[1].value::<bool>().unwrap().unwrap())
@@ -8812,7 +8863,7 @@ fn test_distann_cover_sidecar_dml_atomicity() {
     let replacement_snapshot =
         crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
             .expect("replacement must emulate a fresh production statement snapshot");
-    apply_distann_covered_owner_insert(
+    apply_distann_owner_insert(
         &fixture,
         identity,
         "replacement payload",
@@ -8859,10 +8910,9 @@ fn test_distann_cover_sidecar_dml_atomicity() {
     ))
     .unwrap()
     .unwrap();
-    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
-        &fixture.generation.descriptor,
-    )
-    .unwrap();
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .unwrap();
     let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
         &descriptor.codec_artifact,
     )
@@ -8870,16 +8920,21 @@ fn test_distann_cover_sidecar_dml_atomicity() {
     let node = crate::am::ec_distann::tuple::DistannNodeTuple::decode_physical_v1(
         &graph_record,
         descriptor.graph_degree,
-        binding.code_len(usize::from(descriptor.dimensions)).unwrap(),
+        binding
+            .code_len(usize::from(descriptor.dimensions))
+            .unwrap(),
     )
     .unwrap();
-    assert!(node.tombstoned, "delete must change only the graph tombstone");
+    assert!(
+        node.tombstoned,
+        "delete must change only the graph tombstone"
+    );
 
     let failed_identity = distann_test_v4_uuid(0x9a);
     let failed_vec_id = crate::am::ec_distann::vec_id_from_source_identity(&failed_identity);
     let rollback = expect_pg_error_rolled_back(|| {
         Spi::run("SET LOCAL ec_distann.debug_fail_insert = true").unwrap();
-        apply_distann_covered_owner_insert(
+        apply_distann_owner_insert(
             &fixture,
             failed_identity,
             "rolled back payload",
@@ -8898,6 +8953,190 @@ fn test_distann_cover_sidecar_dml_atomicity() {
         .unwrap(),
         Some(0),
         "fault rollback must remove the row tier, sidecar, and graph append"
+    );
+}
+
+#[pg_test]
+fn test_distann_hot_cold_dml_atomicity() {
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("hot/cold DML fixture should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("hot/cold DML fixture should identify its sole immutable owner");
+    let fixture =
+        create_hot_cold_distann_participant_lifecycle_fixture("ec_distann_hot_cold_dml", 0x7b);
+    publish_distann_participant(&fixture);
+    let (hot_oid, graph_oid, _) = fixture.relations;
+    let cold_oid = distann_cold_tier_relation_oid(&fixture.generation);
+    let hot_name = canonical_index_locator(hot_oid);
+    let cold_name = canonical_index_locator(cold_oid);
+    let graph_name = canonical_index_locator(graph_oid);
+    let counts = || {
+        Spi::get_three::<i64, i64, i64>(&format!(
+            "SELECT (SELECT count(*) FROM {hot_name}),
+                    (SELECT count(*) FROM {cold_name}),
+                    (SELECT count(*) FROM {graph_name})"
+        ))
+        .unwrap()
+    };
+    assert_eq!(counts(), (Some(1), Some(1), Some(1)));
+
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let code_len = binding
+        .code_len(usize::from(descriptor.dimensions))
+        .unwrap();
+    let decode_node = |record: &[u8]| {
+        crate::am::ec_distann::tuple::DistannNodeTuple::decode_physical_version(
+            record,
+            descriptor.graph_record_version,
+            descriptor.graph_degree,
+            code_len,
+        )
+        .unwrap()
+    };
+
+    let identity = distann_test_v4_uuid(0x8b);
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let signed_vec_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    apply_distann_owner_insert(
+        &fixture,
+        identity,
+        "inserted payload",
+        vec![0.0, 1.0, 0.0, 0.0],
+        false,
+    );
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(2), Some(2), Some(2)));
+    let inserted_record = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT graph_record FROM {graph_name}
+          WHERE vec_id = {signed_vec_id} AND is_current"
+    ))
+    .unwrap()
+    .unwrap();
+    let inserted = decode_node(&inserted_record);
+    let cold_tid = inserted
+        .cold_tid
+        .expect("hot/cold graph record must carry a cold TID");
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT count(*) = 1
+               FROM {hot_name} h
+               JOIN {cold_name} c USING (vec_id)
+              WHERE h.ctid = '({},{})'::tid
+                AND c.ctid = '({},{})'::tid
+                AND h.vec_id = {signed_vec_id}
+                AND c.a_2 = 'inserted payload'
+                AND c.a_5 = 'inserted payload:generated'",
+            inserted.heap_tid.block_number,
+            inserted.heap_tid.offset_number,
+            cold_tid.block_number,
+            cold_tid.offset_number,
+        ))
+        .unwrap(),
+        Some(true),
+        "insert must publish the exact appended hot/cold tuple pair"
+    );
+
+    let replacement_snapshot =
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
+            .expect("replacement must emulate a fresh production statement snapshot");
+    apply_distann_owner_insert(
+        &fixture,
+        identity,
+        "replacement payload",
+        vec![0.0, 0.0, 1.0, 0.0],
+        true,
+    );
+    drop(replacement_snapshot);
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    let replacement_record = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT graph_record FROM {graph_name}
+          WHERE vec_id = {signed_vec_id} AND is_current"
+    ))
+    .unwrap()
+    .unwrap();
+    let replacement = decode_node(&replacement_record);
+    let replacement_cold_tid = replacement
+        .cold_tid
+        .expect("replacement graph record must carry a cold TID");
+    assert_ne!(replacement.heap_tid, inserted.heap_tid);
+    assert_ne!(replacement_cold_tid, cold_tid);
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT count(*) = 1
+               FROM {hot_name} h
+               JOIN {cold_name} c USING (vec_id)
+              WHERE h.ctid = '({},{})'::tid
+                AND c.ctid = '({},{})'::tid
+                AND c.a_2 = 'replacement payload'
+                AND c.a_5 = 'replacement payload:generated'",
+            replacement.heap_tid.block_number,
+            replacement.heap_tid.offset_number,
+            replacement_cold_tid.block_number,
+            replacement_cold_tid.offset_number,
+        ))
+        .unwrap(),
+        Some(true),
+        "replacement must retain the old pair and publish a new pair"
+    );
+
+    assert!(unsafe {
+        crate::am::ec_distann::tombstone_owner_record_for_test(
+            fixture.generation.index_oid,
+            vec_id,
+            Some(
+                fixture
+                    .fingerprint
+                    .clone()
+                    .try_into()
+                    .expect("hot/cold fingerprint should be 34 bytes"),
+            ),
+        )
+        .expect("hot/cold owner tombstone should succeed")
+    });
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    let tombstoned_record = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT graph_record FROM {graph_name}
+          WHERE vec_id = {signed_vec_id} AND is_current"
+    ))
+    .unwrap()
+    .unwrap();
+    let tombstoned = decode_node(&tombstoned_record);
+    assert!(tombstoned.tombstoned);
+    assert_eq!(tombstoned.heap_tid, replacement.heap_tid);
+    assert_eq!(tombstoned.cold_tid, Some(replacement_cold_tid));
+
+    let failed_identity = distann_test_v4_uuid(0x9b);
+    let failed_vec_id = crate::am::ec_distann::vec_id_from_source_identity(&failed_identity);
+    let failed_signed_vec_id = i64::from_le_bytes(failed_vec_id.to_le_bytes());
+    let rollback = expect_pg_error_rolled_back(|| {
+        Spi::run("SET LOCAL ec_distann.debug_fail_insert = true").unwrap();
+        apply_distann_owner_insert(
+            &fixture,
+            failed_identity,
+            "rolled back payload",
+            vec![0.0, 0.0, 0.0, 1.0],
+            false,
+        );
+    });
+    assert!(rollback.contains("EC_FAULT_INJECTED"), "{rollback}");
+    assert_eq!(counts(), (Some(3), Some(3), Some(3)));
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT NOT EXISTS (SELECT 1 FROM {hot_name} WHERE vec_id = {failed_signed_vec_id})
+                    AND NOT EXISTS (SELECT 1 FROM {cold_name} WHERE vec_id = {failed_signed_vec_id})
+                    AND NOT EXISTS (SELECT 1 FROM {graph_name} WHERE vec_id = {failed_signed_vec_id})"
+        ))
+        .unwrap(),
+        Some(true),
+        "fault rollback must remove both tier appends and the graph append"
     );
 }
 

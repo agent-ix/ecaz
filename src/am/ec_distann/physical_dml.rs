@@ -148,6 +148,16 @@ unsafe fn insert_from_prepared_slot(
     })?;
     let (generation, descriptor) = scan.local_write_identity()?;
     let source_attnum = indexed_ecvector_attnum(index_relation)?;
+    let row_vector_attnum = tier_physical_attnum(
+        &descriptor,
+        source_attnum,
+        super::row_layout::DistannRowTierV1::Hot,
+    )?;
+    let row_identity_attnum = tier_physical_attnum(
+        &descriptor,
+        identity.heap_attnum,
+        super::row_layout::DistannRowTierV1::Hot,
+    )?;
     if vector.len() != usize::from(descriptor.dimensions) {
         return Err(format!(
             "EC_SCHEMA_MISMATCH: inserted vector has {} dimensions, generation requires {}",
@@ -188,18 +198,28 @@ unsafe fn insert_from_prepared_slot(
     if snapshot.is_null() {
         return Err("EC_BUILD_STATE: physical insert has no active snapshot".to_owned());
     }
-    let row_read_relation = row_relation_for_payload(&generation)?;
+    let source_read_relation = source_relation_for_payload(index_relation)?;
+    let row_read_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: row tier could not be opened for mutation planning".to_owned()
+        })?;
 
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let previous_version = current_record_version(&graph_name, vec_id)?;
     if previous_version.is_some() {
-        let current_identity =
-            current_record_identity(&graph_name, &row_read_relation, vec_id, identity, snapshot)?
-                .ok_or_else(|| {
-                format!(
+        let current_identity = current_record_identity(
+            &graph_name,
+            &row_read_relation,
+            vec_id,
+            identity,
+            row_identity_attnum,
+            snapshot,
+        )?
+        .ok_or_else(|| {
+            format!(
                 "EC_INSERT_PUBLISH: current vec_id {vec_id:#018x} has no readable row-tier identity"
             )
-            })?;
+        })?;
         if current_identity != identity_payload {
             return Err(format!(
                 "EC_DUPLICATE_VEC_ID: vec_id {vec_id:#018x} maps to a different source identity"
@@ -218,6 +238,20 @@ unsafe fn insert_from_prepared_slot(
     .ok_or_else(|| {
         "EC_GENERATION_MISSING: owner row tier could not be opened for write".to_owned()
     })?;
+    let cold_relation = match (descriptor.row_tier_layout(), generation.cold_tier_relid) {
+        (Some(_), Some(cold_relid)) => Some(
+            HeapRelationGuard::try_open(cold_relid, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
+                .ok_or_else(|| {
+                "EC_GENERATION_MISSING: owner cold tier could not be opened for write".to_owned()
+            })?,
+        ),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: hot/cold descriptor and cold relation disagree".to_owned(),
+            )
+        }
+    };
     let graph_relation = HeapRelationGuard::try_open(
         generation.graph_store_relid,
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -294,7 +328,8 @@ unsafe fn insert_from_prepared_slot(
                     hit,
                     descriptor.graph_degree,
                     code_len,
-                    source_attnum,
+                    row_vector_attnum,
+                    descriptor.graph_record_version,
                     snapshot,
                 )?
                 else {
@@ -338,7 +373,7 @@ unsafe fn insert_from_prepared_slot(
             .map(|hit| hit.vec_id)
             .collect::<Vec<_>>();
         let remote_vectors =
-            materialize_remote_vectors(&scan, &row_read_relation, &remote_ids, source_attnum)?;
+            materialize_remote_vectors(&scan, &source_read_relation, &remote_ids, source_attnum)?;
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();
         for hit in hits.hits {
@@ -366,7 +401,8 @@ unsafe fn insert_from_prepared_slot(
                 hit,
                 descriptor.graph_degree,
                 code_len,
-                source_attnum,
+                row_vector_attnum,
+                descriptor.graph_record_version,
                 snapshot,
             )?
             else {
@@ -414,7 +450,7 @@ unsafe fn insert_from_prepared_slot(
     if !extra_remote_ids.is_empty() {
         remote_vectors.extend(materialize_remote_vectors(
             &scan,
-            &row_read_relation,
+            &source_read_relation,
             &extra_remote_ids,
             source_attnum,
         )?);
@@ -461,7 +497,8 @@ unsafe fn insert_from_prepared_slot(
                     descriptor.graph_degree,
                     code_len,
                     &row_relation,
-                    source_attnum,
+                    row_vector_attnum,
+                    descriptor.graph_record_version,
                     options.alpha,
                     &remote_vectors,
                 )?;
@@ -517,10 +554,31 @@ unsafe fn insert_from_prepared_slot(
         return Ok(());
     }
 
-    // Append the complete row-tier tuple before publishing its graph pointer.
-    // If any later graph/index operation fails, PostgreSQL aborts this same
-    // transaction and the row tuple is not visible to a published scan.
-    let row_tid = append_row_tuple(&row_relation, source_slot)?;
+    // Append every authoritative payload tuple before publishing the graph
+    // pointer. Hot/cold writes are cold-first, then hot, matching handoff; any
+    // later failure aborts both tuples and the graph append together.
+    let (row_tid, cold_tid) = if let Some(layout) = descriptor.row_tier_layout() {
+        let cold_relation = cold_relation.as_ref().ok_or_else(|| {
+            "EC_GENERATION_MISSING: hot/cold insert lost its cold relation".to_owned()
+        })?;
+        let cold_tid = append_compact_tier_tuple(
+            cold_relation,
+            source_slot,
+            vec_id,
+            layout,
+            super::row_layout::DistannRowTierV1::Cold,
+        )?;
+        let hot_tid = append_compact_tier_tuple(
+            &row_relation,
+            source_slot,
+            vec_id,
+            layout,
+            super::row_layout::DistannRowTierV1::Hot,
+        )?;
+        (hot_tid, Some(cold_tid))
+    } else {
+        (append_row_tuple(&row_relation, source_slot)?, None)
+    };
     stage_counters::record_insert_work(DistannInsertWork::OwnerWrites, 1);
     if let (Some(cover), Some(sidecar_relation)) = (
         descriptor.payload_cover(),
@@ -549,14 +607,18 @@ unsafe fn insert_from_prepared_slot(
         tombstoned: false,
         vec_id,
         heap_tid: row_tid,
-        cold_tid: None,
+        cold_tid,
         neighbor_count: u16::try_from(forward.len())
             .map_err(|_| "EC_INSERT_GRAPH: forward degree exceeds u16".to_owned())?,
         search_code: new_code.clone(),
         neighbor_vec_ids,
         neighbor_codes,
     };
-    let graph_record = node.encode_physical_v1(descriptor.graph_degree, code_len)?;
+    let graph_record = node.encode_physical_version(
+        descriptor.graph_record_version,
+        descriptor.graph_degree,
+        code_len,
+    )?;
 
     // Same vec_id means the stable identity survived an UPDATE.  Retain the
     // old graph tuple and redirect the partial unique directory atomically.
@@ -639,7 +701,8 @@ unsafe fn insert_from_prepared_slot(
                 descriptor.graph_degree,
                 code_len,
                 &row_relation,
-                source_attnum,
+                row_vector_attnum,
+                descriptor.graph_record_version,
                 options.alpha,
                 &remote_vectors,
             )?;
@@ -890,13 +953,21 @@ pub(crate) unsafe fn tombstone_owner_record(
             "EC_RECORD_MISSING: physical owner has no current vec_id {vec_id:#018x}"
         ));
     };
-    let mut node =
-        DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    let mut node = DistannNodeTuple::decode_physical_version(
+        &record,
+        descriptor.graph_record_version,
+        descriptor.graph_degree,
+        code_len,
+    )?;
     if node.tombstoned {
         return Ok(false);
     }
     node.tombstoned = true;
-    let encoded = node.encode_physical_v1(descriptor.graph_degree, code_len)?;
+    let encoded = node.encode_physical_version(
+        descriptor.graph_record_version,
+        descriptor.graph_degree,
+        code_len,
+    )?;
     let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
     let updated = Spi::connect_mut(|client| {
         client
@@ -1030,15 +1101,46 @@ pub(crate) unsafe fn tombstone_dead_records(
     Ok(removed)
 }
 
-/// The payload decoder needs a row-tier descriptor. This helper is kept
-/// separate from the write lock acquisition so remote planning cannot hold a
-/// write lock while it performs owner RPCs.
-fn row_relation_for_payload(
-    generation: &super::generation_catalog::GenerationCatalogRow,
+/// Remote payload bytes use the frozen logical row schema even when the
+/// generation stores that row in compact hot/cold relations. Keep this source
+/// descriptor open separately from the generation write locks.
+unsafe fn source_relation_for_payload(
+    index_relation: pg_sys::Relation,
 ) -> Result<HeapRelationGuard, String> {
-    HeapRelationGuard::try_access_share(generation.row_tier_relid).ok_or_else(|| {
-        "EC_GENERATION_MISSING: row tier could not be opened for remote payload planning".to_owned()
-    })
+    let source_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    HeapRelationGuard::try_open(source_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE).ok_or_else(
+        || {
+            "EC_GENERATION_MISSING: source schema could not be opened for remote payload planning"
+                .to_owned()
+        },
+    )
+}
+
+fn tier_physical_attnum(
+    descriptor: &super::generation_descriptor::DistannGenerationDescriptor,
+    source_attnum: i32,
+    required_tier: super::row_layout::DistannRowTierV1,
+) -> Result<i32, String> {
+    let Some(layout) = descriptor.row_tier_layout() else {
+        return Ok(source_attnum);
+    };
+    let source_attnum = u16::try_from(source_attnum)
+        .map_err(|_| "EC_SCHEMA_MISMATCH: source attnum is invalid".to_owned())?;
+    let placement = layout
+        .placements
+        .iter()
+        .find(|placement| placement.attnum == source_attnum)
+        .ok_or_else(|| {
+            format!(
+                "EC_SCHEMA_MISMATCH: source attnum {source_attnum} is absent from the hot/cold layout"
+            )
+        })?;
+    if placement.tier != required_tier {
+        return Err(format!(
+            "EC_SCHEMA_MISMATCH: source attnum {source_attnum} is not stored in the required {required_tier:?} tier"
+        ));
+    }
+    Ok(i32::from(placement.physical_ordinal))
 }
 
 /// Remote DML must carry the immutable scan roster even when the coordinator
@@ -1290,15 +1392,24 @@ unsafe fn insert_from_owner_payload_internal(
     );
     let scan =
         PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, epoch_fingerprint)?;
-    let (generation, _descriptor) = scan.local_write_identity()?;
+    let (_generation, descriptor) = scan.local_write_identity()?;
     drop(scan);
-    let row_relation = HeapRelationGuard::try_open(
-        generation.row_tier_relid,
-        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    let source_heap = HeapRelationGuard::try_open(
+        index_guard.heap_relation_oid(),
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )
-    .ok_or_else(|| "EC_GENERATION_MISSING: owner row tier could not be opened".to_owned())?;
-    let slot = TupleTableSlotGuard::create_for_heap_guard(&row_relation)
-        .ok_or_else(|| "EC_GENERATION_MISSING: owner row slot could not be allocated".to_owned())?;
+    .ok_or_else(|| "EC_GENERATION_MISSING: source heap could not be opened".to_owned())?;
+    let resolved_schema =
+        super::row_schema::resolve_relation_schema(index_guard.heap_relation_oid())?;
+    if resolved_schema.descriptor != descriptor.row_schema {
+        return Err(
+            "EC_SCHEMA_MISMATCH: owner payload source schema differs from the generation"
+                .to_owned(),
+        );
+    }
+    let slot = TupleTableSlotGuard::create_for_heap_guard(&source_heap).ok_or_else(|| {
+        "EC_GENERATION_MISSING: owner source slot could not be allocated".to_owned()
+    })?;
     decode_packed_row(
         slot.as_ptr(),
         payload_nulls,
@@ -1313,11 +1424,6 @@ unsafe fn insert_from_owner_payload_internal(
             "EC_SCHEMA_MISMATCH: owner payload vector differs from graph insert vector".to_owned(),
         );
     }
-    let source_heap = HeapRelationGuard::try_open(
-        index_guard.heap_relation_oid(),
-        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-    )
-    .ok_or_else(|| "EC_GENERATION_MISSING: source heap could not be opened".to_owned())?;
     let index_info = pg_sys::BuildIndexInfo(index_guard.as_ptr());
     if index_info.is_null() {
         return Err("EC_SCHEMA_MISMATCH: owner payload identity metadata is missing".to_owned());
@@ -1566,6 +1672,7 @@ fn read_current_candidate(
     graph_degree: u16,
     code_len: usize,
     source_attnum: i32,
+    graph_record_version: u16,
     snapshot: pg_sys::Snapshot,
 ) -> Result<Option<Candidate>, String> {
     let signed_id = i64::from_le_bytes(hit.vec_id.to_le_bytes());
@@ -1585,7 +1692,12 @@ fn read_current_candidate(
     let Some((record, row_tid, graph_tid)) = row else {
         return Ok(None);
     };
-    let node = DistannNodeTuple::decode_physical_v1(&record, graph_degree, code_len)?;
+    let node = DistannNodeTuple::decode_physical_version(
+        &record,
+        graph_record_version,
+        graph_degree,
+        code_len,
+    )?;
     let vector_slot =
         TupleTableSlotGuard::single_for_heap_guard(row_relation).ok_or_else(|| {
             "EC_GENERATION_MISSING: row-tier vector slot could not be allocated".to_owned()
@@ -1675,6 +1787,85 @@ fn append_row_tuple(
     })
 }
 
+fn append_compact_tier_tuple(
+    relation: &HeapRelationGuard,
+    source_slot: *mut pg_sys::TupleTableSlot,
+    vec_id: u64,
+    layout: &super::row_layout::DistannRowTierLayoutDescriptorV1,
+    tier: super::row_layout::DistannRowTierV1,
+) -> Result<ItemPointer, String> {
+    let slot = TupleTableSlotGuard::create_for_heap_guard(relation).ok_or_else(|| {
+        format!("EC_GENERATION_MISSING: {tier:?} tier insert slot could not be allocated")
+    })?;
+    let mut writer = unsafe {
+        TupleSlotWriter::from_raw_slot(slot.as_ptr(), "ec_distann hot/cold physical insert")?
+    };
+    writer.clear();
+    let natts = usize::try_from(writer.natts())
+        .map_err(|_| "EC_SCHEMA_MISMATCH: compact tier width is negative".to_owned())?;
+    writer.validate_input_width(natts)?;
+    if natts == 0 {
+        return Err("EC_SCHEMA_MISMATCH: compact tier lacks its vec_id column".to_owned());
+    }
+    writer.set_datum(
+        0,
+        pg_sys::Datum::from(i64::from_le_bytes(vec_id.to_le_bytes())),
+    );
+    let mut assigned = vec![false; natts];
+    assigned[0] = true;
+    for placement in layout
+        .placements
+        .iter()
+        .filter(|placement| placement.tier == tier)
+    {
+        let physical_index = usize::from(placement.physical_ordinal)
+            .checked_sub(1)
+            .ok_or_else(|| "EC_SCHEMA_MISMATCH: compact tier ordinal is zero".to_owned())?;
+        if physical_index == 0 || physical_index >= natts || assigned[physical_index] {
+            return Err(format!(
+                "EC_SCHEMA_MISMATCH: {tier:?} tier physical ordinal {} is invalid",
+                placement.physical_ordinal
+            ));
+        }
+        let mut is_null = false;
+        let datum =
+            unsafe { pg_sys::slot_getattr(source_slot, i32::from(placement.attnum), &mut is_null) };
+        if is_null {
+            writer.set_null(
+                i32::try_from(physical_index).map_err(|_| {
+                    "EC_SCHEMA_MISMATCH: compact tier ordinal exceeds i32".to_owned()
+                })?,
+            );
+        } else {
+            writer.set_datum(
+                i32::try_from(physical_index).map_err(|_| {
+                    "EC_SCHEMA_MISMATCH: compact tier ordinal exceeds i32".to_owned()
+                })?,
+                datum,
+            );
+        }
+        assigned[physical_index] = true;
+    }
+    if assigned.iter().any(|assigned| !assigned) {
+        return Err(format!(
+            "EC_SCHEMA_MISMATCH: {tier:?} tier layout does not fill the compact relation"
+        ));
+    }
+    let stored = writer.store_virtual_tuple()?;
+    unsafe { pg_sys::simple_table_tuple_insert(relation.as_ptr(), stored) };
+    let tid = unsafe { (*stored).tts_tid };
+    let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(tid);
+    if block_number == pg_sys::InvalidBlockNumber || offset_number == 0 {
+        return Err(format!(
+            "EC_GENERATION_MISSING: {tier:?} tier insert returned an invalid TID"
+        ));
+    }
+    Ok(ItemPointer {
+        block_number,
+        offset_number,
+    })
+}
+
 fn current_record_version(graph_name: &str, vec_id: u64) -> Result<Option<i64>, String> {
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
     Spi::connect(|client| {
@@ -1705,6 +1896,7 @@ unsafe fn current_record_identity(
     row_relation: &HeapRelationGuard,
     vec_id: u64,
     identity: ambuild::DistannIdentityAttribute,
+    row_identity_attnum: i32,
     snapshot: pg_sys::Snapshot,
 ) -> Result<Option<[u8; 16]>, String> {
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
@@ -1741,7 +1933,7 @@ unsafe fn current_record_identity(
         return Ok(None);
     }
     let mut is_null = false;
-    let datum = pg_sys::slot_getattr(slot.as_ptr(), identity.heap_attnum, &mut is_null);
+    let datum = pg_sys::slot_getattr(slot.as_ptr(), row_identity_attnum, &mut is_null);
     if is_null {
         return Err("EC_SOURCE_IDENTITY: current row identity is NULL".to_owned());
     }
@@ -1835,6 +2027,7 @@ unsafe fn amend_backlink(
     code_len: usize,
     row_relation: &HeapRelationGuard,
     source_attnum: i32,
+    graph_record_version: u16,
     alpha: f32,
     remote_vectors: &HashMap<u64, Vec<f32>>,
 ) -> Result<(), String> {
@@ -1849,7 +2042,12 @@ unsafe fn amend_backlink(
                 candidate.vec_id
             )
         })?;
-    let mut node = DistannNodeTuple::decode_physical_v1(&current_record, graph_degree, code_len)?;
+    let mut node = DistannNodeTuple::decode_physical_version(
+        &current_record,
+        graph_record_version,
+        graph_degree,
+        code_len,
+    )?;
     // FOR UPDATE may wait for a concurrent backlink transaction and then
     // return its newer graph version. Refresh the snapshot before fetching
     // the row-tier vectors referenced by that version; the original insert
@@ -1875,7 +2073,7 @@ unsafe fn amend_backlink(
             .neighbor_count
             .checked_add(1)
             .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
-        let record = node.encode_physical_v1(graph_degree, code_len)?;
+        let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
         let block = graph_tid.block_number;
         let offset = graph_tid.offset_number;
         let updated = Spi::connect_mut(|client| {
@@ -1966,7 +2164,7 @@ unsafe fn amend_backlink(
         }
         node.neighbor_codes[slot * code_len..(slot + 1) * code_len].copy_from_slice(code);
     }
-    let record = node.encode_physical_v1(graph_degree, code_len)?;
+    let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
     let block = graph_tid.block_number;
     let offset = graph_tid.offset_number;
     let updated = Spi::connect_mut(|client| {
@@ -2038,12 +2236,18 @@ unsafe fn append_backlink_if_room(
     new_code: &[u8],
     graph_degree: u16,
     code_len: usize,
+    graph_record_version: u16,
 ) -> Result<(), String> {
     let (current_record, graph_tid) = current_graph_record_for_update(graph_name, target_vec_id)?
         .ok_or_else(|| {
         format!("EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing")
     })?;
-    let mut node = DistannNodeTuple::decode_physical_v1(&current_record, graph_degree, code_len)?;
+    let mut node = DistannNodeTuple::decode_physical_version(
+        &current_record,
+        graph_record_version,
+        graph_degree,
+        code_len,
+    )?;
     let count = usize::from(node.neighbor_count);
     if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
@@ -2062,7 +2266,7 @@ unsafe fn append_backlink_if_room(
         .neighbor_count
         .checked_add(1)
         .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
-    let record = node.encode_physical_v1(graph_degree, code_len)?;
+    let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
     let block = graph_tid.block_number;
     let offset = graph_tid.offset_number;
     let updated = Spi::connect_mut(|client| {
@@ -2181,6 +2385,12 @@ pub(crate) unsafe fn apply_owner_backlink(
     )
     .ok_or_else(|| "EC_GENERATION_MISSING: backlink row tier could not be opened".to_owned())?;
     let source_attnum = indexed_ecvector_attnum(index_guard.as_ptr())?;
+    let row_vector_attnum = tier_physical_attnum(
+        &descriptor,
+        source_attnum,
+        super::row_layout::DistannRowTierV1::Hot,
+    )?;
+    let source_relation = source_relation_for_payload(index_guard.as_ptr())?;
     let snapshot = pg_sys::GetActiveSnapshot();
     if snapshot.is_null() {
         return Err("EC_BUILD_STATE: backlink has no active snapshot".to_owned());
@@ -2218,7 +2428,12 @@ pub(crate) unsafe fn apply_owner_backlink(
             "EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing"
         ));
     };
-    let node = DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    let node = DistannNodeTuple::decode_physical_version(
+        &record,
+        descriptor.graph_record_version,
+        descriptor.graph_degree,
+        code_len,
+    )?;
     let (_, _, _, routed_descriptor, routes) = scan.traversal_replica_source();
     let local_owner = routes
         .iter()
@@ -2236,7 +2451,7 @@ pub(crate) unsafe fn apply_owner_backlink(
         })
         .collect::<Vec<_>>();
     let remote_vectors =
-        materialize_remote_vectors(&scan, &row_relation, &remote_ids, source_attnum)?;
+        materialize_remote_vectors(&scan, &source_relation, &remote_ids, source_attnum)?;
     let mut missing_local_neighbor = false;
     for neighbor in &node.neighbor_vec_ids[..usize::from(node.neighbor_count)] {
         let neighbor_owner = super::placement::owning_node(
@@ -2249,7 +2464,7 @@ pub(crate) unsafe fn apply_owner_backlink(
                 &graph_name,
                 &row_relation,
                 *neighbor,
-                source_attnum,
+                row_vector_attnum,
                 latest_snapshot.as_ptr(),
             ) {
                 if is_current_vector_missing(&error) {
@@ -2268,6 +2483,7 @@ pub(crate) unsafe fn apply_owner_backlink(
             &new_code,
             descriptor.graph_degree,
             code_len,
+            descriptor.graph_record_version,
         );
     }
     drop(scan);
@@ -2289,7 +2505,8 @@ pub(crate) unsafe fn apply_owner_backlink(
         descriptor.graph_degree,
         code_len,
         &row_relation,
-        source_attnum,
+        row_vector_attnum,
+        descriptor.graph_record_version,
         options::relation_options(index_guard.as_ptr()).alpha,
         &remote_vectors,
     )
