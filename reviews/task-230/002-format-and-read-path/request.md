@@ -5,17 +5,42 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 04
+seq: 05
 ---
 
-# Task 230 packet 002 — Graph V2 locator trailer
+# Task 230 packet 002 — descriptor V4 and catalog-bound layout identity
 
-Review code checkpoints `3102e28ef`, `9b13d2aca`, and test-only follow-up
-`7b8edce68` against the review-closed
-packet-001 contract and reviewer seq-02, which accepted the descriptor
-foundation and authorized this Graph V2 slice. This remains a narrow
-packet-002 checkpoint: it defines the versioned graph bytes and dispatch API,
-but does not yet create hot/cold relations or switch generation callers to V2.
+Review code checkpoint `a1566fcb9` and PG18 preflight follow-up `1407d4504`
+against the review-closed packet-001 contract and reviewer seq-04, which
+accepted Graph V2 and authorized descriptor V4/layout identity binding. This
+remains a narrow packet-002 checkpoint: it freezes and registers the layout
+identity, but does not yet create hot/cold relations, hand off tier rows, or
+read them.
+
+## Descriptor V4 and layout-identity scope
+
+- Preserves legacy no-cover descriptor V2 and Task 229 cover descriptor V3
+  bytes, and adds descriptor V4 with a length-prefixed row-tier layout plus its
+  domain-separated digest. The independent V4 fixture pins Graph V2 and the
+  complete layout bytes.
+- Enforces the admission matrix directly from the tuple-format constant:
+  row-heap/no-cover and Task 229 cover use Graph V1; hot/cold uses Graph V2;
+  cover and hot/cold remain mutually exclusive.
+- Adds build-registration V3, binding the row-tier layout digest during both
+  begin-build and build replay. The catalog resolver derives dimensions from
+  the indexed `ecvector` typmod, because an unbuilt distributed-control index
+  correctly still has zero dimensions in page metadata.
+- Computes `maximum_hot_tuple_bytes` internally from the exact PG18 formed
+  tuple shape, including header/bitmap MAXALIGN, per-attribute alignment,
+  internal `vec_id`, four-byte-varlena exact vector, source identity, and fixed
+  hot scalars. UUID identity contributes 16 bytes; `bytea(16)` contributes 20
+  because the hot relation pins `attstorage='p'` and therefore cannot use a
+  short-varlena header.
+- Pins the indexed vector's type namespace and canonical send/receive identity,
+  and adds generated-identity and persisted-inline-width drift coverage.
+- Adds a focused PG18 callback test that creates hot/cold distributed-control
+  indexes, registers a participant, begins the epoch build, and proves exact
+  replay returns the frozen registration digest.
 
 ## Graph V2 scope
 
@@ -35,6 +60,8 @@ but does not yet create hot/cold relations or switch generation callers to V2.
   with the frozen V1 fixture, and reads the six-byte trailer.
 - Exports the V2 format constant, trailer size, and offset helper through the
   existing benchmark/test API.
+- Renames the offset helper to `distann_node_v2_cold_tid_offset` and factors the
+  canonical adjacency-padding validator shared by V1 and V2.
 
 The follow-up `9b13d2aca` replaces `Option::is_none_or` with an equivalent
 Rust-1.75-compatible expression after the exact clippy gate caught the MSRV
@@ -63,10 +90,10 @@ seq-01 disposition below remains for history.
   declared hot scalar width. A 1,536-dimensional descriptor with a one-byte
   bound fails `validate()`.
 - The descriptor now persists `source_identity_maximum_inline_bytes`, so pure
-  decode validation is self-contained. Frozen-schema validation pins that
-  value to 16 for UUID or 17 for `bytea(16)`; the behavioral test shows that a
-  UUID-minimum bound is rejected for bytea and that the bytea-derived bound is
-  accepted.
+  decode validation is self-contained. Seq-05 supersedes the provisional
+  short-varlena assumption here: frozen-schema validation pins that value to 16
+  for UUID or 20 for PLAIN `bytea(16)`; the behavioral test rejects a UUID-sized
+  bound for bytea and accepts the catalog-exact bytea bound.
 - The new `options.rs` clippy error is fixed. The exact all-target PG18 clippy
   gate now reports only the five pre-existing failures named by reviewer
   seq-01 (`ambuild.rs`, `generation_descriptor.rs`, `head_sample.rs`,
@@ -86,24 +113,28 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-04 output and provenance are recorded in
+Packet-local seq-05 output and provenance are recorded in
 `artifacts/manifest.md`:
 
-- five focused PG18 physical-node version tests pass;
-- two independent V1/V2 golden-fixture tests pass;
+- five row-layout tests pass;
+- three descriptor unit tests and three independent descriptor fixtures pass;
+- the standalone row-layout fixture, registration digest golden, and all five
+  Graph V2 tests pass;
+- the focused PG18 hot/cold begin-build/replay callback test passes;
 - formatting passes (`cargo fmt --all -- --check`);
-- the all-target PG18 clippy command introduces no error in a touched file and
-  records only the five pre-existing repository failures already identified in
-  seq-02.
+- the all-target PG18 clippy command records only the same five pre-existing
+  repository failures already identified in seq-02; none is in a seq-05
+  touched line.
 
-No PG relation or callback behavior changes in this slice, so no pgrx cluster
-test is claimed. Full format/read-path PG18 coverage remains required before
-this packet closes.
+No benchmark is claimed for this format-registration slice. Full relation,
+handoff, read, DML, lifecycle, and benchmark coverage remains required before
+Task 230 closes.
 
 ## Review request
 
-Please rereview the two seq-03 test gaps at `7b8edce68`: V1 and legacy writers
-reject a valid cold locator, and pooled physical-version decode populates a V2
-locator then clears it on V1 reuse. If DONE, the next slice will bind descriptor
-V4/layout identity and switch only version-aware generation callers to V2;
-legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.
+Please review descriptor V4, row-layout identity, registration V3, the
+catalog-typmod dimension source, exact formed-tuple bound, and focused PG18
+begin-build/replay coverage at `1407d4504`. If DONE, the next packet-002 slice
+will create and catalog the generation-owned hot/cold relations and carry the
+layout identity through build receipts/manifests and handoff/read admission.
+Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain V1.

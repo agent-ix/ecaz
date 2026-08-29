@@ -1,0 +1,88 @@
+Script started on 2026-08-28 17:01:35-07:00 [TERM="xterm-256color" TTY="/dev/pts/19" COLUMNS="80" LINES="24"]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Building [======================>  ] 346/364: ecaz(build)                     Building [======================>  ] 347/364: ecaz(test), ecaz                Building [======================>  ] 348/364: simd_bench(bin), simd_diff(…    Building [======================>  ] 349/364: simd_bench(bin), simd_diff(…    Building [=======================> ] 350/364: simd_bench(bin), approx_sco…    Building [=======================> ] 351/364: simd_bench(bin), approx_sco…    Building [=======================> ] 352/364: simd_bench(bin), approx_sco…    Building [=======================> ] 353/364: simd_bench(bin), approx_sco…    Building [=======================> ] 354/364: simd_bench(bin), approx_sco…    Building [=======================> ] 355/364: simd_bench(bin), simd_bench…    Building [=======================> ] 356/364: simd_bench(bin), simd_bench…    Building [=======================> ] 357/364: simd_bench(bin test), ecaz(…    Building [=======================> ] 358/364: simd_bench(bin test), ecaz(…    Building [=======================> ] 359/364: ecaz(test), proptest_page(t…    Building [=======================> ] 360/364: ecaz(test), proptest_page(t…    Building [=======================> ] 361/364: ecaz(test), proptest_quant(…    Building [=======================> ] 362/364: ecaz(test), proptest_quant(…    Building [=======================> ] 363/364: ecaz(test)                      Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 50s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-1dc08d755a3f3721)
+
+running 5 tests
+test am::ec_distann::row_layout::tests::layout_keeps_identity_implicit_and_rejects_implicit_or_variable_hot_values ... [32mok(B[m
+test am::ec_distann::row_layout::tests::layout_decode_rejects_unknown_version_tier_and_trailing_bytes ... [32mok(B[m
+test am::ec_distann::row_layout::tests::layout_pins_dimension_tuple_and_bytea_identity_bounds ... [32mok(B[m
+test am::ec_distann::row_layout::tests::layout_round_trip_partitions_every_attribute_once ... [32mok(B[m
+test am::ec_distann::row_layout::tests::layout_schema_validation_detects_partition_and_type_drift ... [32mok(B[m
+
+test result: [32mok(B[m. 5 passed; 0 failed; 0 ignored; 0 measured; 2621 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (/home/peter/.cargo-target/debug/deps/approx_score_study-f3c6d1849033ace9)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (/home/peter/.cargo-target/debug/deps/pgrx_embed_ecaz-dd5a8e316ccd7570)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (/home/peter/.cargo-target/debug/deps/simd_bench-641e2bf17c2d317f)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (/home/peter/.cargo-target/debug/deps/kani_item_pointer-46247604c84712a3)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (/home/peter/.cargo-target/debug/deps/on_disk_fixtures-98a08e7d8130a1b6)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 77 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (/home/peter/.cargo-target/debug/deps/proptest_page-905f76eccf8786f1)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (/home/peter/.cargo-target/debug/deps/proptest_quant-3c0ca27c95b97182)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (/home/peter/.cargo-target/debug/deps/recall_integration-ef2b8393b62a8bf0)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (/home/peter/.cargo-target/debug/deps/simd_diff-efdd6350e0a19d15)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (/home/peter/.cargo-target/debug/deps/size_of_assertions-24c645aa991e2100)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (/home/peter/.cargo-target/debug/deps/upgrade_matrix-e5af4b0dbd263a57)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (/home/peter/.cargo-target/debug/deps/wal_policy-83d8f3d293b81b4d)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 17:07:13-07:00 [COMMAND_EXIT_CODE="0"]

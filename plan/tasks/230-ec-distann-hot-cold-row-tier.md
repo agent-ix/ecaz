@@ -1,9 +1,10 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
-descriptor slice review-closed DONE (seq-02), Graph V2 slice review-closed DONE
-(seq-04) at `7b8edce68`; packet 002 still open for format/read-path coverage;
-persisted-format implementation authorized; entry condition 3 satisfied**
+descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
+(seq-04), descriptor V4/layout identity seq-05 review-open at `1407d4504`;
+packet 002 still open for format/read-path coverage; persisted-format
+implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
 `reviews/task-230/001-plan/request.md` at seq-04; verdict
 `reviews/task-230/001-plan/feedback/2026-08-28-03-reviewer.md`; prior verdicts
@@ -17,15 +18,9 @@ exclusive with the Task 229 sidecar, graph record V2 appending `cold_tid` after
 the variable arrays with every V1 offset preserved, graph record as sole locator
 authority, graph `is_current`/tombstone as sole visibility gate, descriptor V4 /
 receipt V3 / manifest V4, and end-to-end id-only ANN retrieval as the single
-preregistered primary decision shape. Carried into packet 002: amend the P1
-bullet below, which still names hot-tier tombstone/visibility metadata that the
-accepted contract removes; scope version-first decoding to
-`decode_into_version`'s `Some(_)` branch and leave the legacy tag-guarded
-`expand.rs:61`, `reader.rs:214`, and `insert.rs:433` unversioned; define the
-`bytea(16)` varlena contribution in the maximal-tuple estimator. Carried into
-packet 004 preregistration: a failure condition for the cold/mixed secondary
-cost gates, and shared-buffer hit ratio as an explicit metric. Priority: P1
-storage/retrieval latency.
+preregistered primary decision shape. Carried into packet 004 preregistration:
+a failure condition for the cold/mixed secondary cost gates, and shared-buffer
+hit ratio as an explicit metric. Priority: P1 storage/retrieval latency.
 
 Packet 002 checkpoint: code `ef558a669`; review request
 `reviews/task-230/002-format-and-read-path/request.md`; verdict
@@ -104,6 +99,17 @@ the clippy gate (same five pre-existing errors, nothing in `tuple.rs`). The next
 slice — descriptor V4 / layout identity binding with only version-aware
 generation callers switched to V2 — is authorized. Packet 002 remains open for
 full format/read-path PG18 coverage.
+
+Packet 002 seq-05 descriptor V4/layout-identity checkpoint: code `a1566fcb9`
+plus PG18 preflight follow-up `1407d4504`; request at seq-05 — **review open**.
+Legacy descriptor V2 and Task 229 descriptor V3 remain byte-identical; V4 binds
+the row-tier layout and selects Graph V2 from the tuple-format constant;
+registration V3 binds the layout digest; exact formed-tuple sizing accounts for
+alignment and PLAIN `bytea(16)`'s 20 bytes; vector binary-I/O identity and
+corrupt schema drift are pinned. A focused PG18 begin-build/replay test exposed
+and closed a zeroed-control-metadata bug by sourcing exact dimensions from the
+indexed `ecvector` catalog typmod. Relation creation, receipt/manifest version
+propagation, handoff, and read paths remain for the next slice.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's

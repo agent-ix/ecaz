@@ -1,13 +1,64 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `7b8edce68`
+- Head SHA: `1407d4504`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Graph V2 locator-trailer checkpoint (descriptor foundation retained)
+- Packet: Descriptor V4 and catalog-bound row-layout identity checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
-- Lane / fixture / storage format / rerank mode: not applicable (pure format
-  descriptor and reloption unit tests)
-- Isolation: not applicable; no index, table, corpus, or benchmark fixture was
-  created
+- Lane / fixture / storage format / rerank mode: local PG18 callback plus pure
+  format/descriptor tests; hot/cold registration only; rerank not applicable
+- Isolation: focused pgrx test creates transaction-scoped source/index fixtures;
+  no corpus or benchmark fixture was created
+
+## Seq-05 descriptor V4/layout identity artifacts
+
+All seq-05 artifacts below were produced at `1407d4504` on 2026-08-28 PDT.
+
+### `row-layout-tests-seq-05.log`
+
+- Command: `cargo test --no-default-features --features pg18 row_layout::tests`
+- Cited result: `5 passed; 0 failed`
+
+### `generation-descriptor-tests-seq-05.log`
+
+- Command: `cargo test --no-default-features --features pg18 generation_descriptor_`
+- Cited result: descriptor unit tests `3 passed; 0 failed`; independent fixture
+  tests `3 passed; 0 failed`
+
+### `row-layout-fixture-seq-05.log`
+
+- Command: `cargo test --no-default-features --features pg18 --test on_disk_fixtures distann_row_tier_layout_v1_fixture`
+- Cited result: `1 passed; 0 failed`
+
+### `registration-digest-tests-seq-05.log`
+
+- Command: `cargo test --no-default-features --features pg18 registration_digest_golden_binds_private_transport_fields`
+- Cited result: `1 passed; 0 failed`
+
+### `graph-v2-tests-seq-05.log`
+
+- Command: `cargo test --no-default-features --features pg18 distann_physical_node`
+- Cited result: `5 passed; 0 failed`
+
+### `hot-cold-registration-pg18-seq-05.log`
+
+- Command: `cargo pgrx test pg18 test_distann_begin_build_binds_hot_cold_row_layout`
+- Cited result: focused callback test `1 passed; 0 failed`; it creates the
+  hot/cold coordinator and participant, registers the participant, begins the
+  build, and verifies exact replay.
+
+### `format-check-seq-05.log`
+
+- Command: `cargo fmt --all -- --check`
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures)
+
+### `clippy-seq-05.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1069`, and `ec_distann_physical_lifecycle.rs:8004`; no
+  failure is in a seq-05 touched line.
 
 ## Seq-04 Graph V2 review-gap artifacts
 
