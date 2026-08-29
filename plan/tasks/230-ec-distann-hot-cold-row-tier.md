@@ -128,7 +128,10 @@ clean fixture.** Reviewer note, not blocking: `DISTANN_WORK_ROWS` remains a
 hardcoded CLI literal, so the next counter added to `ALL` will break the runner
 the same way, and the failure only surfaces once a full-scale arm is already
 running — have the extension declare its own metric count, or at minimum comment
-the coupling at the `ALL` definition site. No benchmark result exists yet.
+the coupling at the `ALL` definition site. The minimum source-site safeguard is
+implemented comment-only at `1a927c22d`; packet 006 is **REVIEW-OPEN** at
+`reviews/task-230/006-counter-coupling-note/request.md`. No benchmark result
+exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
