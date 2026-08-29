@@ -112,7 +112,14 @@ falsified independent of its guardrail — including the symmetric case the
 reviewer did not name, where an unexpectedly *faster* cold/mixed/all result is
 also falsified rather than rewritten as success. Reviewer confirmed the suite
 config is byte-unchanged, so only the interpretation rules moved and they moved
-before any result existed. No benchmark result exists yet.
+before any result existed. The first authorized suite attempt produced no valid
+result: its release preflight passed at `35648e467`, then the CLI rejected the
+extension's 61 server attribution rows plus one client row against a stale
+52-row invariant. Standalone correction `0b15cf020` updates the expected total
+to 62; packet 005 is **REVIEW-OPEN** at
+`reviews/task-230/005-suite-runner-attribution-count/request.md`. Packet 004
+will restart from an empty result surface and clean fixture only after that
+correction is review-closed. No benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

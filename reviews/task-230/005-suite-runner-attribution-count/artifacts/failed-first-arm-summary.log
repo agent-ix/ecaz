@@ -1,0 +1,6 @@
+source_head=35648e4678ec01acb5b8c0c7b75e1b41c2a00eaa
+source_config_sha256=e141ac65a7e18eaf4512509c549ba750e3106a2a045942e0eb6a5ac8fcc5437c
+step=task230-10k-pair-a-rowheap-first
+release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=35648e4678ec01acb5b8c0c7b75e1b41c2a00eaa extension_build_profile=release extension_features=distann-head-attribution-benchmark,pg18 debug_override=false
+failure=physical latency attribution expected 52 ec_distann attribution-work rows (1 concurrency groups), got 62
+disposition=invalid_pre_measurement_attempt_restart_from_clean_fixture
