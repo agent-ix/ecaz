@@ -36,6 +36,7 @@ use super::manifest_v2::{
 use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::placement::owning_node;
 use super::quote_ident;
+use super::row_layout::{DistannRowTierLayoutDescriptorV1, DistannRowTierV1};
 use super::row_schema::resolve_relation_schema;
 use super::tuple::DistannNodeTuple;
 
@@ -54,6 +55,7 @@ struct RowAttributeIo {
 
 struct PreparedEntry {
     datums: Vec<Option<pg_sys::Datum>>,
+    cold_datums: Option<Vec<Option<pg_sys::Datum>>>,
     payload_sidecar: Option<Vec<u8>>,
     node: DistannNodeTuple,
 }
@@ -166,24 +168,120 @@ fn identity_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
     })
 }
 
+fn compact_tier_schema_matches(
+    physical: &super::row_schema::DistannRowSchemaDescriptor,
+    logical: &super::row_schema::DistannRowSchemaDescriptor,
+    layout: &DistannRowTierLayoutDescriptorV1,
+    tier: DistannRowTierV1,
+) -> bool {
+    let placements = layout
+        .placements
+        .iter()
+        .filter(|placement| placement.tier == tier)
+        .collect::<Vec<_>>();
+    if physical.attributes.len() != placements.len() + 1 {
+        return false;
+    }
+    let Some(vec_id) = physical.attributes.first() else {
+        return false;
+    };
+    if vec_id.attnum != 1
+        || vec_id.name != "vec_id"
+        || vec_id.type_namespace != "pg_catalog"
+        || vec_id.type_name != "int8"
+        || vec_id.typmod != -1
+        || !vec_id.collation_namespace.is_empty()
+        || !vec_id.collation_name.is_empty()
+        || vec_id.dropped
+        || vec_id.generated_kind != 0
+        || vec_id.send_function != "pg_catalog.int8send"
+        || vec_id.receive_function != "pg_catalog.int8recv"
+    {
+        return false;
+    }
+    placements.into_iter().all(|placement| {
+        let Some(physical_index) = usize::from(placement.physical_ordinal).checked_sub(1) else {
+            return false;
+        };
+        let Some(actual) = physical.attributes.get(physical_index) else {
+            return false;
+        };
+        let Some(source) = logical
+            .attributes
+            .iter()
+            .find(|attribute| attribute.attnum == placement.attnum && !attribute.dropped)
+        else {
+            return false;
+        };
+        actual.attnum == placement.physical_ordinal
+            && actual.name == format!("a_{}", placement.attnum)
+            && actual.type_namespace == source.type_namespace
+            && actual.type_name == source.type_name
+            && actual.typmod == source.typmod
+            && actual.collation_namespace == source.collation_namespace
+            && actual.collation_name == source.collation_name
+            && !actual.dropped
+            && actual.generated_kind == 0
+            && actual.send_function == source.send_function
+            && actual.receive_function == source.receive_function
+    })
+}
+
 fn validate_generation_relations(
     row: &GenerationCatalogRow,
     descriptor: &DistannGenerationDescriptor,
     control_owner: pg_sys::Oid,
 ) -> Result<(), String> {
-    let mut expected_row_schema = descriptor.row_schema.clone();
-    for attribute in &mut expected_row_schema.attributes {
-        if !attribute.dropped {
-            attribute.generated_kind = 0;
+    let physical_row_schema = resolve_relation_schema(row.row_tier_relid)?;
+    let hot_cold = descriptor.row_tier_layout();
+    match (hot_cold, row.cold_tier_relid) {
+        (None, None) => {
+            let mut expected_row_schema = descriptor.row_schema.clone();
+            for attribute in &mut expected_row_schema.attributes {
+                if !attribute.dropped {
+                    attribute.generated_kind = 0;
+                }
+            }
+            if physical_row_schema.descriptor != expected_row_schema {
+                return Err(
+                    "EC_SCHEMA_MISMATCH: physical row tier differs from the frozen generation schema"
+                        .to_owned(),
+                );
+            }
+        }
+        (Some(layout), Some(cold_tier_relid)) => {
+            let physical_cold_schema = resolve_relation_schema(cold_tier_relid)?;
+            if !compact_tier_schema_matches(
+                &physical_row_schema.descriptor,
+                &descriptor.row_schema,
+                layout,
+                DistannRowTierV1::Hot,
+            ) || !compact_tier_schema_matches(
+                &physical_cold_schema.descriptor,
+                &descriptor.row_schema,
+                layout,
+                DistannRowTierV1::Cold,
+            ) {
+                return Err(
+                    "EC_SCHEMA_MISMATCH: compact hot/cold tiers differ from the frozen layout"
+                        .to_owned(),
+                );
+            }
+        }
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: cold relation disagrees with the generation descriptor"
+                    .to_owned(),
+            )
         }
     }
-    let physical_row_schema = resolve_relation_schema(row.row_tier_relid)?;
-    if physical_row_schema.descriptor != expected_row_schema {
-        return Err(
-            "EC_SCHEMA_MISMATCH: physical row tier differs from the frozen generation schema"
-                .to_owned(),
-        );
-    }
+
+    let plain_attribute_names = hot_cold.map(|layout| {
+        vec![
+            format!("a_{}", layout.indexed_vector_attnum),
+            format!("a_{}", layout.source_identity_attnum),
+        ]
+    });
 
     let valid = Spi::connect(|client| {
         client
@@ -194,17 +292,28 @@ fn validate_generation_relations(
                          WHERE oid = $1::oid AND relkind = 'r' AND relowner = $4::oid
                            AND relpersistence = 'p' AND NOT relrowsecurity
                            AND NOT relforcerowsecurity
+                           AND (NOT $5::bool OR
+                                COALESCE(reloptions, ARRAY[]::text[]) @> ARRAY['fillfactor=100'])
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM pg_catalog.pg_attribute
                          WHERE attrelid = $1::oid AND attnum > 0 AND NOT attisdropped
-                           AND (attnotnull OR atthasdef OR attidentity <> '' OR attgenerated <> '')
+                           AND (
+                               atthasdef OR attidentity <> '' OR attgenerated <> ''
+                               OR CASE WHEN $5::bool THEN
+                                    (attnum = 1 AND
+                                     (NOT attnotnull OR attname <> 'vec_id'
+                                      OR atttypid <> 'bigint'::regtype))
+                                    OR (attnum > 1 AND attnotnull)
+                                  ELSE attnotnull END
+                           )
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM pg_catalog.pg_index WHERE indrelid = $1::oid
                     )
                     AND NOT EXISTS (
-                        SELECT 1 FROM pg_catalog.pg_constraint WHERE conrelid = $1::oid
+                        SELECT 1 FROM pg_catalog.pg_constraint
+                         WHERE conrelid = $1::oid AND contype <> 'n'
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM pg_catalog.pg_trigger
@@ -213,6 +322,48 @@ fn validate_generation_relations(
                     AND NOT EXISTS (
                         SELECT 1 FROM pg_catalog.pg_rewrite WHERE ev_class = $1::oid
                     )
+                    AND (NOT $5::bool OR (
+                        SELECT count(*) = 2 AND bool_and(attstorage = 'p')
+                          FROM pg_catalog.pg_attribute
+                         WHERE attrelid = $1::oid AND attnum > 0 AND NOT attisdropped
+                           AND attname::text = ANY($7::text[])
+                    ))
+                    AND (NOT $5::bool OR (
+                        EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_class
+                             WHERE oid = $6::oid AND relkind = 'r' AND relowner = $4::oid
+                               AND relpersistence = 'p' AND NOT relrowsecurity
+                               AND NOT relforcerowsecurity
+                               AND reltablespace = (
+                                   SELECT reltablespace FROM pg_catalog.pg_class WHERE oid = $1::oid
+                               )
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_attribute
+                             WHERE attrelid = $6::oid AND attnum > 0 AND NOT attisdropped
+                               AND (
+                                   atthasdef OR attidentity <> '' OR attgenerated <> ''
+                                   OR (attnum = 1 AND
+                                       (NOT attnotnull OR attname <> 'vec_id'
+                                        OR atttypid <> 'bigint'::regtype))
+                                   OR (attnum > 1 AND attnotnull)
+                               )
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_index WHERE indrelid = $6::oid
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_constraint
+                             WHERE conrelid = $6::oid AND contype <> 'n'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_trigger
+                             WHERE tgrelid = $6::oid AND NOT tgisinternal
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_rewrite WHERE ev_class = $6::oid
+                        )
+                    ))
                     AND EXISTS (
                         SELECT 1 FROM pg_catalog.pg_class
                          WHERE oid = $2::oid AND relkind = 'r' AND relowner = $4::oid
@@ -267,6 +418,9 @@ fn validate_generation_relations(
                     row.graph_store_relid.into(),
                     row.directory_relid.into(),
                     control_owner.into(),
+                    hot_cold.is_some().into(),
+                    row.cold_tier_relid.into(),
+                    plain_attribute_names.unwrap_or_default().into(),
                 ],
             )
             .map_err(|error| {
@@ -497,7 +651,7 @@ unsafe fn receive_and_verify(
     Ok(datum)
 }
 
-fn prepare_entries(
+fn prepare_legacy_entries(
     entries: &[DistannHandoffEntry],
     shape: DistannHandoffShape,
     identity_attnum: u16,
@@ -584,7 +738,133 @@ fn prepare_entries(
             .transpose()?;
         prepared.push(PreparedEntry {
             datums,
+            cold_datums: None,
             payload_sidecar,
+            node,
+        });
+    }
+    Ok(prepared)
+}
+
+fn prepare_hot_cold_entries(
+    entries: &[DistannHandoffEntry],
+    shape: DistannHandoffShape,
+    identity_attnum: u16,
+    row_schema: &super::row_schema::DistannRowSchemaDescriptor,
+    layout: &DistannRowTierLayoutDescriptorV1,
+    hot_io: &mut [Option<RowAttributeIo>],
+    cold_io: &mut [Option<RowAttributeIo>],
+) -> Result<Vec<PreparedEntry>, String> {
+    if hot_io.is_empty() || cold_io.is_empty() {
+        return Err("EC_SCHEMA_MISMATCH: compact row tier lacks its vec_id column".to_owned());
+    }
+    let graph_degree = u16::try_from(shape.graph_degree)
+        .map_err(|_| "EC_HANDOFF_FORMAT: graph degree exceeds u16".to_owned())?;
+    let mut prepared = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let stored_vec_id = i64::from_le_bytes(entry.vec_id.to_le_bytes());
+        let mut hot_datums = vec![None; hot_io.len()];
+        let mut cold_datums = vec![None; cold_io.len()];
+        hot_datums[0] = Some(pg_sys::Datum::from(stored_vec_id));
+        cold_datums[0] = Some(pg_sys::Datum::from(stored_vec_id));
+        let mut non_dropped_position = 0_usize;
+        let mut value_position = 0_usize;
+        for attribute in &row_schema.attributes {
+            if attribute.dropped {
+                continue;
+            }
+            let is_null = entry.row_null_bitmap[non_dropped_position / 8]
+                & (1 << (non_dropped_position % 8))
+                != 0;
+            non_dropped_position += 1;
+            let placement = layout
+                .placements
+                .iter()
+                .find(|placement| placement.attnum == attribute.attnum)
+                .ok_or_else(|| {
+                    format!(
+                        "EC_SCHEMA_MISMATCH: source attnum {} lacks a row-tier placement",
+                        attribute.attnum
+                    )
+                })?;
+            let physical_index = usize::from(placement.physical_ordinal)
+                .checked_sub(1)
+                .ok_or_else(|| "EC_SCHEMA_MISMATCH: compact row-tier ordinal is zero".to_owned())?;
+            let (tier_datums, tier_io) = match placement.tier {
+                DistannRowTierV1::Hot => (&mut hot_datums, &mut *hot_io),
+                DistannRowTierV1::Cold => (&mut cold_datums, &mut *cold_io),
+            };
+            let target = tier_datums.get_mut(physical_index).ok_or_else(|| {
+                format!(
+                    "EC_SCHEMA_MISMATCH: source attnum {} compact ordinal exceeds relation width",
+                    attribute.attnum
+                )
+            })?;
+            let io = tier_io
+                .get_mut(physical_index)
+                .and_then(Option::as_mut)
+                .ok_or_else(|| {
+                    format!(
+                        "EC_SCHEMA_MISMATCH: source attnum {} compact column lacks binary I/O",
+                        attribute.attnum
+                    )
+                })?;
+            if is_null {
+                if attribute.attnum == identity_attnum {
+                    return Err("EC_SOURCE_IDENTITY: source identity is NULL".to_owned());
+                }
+                *target = None;
+                continue;
+            }
+            let bytes = entry.row_values.get(value_position).ok_or_else(|| {
+                format!(
+                    "EC_HANDOFF_FORMAT: attribute {} binary value is absent",
+                    attribute.attnum
+                )
+            })?;
+            value_position += 1;
+            if attribute.attnum == identity_attnum && bytes != &entry.source_identity {
+                return Err(
+                    "EC_SOURCE_IDENTITY: hot-tier identity differs from the handoff identity"
+                        .to_owned(),
+                );
+            }
+            *target =
+                Some(unsafe { receive_and_verify(bytes, io, usize::from(attribute.attnum))? });
+        }
+        if non_dropped_position != shape.non_dropped_attribute_count
+            || value_position != entry.row_values.len()
+        {
+            return Err("EC_HANDOFF_FORMAT: row payload width disagrees with schema".to_owned());
+        }
+
+        let neighbor_count = u16::try_from(entry.neighbor_vec_ids.len())
+            .map_err(|_| "EC_HANDOFF_FORMAT: neighbor count exceeds u16".to_owned())?;
+        let mut neighbor_vec_ids = entry.neighbor_vec_ids.clone();
+        neighbor_vec_ids.resize(shape.graph_degree, 0);
+        let mut neighbor_codes = entry.neighbor_codes.clone();
+        neighbor_codes.resize(shape.graph_degree * shape.code_stride, 0);
+        let node = DistannNodeTuple {
+            tombstoned: false,
+            vec_id: entry.vec_id,
+            heap_tid: ItemPointer {
+                block_number: 0,
+                offset_number: 1,
+            },
+            cold_tid: Some(ItemPointer {
+                block_number: 0,
+                offset_number: 1,
+            }),
+            neighbor_count,
+            search_code: entry.search_code.clone(),
+            neighbor_vec_ids,
+            neighbor_codes,
+        };
+        node.encode_physical_v2(graph_degree, shape.code_stride)?;
+        prepared.push(PreparedEntry {
+            datums: hot_datums,
+            cold_datums: Some(cold_datums),
+            payload_sidecar: None,
             node,
         });
     }
@@ -632,14 +912,23 @@ fn reject_existing_vec_ids(
 
 fn insert_prepared_entries(
     row_relation: &HeapRelationGuard,
+    cold_relation: Option<&HeapRelationGuard>,
     graph_relation: &str,
     payload_sidecar_relation: Option<&str>,
     entries: &mut [PreparedEntry],
     shape: DistannHandoffShape,
+    graph_record_version: u16,
 ) -> Result<(), String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
         "EC_GENERATION_MISSING: could not allocate row-tier tuple slot".to_owned()
     })?;
+    let cold_slot = cold_relation
+        .map(|relation| {
+            TupleTableSlotGuard::create_for_heap_guard(relation).ok_or_else(|| {
+                "EC_GENERATION_MISSING: could not allocate cold-tier tuple slot".to_owned()
+            })
+        })
+        .transpose()?;
     let graph_degree = u16::try_from(shape.graph_degree)
         .map_err(|_| "EC_HANDOFF_FORMAT: graph degree exceeds u16".to_owned())?;
     let mut graph_vec_ids = Vec::with_capacity(entries.len());
@@ -647,6 +936,49 @@ fn insert_prepared_entries(
     let mut graph_row_tids = Vec::with_capacity(entries.len());
     let mut payloads = payload_sidecar_relation.map(|_| Vec::with_capacity(entries.len()));
     for entry in entries {
+        match (
+            cold_relation,
+            cold_slot.as_ref(),
+            entry.cold_datums.as_ref(),
+        ) {
+            (Some(cold_relation), Some(cold_slot), Some(cold_datums)) => {
+                let mut writer = unsafe {
+                    TupleSlotWriter::from_raw_slot(
+                        cold_slot.as_ptr(),
+                        "ec_distann cold-tier handoff",
+                    )?
+                };
+                writer.clear();
+                writer.validate_input_width(cold_datums.len())?;
+                for (attribute_index, datum) in cold_datums.iter().enumerate() {
+                    if let Some(datum) = datum {
+                        writer.set_datum(attribute_index as i32, *datum);
+                    } else {
+                        writer.set_null(attribute_index as i32);
+                    }
+                }
+                let stored_slot = writer.store_virtual_tuple()?;
+                unsafe { pg_sys::simple_table_tuple_insert(cold_relation.as_ptr(), stored_slot) };
+                let cold_tid = unsafe { (*stored_slot).tts_tid };
+                let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(cold_tid);
+                if block_number == pg_sys::InvalidBlockNumber || offset_number == 0 {
+                    return Err(
+                        "EC_GENERATION_MISSING: cold-tier insert returned an invalid TID"
+                            .to_owned(),
+                    );
+                }
+                entry.node.cold_tid = Some(ItemPointer {
+                    block_number,
+                    offset_number,
+                });
+            }
+            (None, None, None) => {}
+            _ => {
+                return Err(
+                    "EC_GENERATION_CORRUPT: cold relation and prepared entry disagree".to_owned(),
+                )
+            }
+        }
         let mut writer = unsafe {
             TupleSlotWriter::from_raw_slot(slot.as_ptr(), "ec_distann row-tier handoff")?
         };
@@ -672,9 +1004,11 @@ fn insert_prepared_entries(
             block_number,
             offset_number,
         };
-        let graph_record = entry
-            .node
-            .encode_physical_v1(graph_degree, shape.code_stride)?;
+        let graph_record = entry.node.encode_physical_version(
+            graph_record_version,
+            graph_degree,
+            shape.code_stride,
+        )?;
         graph_vec_ids.push(i64::from_le_bytes(entry.node.vec_id.to_le_bytes()));
         graph_records.push(graph_record);
         graph_row_tids.push(row_tid);
@@ -1872,6 +2206,16 @@ fn ec_distann_stage_epoch_batch(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
+        let cold_relation = generation
+            .cold_tier_relid
+            .map(|relation_oid| {
+                HeapRelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| "EC_GENERATION_MISSING: cold-tier relation is absent".to_owned())
+            })
+            .transpose()?;
         let _graph_relation_guard = HeapRelationGuard::try_open(
             generation.graph_store_relid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
@@ -1898,14 +2242,33 @@ fn ec_distann_stage_epoch_batch(
         reject_existing_vec_ids(&graph_relation, &batch.entries)?;
         let identity_attnum = identity_attnum(index_oid)?;
         let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
+        let mut cold_io = cold_relation
+            .as_ref()
+            .map(|relation| unsafe { row_attribute_io(relation.as_ptr()) })
+            .transpose()?;
         let mut prepared = with_restricted_type_io_owner(control_owner, || {
-            prepare_entries(
-                &batch.entries,
-                shape,
-                identity_attnum,
-                &mut row_io,
-                descriptor.payload_cover.as_ref(),
-            )
+            match (descriptor.row_tier_layout(), cold_io.as_deref_mut()) {
+                (Some(layout), Some(cold_io)) => prepare_hot_cold_entries(
+                    &batch.entries,
+                    shape,
+                    identity_attnum,
+                    &descriptor.row_schema,
+                    layout,
+                    &mut row_io,
+                    cold_io,
+                ),
+                (None, None) => prepare_legacy_entries(
+                    &batch.entries,
+                    shape,
+                    identity_attnum,
+                    &mut row_io,
+                    descriptor.payload_cover.as_ref(),
+                ),
+                _ => Err(
+                    "EC_GENERATION_MISSING: cold relation disagrees with the generation descriptor"
+                        .to_owned(),
+                ),
+            }
         })?;
         if super::options::debug_fail_handoff_after_prepare() {
             return Err(
@@ -1915,10 +2278,12 @@ fn ec_distann_stage_epoch_batch(
 
         insert_prepared_entries(
             &row_relation,
+            cold_relation.as_ref(),
             &graph_relation,
             payload_sidecar_relation.as_deref(),
             &mut prepared,
             shape,
+            descriptor.graph_record_version,
         )?;
         let journal = GenerationBatchCatalogRow {
             batch_seq,

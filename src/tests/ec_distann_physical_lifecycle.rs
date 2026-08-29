@@ -6094,6 +6094,93 @@ fn test_distann_hot_cold_relation_ddl_and_abort() {
 }
 
 #[pg_test]
+fn test_distann_hot_cold_handoff_v2_locator() {
+    let mut fixture =
+        create_distann_physical_generation_fixture("ec_distann_hot_cold_handoff", 0x2e);
+    configure_hot_cold_generation_fixture(&mut fixture, &[]);
+    let (batch_digest, encoded_batch, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x6e);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+    assert_eq!(
+        stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch),
+        (1, 1, owner_digest)
+    );
+
+    let (hot_oid, graph_oid, _) = distann_generation_relation_oids(&fixture);
+    let cold_oid = distann_cold_tier_relation_oid(&fixture);
+    let hot_name = canonical_index_locator(hot_oid);
+    let cold_name = canonical_index_locator(cold_oid);
+    let graph_name = canonical_index_locator(graph_oid);
+    let stored_vec_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let (graph_record, cold_tid) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT g.graph_record, c.ctid AS cold_tid
+                       FROM {graph_name} g
+                       JOIN {hot_name} h ON h.ctid = g.row_tid AND h.vec_id = g.vec_id
+                       JOIN {cold_name} c ON c.vec_id = g.vec_id
+                      WHERE g.vec_id = $1::bigint
+                        AND h.a_1 = $2::uuid
+                        AND ecvector_send(h.a_4) = ecvector_send(
+                            encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)
+                        )
+                        AND c.a_2 = 'captured payload'
+                        AND c.a_5 = 'captured payload:generated'"
+                ),
+                None,
+                &[
+                    stored_vec_id.into(),
+                    pgrx::datum::Uuid::from_bytes({
+                        let mut identity = [0x6e; 16];
+                        identity[1..9].copy_from_slice(&0_u64.to_le_bytes());
+                        identity[6] = (identity[6] & 0x0f) | 0x40;
+                        identity[8] = (identity[8] & 0x3f) | 0x80;
+                        identity
+                    })
+                    .into(),
+                ],
+            )
+            .expect("partitioned hot/cold rows should be queryable")
+            .map(|row| {
+                (
+                    row["graph_record"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["cold_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("one partitioned row pair should match")
+    });
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let node = crate::bench_api::DistannNodeTuple::decode_physical_version(
+        &graph_record,
+        descriptor.graph_record_version,
+        descriptor.graph_degree,
+        binding.code_len(usize::from(descriptor.dimensions)).unwrap(),
+    )
+    .unwrap();
+    let (cold_block, cold_offset) = pgrx::itemptr::item_pointer_get_both(cold_tid);
+    assert_eq!(
+        node.cold_tid,
+        Some(crate::storage::page::ItemPointer {
+            block_number: cold_block,
+            offset_number: cold_offset,
+        })
+    );
+    assert_eq!(node.vec_id, vec_id);
+
+    abort_distann_physical_generation(&fixture);
+}
+
+#[pg_test]
 fn test_distann_cover_sidecar_lifecycle() {
     let fixture =
         create_covered_distann_physical_generation_fixture("ec_distann_cover_lifecycle", 0x2c);
