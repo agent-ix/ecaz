@@ -5,13 +5,41 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 5
+seq: 6
 ---
 
-# Task 230 packet 003 — row-tier I/O attribution checkpoint
+# Task 230 packet 003 — complete six-shape I/O attribution checkpoint
 
-Review code checkpoint `50701c204` against reviewer seq-04's must-land
-heap/TOAST/tidx attribution requirement.
+Review code checkpoint `428ae9b94` against reviewer seq-05's six-shape
+preregistration carry-in.
+
+## Seq-06 complete six-shape scope
+
+- Adds typed hot-scalar and exact-vector shapes to both the multinode CLI and
+  `ecaz bench suite`, resolving the four-measured-versus-six-predicted gap
+  before any packet-004 threshold is frozen or result is read.
+- The hot-scalar arm projects the preregistered additional hot scalar (`id`,
+  attnum 1) directly from `a_1`; it remains separately labelled from the
+  primary id-only arm so both frozen predictions are independently reported.
+- The exact-vector arm projects `embedding` / `a_4` directly, measuring the
+  materialization side of the PLAIN-inline mechanism rather than only the
+  traversal-side evidence carried by id-only.
+- Hot-scalar and exact-vector are hot-only and therefore do not require the
+  external TOAST fixture. Cold-only, mixed, and select-all retain the strict
+  fixture requirement.
+
+## Seq-06 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Four focused ecaz-cli tests pass, including typed hot-scalar and exact-vector
+  expansion without the TOAST fixture.
+- Mandatory all-target PG18 clippy reproduces only the same five pre-existing
+  findings; no finding is in the seq-06 changes.
+
+## Seq-05 accepted scope
+
+Reviewer seq-05 closed row-tier I/O attribution as DONE. The accepted scope
+below remains for packet history.
 
 ## Seq-05 row-tier I/O attribution scope
 
@@ -163,13 +191,13 @@ below remains for packet history.
 
 ## Packet status
 
-This closes the last harness prerequisite but is not packet-003 closure. Still
-owed are the actual remote retry/intent and fault run,
+This resolves the six-shape preregistration carry-in but is not packet-003
+closure. Still owed are the actual remote retry/intent and fault run,
 publication/recovery and retained-generation reads, and restart/owner-failure
 reads carried from packet 002.
 
 ## Review request
 
-Please verify per-shape isolation, same-session pre/post/force-flush behavior,
-all six `pg_statio_all_tables` deltas, aggregate hit-ratio math, and typed suite
-expansion. Leave feedback under this packet's `feedback/` directory.
+Please verify the hot-scalar and exact-vector physical/end-to-end projections,
+their hot-only TOAST-fixture exemption, and typed suite expansion. Leave
+feedback under this packet's `feedback/` directory.

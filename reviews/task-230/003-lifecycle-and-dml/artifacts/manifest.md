@@ -1,15 +1,40 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `50701c2048550990e3e6ef6123743b94cd57c522`
+- Head SHA: `428ae9b943b34374be015e8f613b1e33923521da`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: row-tier I/O attribution checkpoint, seq-05
+- Packet: complete six-shape row-tier I/O attribution checkpoint, seq-06
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
   row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
   corpus benchmark or rerank measurement
-- Isolation: pure CLI/suite and counter-delta validation tests; the dynamic
-  fresh-fixture measurement is intentionally deferred until this harness is
-  reviewed
+- Isolation: pure CLI/suite validation; the dynamic fresh-fixture measurement
+  is intentionally deferred until this six-shape harness is reviewed
+
+## Seq-06 complete six-shape attribution artifacts
+
+All seq-06 artifacts were produced at
+`428ae9b943b34374be015e8f613b1e33923521da` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-06.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `85352cf5dd94d4052c26da8eb265349f88fd9d6d8ee05659d30924c80d4704f8`
+
+### `cargo-clippy-seq-06.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01 through seq-05; no new finding in the seq-06 changes.
+- SHA-256: `46132229366aaa894a8cb462ae82e781baa998c147f5f1322cbae1900fcd5105`
+
+### `cargo-test-cli-seq-06.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: four passed, zero failed; 546 filtered out. The suite expansion test
+  additionally covers hot-scalar and exact-vector as hot-only shapes that do
+  not require the Task 230 TOAST fixture.
+- SHA-256: `6f61735d9ee16619a9374aef29629111937766b50890a7b145853aab303e7c42`
 
 ## Seq-05 row-tier I/O attribution artifacts
 

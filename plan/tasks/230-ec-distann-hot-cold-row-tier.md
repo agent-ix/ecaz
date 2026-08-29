@@ -34,9 +34,9 @@ row-tier I/O attribution checkpoint 5 review-closed DONE (seq-05) at
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-05-reviewer.md`),
 closing the seq-04 must-land item with isolated typed shapes, same-session owner
 pre/post/force-flush snapshots, all six heap/TOAST/tidx deltas, and aggregate
-shared-buffer hit ratio; no packet-004 measurement has started; **packet 004 must
-resolve four measured I/O shapes versus six §6-predicted shapes before freezing
-thresholds**;
+shared-buffer hit ratio; no packet-004 measurement has started; complete
+six-shape attribution checkpoint 6 review-open at `428ae9b94`, adding the
+hot-scalar and exact-vector arms before any threshold is frozen or result read;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -439,6 +439,16 @@ The traversal-side mechanism evidence is already carried by id-only, but the
 exact-vector *materialization* prediction has no arm. Either add the two shapes
 or narrow §6's prediction list before any full-scale result is read — freezing
 thresholds for four while predicting six leaves two predictions unfalsifiable.
+
+Packet 003 seq-06 complete six-shape attribution checkpoint: code `428ae9b94`;
+review request at seq-06, review-open. Adds separately labelled hot-scalar and
+exact-vector physical/end-to-end attribution arms, with exact-vector directly
+measuring the materialization side of the PLAIN-inline mechanism. Both are
+hot-only and do not require the Task 230 external TOAST fixture; the strict
+fixture gate remains for cold-only, mixed, and select-all. No packet-004 result
+has been read and no threshold has been frozen. Format and four focused CLI
+tests pass; the mandatory clippy gate contains only the same five pre-existing
+findings.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
