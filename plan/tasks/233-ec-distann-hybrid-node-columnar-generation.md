@@ -1,5 +1,10 @@
 # Task 233: ec_distann Hybrid Node/Columnar Generation
 
+> **Tracking moved to GitHub (2026-08-29):** [agent-ix/ecaz#99](https://github.com/agent-ix/ecaz/issues/99)
+> on [Project 19](https://github.com/orgs/agent-ix/projects/19), under EPIC #95.
+> The Status header below is frozen; status updates land on the issue.
+> Review packets remain under `reviews/task-233/`.
+
 Status: **proposed — operator-selected mandatory integration prototype after
 Task 232** (2026-08-22). Priority: P2 storage/retrieval architecture.
 

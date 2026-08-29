@@ -1,5 +1,10 @@
 # Task 237: ec_distann Protocol Error and EXPLAIN Observability
 
+> **Tracking moved to GitHub (2026-08-29):** [agent-ix/ecaz#100](https://github.com/agent-ix/ecaz/issues/100)
+> on [Project 19](https://github.com/orgs/agent-ix/projects/19), under EPIC #95.
+> The Status header below is frozen; status updates land on the issue.
+> Review packets remain under `reviews/task-237/`.
+
 Status: **ready — Tasks 234 and 236 prerequisites complete; run before Task
 228** (updated 2026-08-26). Task 234's operator ACCEPT is recorded in
 `reviews/task-234/005-50k-reuse-drift-bound/feedback/2026-08-26-03-operator.md`.

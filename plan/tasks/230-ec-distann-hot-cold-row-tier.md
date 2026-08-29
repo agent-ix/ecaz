@@ -1,5 +1,10 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
+> **Tracking moved to GitHub (2026-08-29):** [agent-ix/ecaz#96](https://github.com/agent-ix/ecaz/issues/96)
+> on [Project 19](https://github.com/orgs/agent-ix/projects/19), under EPIC #95.
+> The Status header below is frozen; status updates land on the issue.
+> Review packets remain under `reviews/task-230/`.
+
 Status: **proposed — operator-selected mandatory prototype, after Task 229**
 (2026-08-22). Priority: P1 storage/retrieval latency.
 

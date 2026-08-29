@@ -1,5 +1,10 @@
 # Task 228: ec_distann RTT and BatANN Reopen Trigger
 
+> **Tracking moved to GitHub (2026-08-29):** [agent-ix/ecaz#101](https://github.com/agent-ix/ecaz/issues/101)
+> on [Project 19](https://github.com/orgs/agent-ix/projects/19), under EPIC #95.
+> The Status header below is frozen; status updates land on the issue.
+> Review packets remain under `reviews/task-228/`.
+
 Status: **proposed, measurement-only** (updated 2026-08-23). Priority: P2
 architecture gate after Tasks 222--237.
 
