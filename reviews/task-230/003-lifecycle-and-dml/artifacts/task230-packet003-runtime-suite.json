@@ -1,0 +1,51 @@
+{
+  "name": "task230-packet003-hot-cold-runtime",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-230/003-lifecycle-and-dml/artifacts/runtime",
+  "defaults": { "pg": 18 },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task230-hot-cold-read-rpc-faults",
+      "tags": ["task230", "packet003", "read-rpc", "restart", "owner-failure"],
+      "artifact_dir": "${artifact_dir}/read-rpc-faults",
+      "run_dir": "/home/peter/.ecaz/clusters/task230-p003-read-rpc-faults",
+      "log_file": "${artifact_dir}/read-rpc-faults/console.log",
+      "pgbin": "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+      "nodes": 4,
+      "base_port": 45300,
+      "rows": 2000,
+      "dim": 16,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "allow_debug_extension": true,
+      "hot_cold_row_tier": true,
+      "hot_payload_attnums": "1",
+      "read_rpc_fault_matrix": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task230-hot-cold-write-lifecycle-faults",
+      "tags": ["task230", "packet003", "write-2pc", "publication", "recovery", "retained-generation"],
+      "artifact_dir": "${artifact_dir}/write-lifecycle-faults",
+      "run_dir": "/home/peter/.ecaz/clusters/task230-p003-write-lifecycle-faults",
+      "log_file": "${artifact_dir}/write-lifecycle-faults/console.log",
+      "pgbin": "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+      "nodes": 3,
+      "base_port": 45320,
+      "rows": 2000,
+      "dim": 16,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "allow_debug_extension": true,
+      "hot_cold_row_tier": true,
+      "hot_payload_attnums": "1",
+      "write_lifecycle_fault_matrix": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true
+    }
+  ]
+}
