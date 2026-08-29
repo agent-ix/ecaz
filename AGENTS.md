@@ -287,6 +287,38 @@ Rules:
   uncommitted status edits are invisible. Before ending a turn, `git status`
   must show no dangling `plan/tasks/**` edits.
 
+### GitHub-Tracked Work (Project 19)
+
+As of 2026-08-29, open ec_distann work and all new optimization/research
+work are tracked as GitHub issues on
+[Project 19 "Ecaz"](https://github.com/orgs/agent-ix/projects/19), with a
+namespaced label system (`type:*`, `index:*`, `arch:*`, `quant:*`, `feat:*`,
+`env:*`; `epic` marks umbrella issues with sub-issues).
+
+Rules for issue-tracked work:
+
+- **The issue is the tracking surface.** Status and disposition updates land
+  on the GitHub issue (comment + board Status), not in `plan/tasks/`. The
+  dual-update rule above applies only to tasks still tracked locally.
+- **Migrated tasks** (local Tasks 189, 202, 209, 225, 228, 230–233, 237 →
+  issues #96–#105) keep their existing `reviews/task-{id}/` packet buckets.
+  Work that starts life as an issue uses `reviews/gh-{issue}/` with the same
+  packet conventions.
+- **Reference discipline:** in prose, "Task NNN" means the local
+  `plan/tasks/` ledger; `#N` means a GitHub issue or PR. The two number
+  spaces will eventually overlap — never cite a bare number without one of
+  those two forms.
+- The reviewer verdict and outcome rules above apply unchanged: an
+  ACCEPT/STOP/supersede is recorded on the issue the same turn, with the
+  packet path and feedback file cited.
+- `plan/design/ec-distann-recall-latency-roadmap.md` remains the canonical
+  ledger for TRAV/MAT/HEAD/NEG candidate IDs; issues cite candidate IDs from
+  there rather than duplicating them.
+- **Arch-specific kernel work** (quantizer/SIMD changes) carries one subtask
+  per ISA (`arch:x86-avx2`, `arch:x86-avx512`, `arch:arm-neon`,
+  `arch:arm-sve`) with per-arch bench evidence. Changes that do not touch
+  kernels (e.g. transport/networking) do not fan out per arch.
+
 ### Push and Visibility
 
 - Push committed checkpoints, packet updates, and feedback files to the remote

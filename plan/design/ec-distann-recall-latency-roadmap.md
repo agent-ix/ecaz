@@ -5,6 +5,14 @@ space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
 
+> **GitHub migration (2026-08-29):** the open DistANN tasks and the new
+> research program are tracked as issues on
+> [Project 19](https://github.com/orgs/agent-ix/projects/19) — umbrella
+> EPIC [#95](https://github.com/agent-ix/ecaz/issues/95), research pipeline
+> EPIC [#106](https://github.com/agent-ix/ecaz/issues/106). This ledger
+> remains canonical for TRAV/MAT/HEAD/NEG candidate IDs; issues cite
+> candidate IDs from here rather than duplicating them.
+
 ## Purpose
 
 Keep the complete optimization search space durable without turning it into one
