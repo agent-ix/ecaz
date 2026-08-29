@@ -1,7 +1,8 @@
 # Task 240: Artifact Path Sanitization
 
-Status: **implementation in progress** (2026-08-29). Priority: P0 privacy and
-evidence hygiene. Origin: private Engineering Assurance gap audit.
+Status: **implementation complete; packet 001 review-open; history remediation
+pending explicit decision** (2026-08-29). Priority: P0 privacy and evidence
+hygiene. Origin: private Engineering Assurance gap audit.
 
 ## Why
 
