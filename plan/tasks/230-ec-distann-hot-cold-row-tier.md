@@ -178,8 +178,13 @@ release-guarded with no `allow_debug_extension`, run_dir under
 `~/.ecaz/clusters`, stage-counter-only and explicitly not decision-eligible, and
 correctly placed in the packet's `artifacts/` rather than
 `crates/ecaz-cli/suites/`. Ordering: release reinstall and CLI build → smoke →
-smoke evidence review-closed → Packet 004 restarts from empty step 1. No
-complete benchmark result exists yet.
+smoke evidence review-closed → Packet 004 restarts from empty step 1. The
+authorized smoke completed at accepted head `177aae194` with suite status
+`completed=1 failed=0 missing_artifacts=0 stale=0`, unanimous release/no-debug
+preflight, two passing remote-owner proofs, exactly 62 attribution-work rows,
+passing isolated id-only tier I/O, and automatic run-directory cleanup. Packet
+008 seq-02 is **REVIEW-OPEN** for the smoke receipts; no complete Packet 004
+benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
