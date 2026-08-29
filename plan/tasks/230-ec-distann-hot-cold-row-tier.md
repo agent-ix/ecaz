@@ -157,10 +157,29 @@ a guarantee. A third pre-measurement failure then occurred immediately in the
 row-heap step because Packet 007's new logical-`dm` join yielded no valid owner
 sample. Correction `cb6666410` restores row heap's proven internal query and
 samples hot/cold identity plus `a_4::real[]` from the same owned hot tuple,
-without any `dm` join. Packet 008 is **REVIEW-OPEN** at
-`reviews/task-230/008-self-contained-owner-sample/request.md`; its checked-in
-one-step real-10k hot/cold suite smoke must pass and be review-closed before
-Packet 004 restarts from empty step 1. No complete benchmark result exists yet.
+without any `dm` join. Packet 008 is **REVIEW-CLOSED DONE** (verdict
+`reviews/task-230/008-self-contained-owner-sample/feedback/2026-08-29-01-reviewer.md`)
+— the reviewer verified `CREATE CAST (ecvector AS real[])` exists at
+`sql/bootstrap.sql:127` and that `real[] → ecvector → real[]` is lossless, so
+both layouts sample a numerically identical query vector, which matters because
+the probe runs a search with it; the test's negative assertion forbidding
+`JOIN dm` in hot/cold blocks the regression class rather than only pinning the
+new shape. **Reviewer owns part of this failure:** packet 007's verdict
+identified the empty-join case and dismissed it as "fails closed", but failing
+closed at the owner-proof phase of a decision run *is* the harm, and the reviewer
+never asked the more basic question of why a proven row-heap query was being
+changed to fix a hot/cold problem — the minimal fix was always to branch on
+layout. The three failures are three distinct classes (stale cross-crate
+constant; logical names on a compact relation; a repair introducing a liveness
+dependency), and only the first two share the "never run against hot/cold" root
+— the third was introduced by the repair, which is why the smoke should run
+before the matrix. **Smoke authorized**: one step, real-10k, hot/cold,
+release-guarded with no `allow_debug_extension`, run_dir under
+`~/.ecaz/clusters`, stage-counter-only and explicitly not decision-eligible, and
+correctly placed in the packet's `artifacts/` rather than
+`crates/ecaz-cli/suites/`. Ordering: release reinstall and CLI build → smoke →
+smoke evidence review-closed → Packet 004 restarts from empty step 1. No
+complete benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
