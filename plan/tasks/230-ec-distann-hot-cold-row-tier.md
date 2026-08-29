@@ -68,6 +68,11 @@ commits already in `23fb9b7ba`), but
 `cargo clippy -p ecaz-cli --all-targets` must join the packet gate set with a
 recorded baseline; `-D warnings` is not yet usable there because `ecaz-cloud`
 and the two known `ecaz` lib errors fail first;
+payload-offset/lint-gate checkpoint 9 implementation complete, packet 003
+review-open (seq-09) at `deb245711`: the retained materialization now enforces
+the authoritative N-attnums/N-cumulative-end-offsets contract and both root
+PG18 and ecaz-cli all-target clippy receipts are recorded; the three runtime
+evidence groups remain owed;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07

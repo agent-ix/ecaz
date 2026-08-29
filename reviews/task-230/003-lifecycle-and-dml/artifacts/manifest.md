@@ -1,14 +1,45 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `c4b96fe89e8cde09ed015ecccbe8cba33dd4c2d9`
+- Head SHA: `deb245711ad1d2373b6f54903b918292e16e67d5`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: hot/cold lifecycle and fault-matrix harness, seq-08
+- Packet: payload-offset contract and CLI lint gate, seq-09
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: ecaz-cli unit validation;
   row-heap or descriptor V4 / Graph V2 hot/cold per-shape I/O attribution; no
   corpus benchmark or rerank measurement
 - Isolation: pure CLI/suite harness validation; no dynamic fault fixture has
   run yet, because this runner extension is reviewed before the packet consumes it
+
+## Seq-09 payload-offset contract and CLI lint gate artifacts
+
+All seq-09 artifacts were produced at
+`deb245711ad1d2373b6f54903b918292e16e67d5` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-09.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `5736f20c03ab68c5dd6155bd6454835d337fde36c51da96539c7666067a9b2cd`
+
+### `cargo-test-cli-seq-09.log`
+
+- Command: `cargo test -p ecaz-cli task230_`
+- Result: six passed, zero failed; 546 filtered out.
+- SHA-256: `9917ebe23cbdd38daa5c50713b4b9725817e464a1bea9c7d01df8fbecb39ad5e`
+
+### `cargo-clippy-seq-09.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing root-package findings;
+  there is no finding at the seq-09 change.
+- SHA-256: `21628b56ff2e29a2cd1fb2890aa2f644bd0eacb80064bdf141b1e1ae6dface76`
+
+### `cargo-clippy-cli-seq-09.log`
+
+- Command: `cargo clippy -p ecaz-cli --all-targets`
+- Result: exit 0 with the pre-existing warning baseline; there is no finding
+  at the seq-09 change.
+- SHA-256: `b7564d6ab0c630c27f8107c4df82b7496922bbc1527cad1c163cfbcb2fbd00cc`
 
 ## Seq-08 lifecycle and fault-matrix harness artifacts
 

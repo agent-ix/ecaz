@@ -5,13 +5,38 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 8
+seq: 9
 ---
 
-# Task 230 packet 003 — hot/cold lifecycle and fault-matrix harness
+# Task 230 packet 003 — payload-offset contract and CLI lint gate
 
-Review code checkpoint `c4b96fe89` as the suite/harness prerequisite for the
+Review code checkpoint `deb245711` as the final static correction before the
 three remaining Packet 003 runtime evidence groups.
+
+## Seq-09 payload-offset contract and CLI lint gate
+
+- Resolves seq-08's payload-offset carry-in against the production encoder and
+  packet-002 pgrx tests: `ec_distann_materialize_physical_row_payloads` returns
+  one cumulative end offset per requested attribute, not a terminal N+1
+  offset. The retained-generation harness now requires exactly two offsets for
+  `ARRAY[1,3]`.
+- Adds the reviewer-requested `cargo clippy -p ecaz-cli --all-targets` receipt.
+  It exits 0 with the existing warning baseline and has no warning at the
+  seq-09 change. The strict root PG18 gate still reproduces only its five known
+  findings.
+
+## Seq-09 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Six focused `ecaz-cli` Task 230 tests pass.
+- Root PG18 clippy: exit 101 only for the five pre-existing findings.
+- CLI all-target clippy: exit 0 with the pre-existing warning baseline; no
+  Task 230 seq-09 finding.
+
+## Seq-08 accepted scope
+
+Reviewer seq-08 closed the lifecycle and fault-matrix harness as DONE. The
+accepted scope below remains for packet history.
 
 ## Seq-08 lifecycle and fault-matrix harness
 
@@ -28,8 +53,9 @@ three remaining Packet 003 runtime evidence groups.
 - Adds a retained-predecessor production materialization on every owner after
   successor publication and predecessor retirement but before reclaim. It
   requests attnums 1 and 3 together, forcing hot plus cold reconstruction, and
-  asserts one complete row, a three-entry offset array, nonempty payload bytes,
-  `Retired` admission, and the hot/cold catalog shape.
+  asserts one complete row, one cumulative end offset per requested attribute
+  (two offsets for attnums 1 and 3), nonempty payload bytes, `Retired`
+  admission, and the hot/cold catalog shape.
 - Leaves the Task 234 read-RPC matrix itself unchanged; running it on the
   hot/cold fixture exercises all five production RPCs across cancellation,
   remote-backend death, owner connection reset/restart, and clean retry.
