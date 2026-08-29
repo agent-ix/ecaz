@@ -35,8 +35,16 @@ row-tier I/O attribution checkpoint 5 review-closed DONE (seq-05) at
 closing the seq-04 must-land item with isolated typed shapes, same-session owner
 pre/post/force-flush snapshots, all six heap/TOAST/tidx deltas, and aggregate
 shared-buffer hit ratio; no packet-004 measurement has started; complete
-six-shape attribution checkpoint 6 review-open at `428ae9b94`, adding the
-hot-scalar and exact-vector arms before any threshold is frozen or result read;
+six-shape attribution checkpoint 6 reviewed **NOT DONE** (seq-06) at `428ae9b94`
+(verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-06-reviewer.md`) —
+the hot-scalar and exact-vector arms are correct and close the four-versus-six
+gap, but the `cold-only` shape's physical attribution reads the **hot** relation
+(`SELECT a_4 FROM <hot>`) by construction, contradicting the packet-002 seq-09
+counter assertion that a cold-only projection satisfies
+`HotTierRelationOpens == 0`, and not measuring what §6 predicted; the per-shape
+projection rule must be stated and applied consistently **before the packet-004
+matrix runs**;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -449,6 +457,31 @@ fixture gate remains for cold-only, mixed, and select-all. No packet-004 result
 has been read and no threshold has been frozen. Format and four focused CLI
 tests pass; the mandatory clippy gate contains only the same five pre-existing
 findings.
+
+Packet 003 seq-06 six-shape I/O checkpoint: code `428ae9b94`; request at seq-06;
+verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-06-reviewer.md`
+— **NOT DONE**, one blocking item that must be fixed before the packet-004
+matrix runs. The two new shapes are correct: `HotScalar` projects `a_1`/`id`
+separately from the primary id-only arm, and `ExactVector` projects
+`a_4`/`embedding`, supplying the materialization-side mechanism evidence that
+id-only cannot carry; both are hot-only and correctly exempt from the external
+TOAST fixture that stays required for cold/mixed/select-all. Adding the shapes
+rather than narrowing §6's predictions was the right choice and was made before
+any threshold was frozen. **Blocking:** the `cold-only` shape's physical
+attribution issues `SELECT a_4 FROM <hot_relation>` alongside
+`SELECT a_5 FROM <cold_relation>` (`distann_multicluster.rs:10108-10148`), so a
+shape labelled cold-only reads the hot tier by construction. That contradicts the
+packet-002 seq-09 counter assertion (`HotTierRelationOpens == 0`,
+`HotTierTupleReads == 0` for cold-only), does not measure §6's cold-scalar
+prediction, and follows no stated rule — `a_4` appears in the physical arm for
+`IdOnly`, `ColdOnly`, and `Mixed`, none of which project the vector end-to-end,
+yet `ColdOnly` alone omits `a_1`. State whether the physical query mirrors the
+shape's projection or the engine's actual touches, then apply it to all six.
+**Reviewer note:** this mapping is pre-existing from `50701c204`, which the
+reviewer accepted at seq-05 after verifying counter subtraction, flush/clear
+pairing, fail-closed reset, and fixture isolation, but without reading the SQL
+each shape issues — the miss is the reviewer's, not a regression here.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
