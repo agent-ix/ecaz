@@ -9176,13 +9176,13 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 51 server-side work metrics
+            // The extension exposes 61 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            const DISTANN_WORK_ROWS: usize = 52;
+            const DISTANN_WORK_ROWS: usize = 62;
             if work_rows.len() != DISTANN_WORK_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
