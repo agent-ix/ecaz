@@ -42,11 +42,16 @@ the hot-scalar and exact-vector arms are correct and close the four-versus-six
 gap, but the `cold-only` shape's physical attribution reads the **hot** relation
 (`SELECT a_4 FROM <hot>`) by construction, contradicting the packet-002 seq-09
 counter assertion that a cold-only projection satisfies
-`HotTierRelationOpens == 0`, and not measuring what §6 predicted; the per-shape
-projection rule must be stated and applied consistently **before the packet-004
-matrix runs**; projection-mirror fix checkpoint 7 review-open at `95448fa75`,
-making cold-only cold-only in both arms and pinning all six mappings in a
-table-driven test; no packet-004 result has been read;
+`HotTierRelationOpens == 0`, and not measuring what §6 predicted; **closed by**
+projection-mirror fix checkpoint 7, review-closed DONE (seq-07) at `95448fa75`
+(verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-07-reviewer.md`),
+which states one rule — the attribution query mirrors the end-to-end projection —
+applies it to all six shapes in both arms, makes cold-only issue no hot query at
+all, drops `embedding` from the control's cold-only so the A/B compares like with
+like, pins every mapping in a table-driven test, and emits
+`physical_projection_rule=mirrors_end_to_end_projection` in both log lines; no
+packet-004 result has been read and nothing now blocks the matrix;
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -497,6 +502,28 @@ shape's projection or the engine's actual touches, then apply it to all six.
 reviewer accepted at seq-05 after verifying counter subtraction, flush/clear
 pairing, fail-closed reset, and fixture isolation, but without reading the SQL
 each shape issues — the miss is the reviewer's, not a regression here.
+
+Packet 003 seq-07 projection-mirrored I/O attribution checkpoint: code
+`95448fa75`; request at seq-07; verdict
+`reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-07-reviewer.md`
+— **DONE**, closing the seq-06 blocking item with the option the reviewer
+recommended. `task230_local_io_projections` returns
+`(Option<hot_or_row>, Option<cold>)` so "this shape does not touch that tier" is
+representable in the type rather than worked around: cold-only issues no
+hot-relation query at all, which makes the packet-002 seq-09 counter assertion
+and the packet-004 I/O table agree instead of contradict. The row-heap control
+also dropped `embedding` from cold-only — fixing only the candidate would have
+left the A/B comparing a cold-payload read against a vector-plus-payload read, a
+worse error because it would have looked corrected. A table-driven test pins the
+row/hot/cold projections for all six shapes, and both log lines now carry
+`physical_projection_rule=mirrors_end_to_end_projection`, so the rule that was
+previously invisible in the output — which is why it survived the reviewer's
+seq-05 pass — is now auditable from the artifact. **Carried into packet-004
+reporting:** `id-only` and `hot-scalar` are now the same projection (`a_1`/`id`)
+because `id` is the only additional hot scalar the fixture schema admits, so §6's
+six predictions resolve to five distinct measurements; report the two rows as one
+measurement under two labels rather than letting equal numbers read as
+independent corroboration.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
