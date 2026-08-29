@@ -28,6 +28,16 @@ All seq-10 artifacts below were produced at
 - Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
   non-failures).
 
+### `clippy-seq-10.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Produced immediately after the seq-10 closure verdict at `5f4586e33`;
+  reviewed code remains `03a4015a2`.
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1195`, and `ec_distann_physical_lifecycle.rs:8787`; no
+  new lint from the seq-10 test-only checkpoint.
+
 ## Seq-09 production read-admission artifacts
 
 All seq-09 artifacts below were produced at
