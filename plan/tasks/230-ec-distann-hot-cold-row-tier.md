@@ -7,9 +7,11 @@ generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
 `885b86be0`; receipt V3 / manifest V4 sealing review-closed DONE (seq-08) at
 `5214b6d98`; production read admission review-closed DONE (seq-09) at
-`f4c8fcedf`; NULL cold-only/mixed reconstruction added at `03a4015a2`, packet
-002 seq-10 review-open; packet-001 §7 checkpoint 4 restart and owner-failure
-coverage explicitly moved to packet 003's lifecycle matrix; seq-07
+`f4c8fcedf`; NULL cold-only/mixed reconstruction review-closed DONE (seq-10) at
+`03a4015a2` — **packet 002 REVIEW-CLOSED**, all four packet-001 §7 checkpoints
+satisfied; packet 003 lifecycle and DML authorized and NEXT; packet-001 §7
+checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
+lifecycle matrix and expressly not waived; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
@@ -267,6 +269,26 @@ attribution is preregistered as per-shape pre/post `pg_statio_all_tables`
 deltas for heap, TOAST heap, and TOAST index reads/hits on isolated arm
 surfaces; shared-buffer hit ratio is computed from the same deltas. If seq-10
 is DONE, packet 002 closes and packet 003 is authorized.
+
+Packet 002 seq-10 closure checkpoint: code `03a4015a2`; request at seq-10;
+verdict
+`reviews/task-230/002-format-and-read-path/feedback/2026-08-29-01-reviewer.md`
+— **DONE, packet 002 review-closed**. All three seq-09 closing conditions met.
+NULL coverage travels the real wire/handoff/seal/read path (built by marking the
+wire bitmap rather than mutating a published row, which would have invalidated
+Graph V2 CTIDs) and asserts the check that matters: `offsets[1] == offsets[0]`
+and `offsets[3] == offsets[2]` prove a NULL never advances the value cursor,
+with the terminal offset pinned to `values.len()`. Restart and owner-failure
+coverage are reconciled into packet 003 in writing and expressly not waived.
+Packet-004 TOAST attribution is decided: pre/post `pg_statio_all_tables` deltas
+per isolated arm and query shape covering heap, TOAST heap, and TOAST index
+reads/hits, with shared-buffer hit ratio derived from the same deltas — one
+measurement serving both needs and no production detoast instrumentation.
+Harness note: take the post-reading after `pg_stat_force_next_flush()` from the
+same session that ran the queries. Standing requirement from packet 003 onward:
+every checkpoint carries both `clippy` and `format-check` logs with manifest
+entries, including test-only commits, since `--all-targets` lints test code;
+`clippy-seq-10.log` is still owed so packet 002 closes with a complete record.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
