@@ -116,10 +116,19 @@ before any result existed. The first authorized suite attempt produced no valid
 result: its release preflight passed at `35648e467`, then the CLI rejected the
 extension's 61 server attribution rows plus one client row against a stale
 52-row invariant. Standalone correction `0b15cf020` updates the expected total
-to 62; packet 005 is **REVIEW-OPEN** at
-`reviews/task-230/005-suite-runner-attribution-count/request.md`. Packet 004
-will restart from an empty result surface and clean fixture only after that
-correction is review-closed. No benchmark result exists yet.
+to 62; packet 005 is **REVIEW-CLOSED DONE** (verdict
+`reviews/task-230/005-suite-runner-attribution-count/feedback/2026-08-29-01-reviewer.md`)
+— the reviewer verified the chain reconciles exactly (`ALL: [Self; 61]` at
+`stage_counters.rs:260`, plus one `client_result_rows`, and 51 + the ten
+packet-002 seq-09 hot/cold counters = 61), that the diff is two lines touching
+only a comment and a constant, and that the failed attempt's preflight passed at
+the preregistered SHA with `debug_override=false`. **Packet 004's unchanged
+matrix is authorized to restart from step 1 with an empty results file and a
+clean fixture.** Reviewer note, not blocking: `DISTANN_WORK_ROWS` remains a
+hardcoded CLI literal, so the next counter added to `ALL` will break the runner
+the same way, and the failure only surfaces once a full-scale arm is already
+running — have the extension declare its own metric count, or at minimum comment
+the coupling at the `ALL` definition site. No benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
@@ -709,6 +718,27 @@ zero cold-tier accesses on id-only/exact-vector and zero hot-tier on cold-only;
 both storage gates against their own denominators; the §5 table honest in both
 directions; and run dirs distinct, under `~/.ecaz/clusters`, removed after
 capture.
+
+Packet 005 suite-runner attribution count: code `0b15cf020`; request at seq-01;
+verdict
+`reviews/task-230/005-suite-runner-attribution-count/feedback/2026-08-29-01-reviewer.md`
+— **DONE**. The 62-row contract reconciles exactly and the reviewer checked every
+number in the chain rather than the claim: `DistannMaterializationWork::ALL` is
+`[Self; 61]`, the latency child appends one `client_result_rows`, and the old 52
+was 51 + 1, with Task 230's ten packet-002 seq-09 counters accounting for the
+difference. The diff is two lines — a stale comment and the constant — touching
+no suite config, measurement option, threshold, or interpretation logic. The
+failure itself did the right thing: a runner invariant refused to attribute
+latency against an unrecognised row shape, in step 1 of 20, before any
+measurement existed. The disposition is right on every point — invalid, not
+interpreted, **not resumed**, restart from step 1 with a new empty results file
+and clean run directory; resuming would have left a run whose first arm used a
+different CLI than the rest. The failed-arm summary also confirms the entry gate
+works in the real run: `extension_build_profile=release`, `debug_override=false`,
+`unanimous=true` at the preregistered SHA, and `source_config_sha256=e141ac65…`
+captured so the restart can be proved to use the same frozen config. **On the
+rerun the reviewer will additionally check** that the config SHA-256 matches
+`e141ac65…` and that the results file is genuinely new and begins at step 1.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's
