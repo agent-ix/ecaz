@@ -141,9 +141,21 @@ closed before measurement because the remote-owner placement proof used logical
 `source_id`/`source` names against compact hot columns. Correction `93615542d`
 selects `source_id` versus `a_2` by physical layout and joins the sampled
 internal identity back to `dm` only for the raw query vector; packet 007 is
-**REVIEW-OPEN** at `reviews/task-230/007-hot-cold-owner-probe/request.md`. The
-partial control is discarded so the accepted rerun uses one CLI head from step
-1. No complete benchmark result exists yet.
+**REVIEW-CLOSED DONE** (verdict
+`reviews/task-230/007-hot-cold-owner-probe/feedback/2026-08-29-01-reviewer.md`)
+— the ownership assertion is unchanged because the row is still selected FROM the
+internal generation relation and ordered by the internal identity, with the join
+only decorating it with the raw query vector; all three internal probes use the
+selected column; and discarding the already-successful 10k row-heap control to
+keep the pair on one CLI head was reached unprompted and is the right trade
+against the arm-contamination class that cost Task 229 three of its four gates.
+**Reviewer sweep:** packets 005 and 007 are both "this harness path had only ever
+been exercised against row-heap"; grepping `distann_multicluster.rs` for logical
+fixture column names used against a generation or hot relation returns no
+residual matches, so that specific class appears closed — one class checked, not
+a guarantee. If a third mid-run failure occurs, do a tiny-scale dry end-to-end
+hot/cold pass before committing to the 20-step matrix again. No complete
+benchmark result exists yet.
 packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
