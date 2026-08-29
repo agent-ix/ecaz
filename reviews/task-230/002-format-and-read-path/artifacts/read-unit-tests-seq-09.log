@@ -1,0 +1,20 @@
+Script started on 2026-08-28 23:08:20-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.92s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-a7643cf5b01584df)
+
+running 1 test
+test am::ec_distann::manifest_v2::tests::manifest_preserves_legacy_v2_and_round_trips_covered_v3_fingerprints ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2630 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-a7643cf5b01584df)
+
+running 1 test
+test am::ec_distann::remote_endpoint::packed_payload_sql_tests::identified_tier_projection_echoes_requested_and_stored_identity ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2630 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-28 23:09:05-07:00 [COMMAND_EXIT_CODE="0"]

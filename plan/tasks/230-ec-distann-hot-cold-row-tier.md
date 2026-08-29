@@ -6,7 +6,8 @@ descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
 `775174659`; hot/cold handoff + Graph V2 locator review-closed DONE (seq-07) at
 `885b86be0`; receipt V3 / manifest V4 sealing review-closed DONE (seq-08) at
-`5214b6d98`; packet 002 remains open for production read admission; seq-07
+`5214b6d98`; production read admission implemented at `f4c8fcedf` with packet
+002 seq-09 review-open; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format
 implementation authorized; entry condition 3 satisfied**
 (updated 2026-08-28; Task 229 is review-closed STOP; request
@@ -207,11 +208,27 @@ disclosure:** the shared checkout was dirty with the coder's in-flight next
 slice, so the reviewer's own clippy run measured HEAD plus uncommitted work and
 returned zero errors; the packet's checkpoint `clippy-seq-08.log` is the correct
 evidence and shows the usual five pre-existing errors, none in a touched file.
-The coder's uncommitted work appears to fix all five pre-existing lints — if that
-lands, the standing caveat retires. Note: `DistannEpochManifestV2::version()`
+The reviewer reported that the shared dirty checkout appeared to fix all five
+pre-existing lints; the exact seq-09 checkpoint rerun confirms all five remain,
+so the standing caveat does not retire. Note: `DistannEpochManifestV2::version()`
 uses OR over the three hot/cold fields while `validate()` requires all-or-none;
 `encode()` validates first so nothing can be emitted wrong, but the two
 predicates should agree.
+
+Packet 002 seq-09 production-read checkpoint: code `f4c8fcedf`; request at
+seq-09 — **review-open**. Descriptor-versioned Graph reads now admit V2 while
+the three legacy tag-guarded paths remain V1; exact-vector reads map the source
+attnum to the compact hot physical ordinal; and payload materialization uses
+Graph V2's locator pair to fetch and validate typed hot/cold values and rebuild
+the logical projection in original order. Tier access is lazy for id-only,
+hot-only, cold-only, and mixed projections. Local and remote CustomScan paths
+share the typed reconstruction contract and bounded latest-snapshot retry.
+Focused PG18 typed and three-owner projection tests pass, including external
+cold TOAST, failure cases, rescans, deepening, and forced retry; the Task 229
+sidecar projection regression also passes. All three compile gates and format
+pass; clippy reports only the same five pre-existing repository failures.
+Reviewer seq-08's manifest-version predicate note is closed. Packet 003
+lifecycle/DML remains gated on the outside verdict.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-16. This task evaluates a vertical layout independently of Task 229's

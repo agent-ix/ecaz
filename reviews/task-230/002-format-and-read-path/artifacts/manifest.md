@@ -1,14 +1,66 @@
 # Task 230 packet 002 artifact manifest
 
-- Head SHA: `5214b6d98a76340c9ceed38c95386c776da19286`
+- Head SHA: `f4c8fcedfb3620e41105b33e364620941056ce0c`
 - Task bucket: `reviews/task-230/002-format-and-read-path/`
-- Packet: Receipt V3 / manifest V4 sealing checkpoint
+- Packet: Production hot/cold read-admission checkpoint
 - Timestamp: 2026-08-28 America/Los_Angeles
-- Lane / fixture / storage format / rerank mode: local PG18 callback plus pure
-  format/descriptor tests; hot/cold sealing through receipt V3 / manifest V4;
-  rerank not applicable
-- Isolation: focused pgrx test creates transaction-scoped source/index fixtures;
-  no corpus or benchmark fixture was created
+- Lane / fixture / storage format / rerank mode: local PG18 callbacks plus pure
+  format/read tests; descriptor V4, Graph V2, receipt V3, manifest V4, compact
+  paired hot/cold heaps; production exact rerank; no corpus benchmark
+- Isolation: focused pgrx tests create transaction-scoped one-index and
+  three-owner source/index fixtures; no corpus or benchmark fixture was created
+
+## Seq-09 production read-admission artifacts
+
+All seq-09 artifacts below were produced at
+`f4c8fcedfb3620e41105b33e364620941056ce0c` on 2026-08-28 PDT.
+
+### `read-unit-tests-seq-09.log`
+
+- Command: `cargo test --lib --no-default-features --features pg18 manifest_preserves_legacy_v2_and_round_trips_covered_v3_fingerprints` followed by the same command with `identified_tier_projection_echoes_requested_and_stored_identity`.
+- Cited result: both focused tests pass; partial hot/cold manifest shape is not
+  version-admitted, and ordinary/packed identified payload SQL binds and echoes
+  TID plus `vec_id`.
+
+### `compile-gates-seq-09.log`
+
+- Command: three `cargo check --no-default-features` gates with features
+  `pg18`, `pg18 pg_test`, and `pg18 distann-head-attribution-benchmark`.
+- Cited result: all three gates exit 0.
+
+### `hot-cold-read-pg18-seq-09.log`
+
+- Command: `cargo test --lib --no-default-features --features 'pg18 pg_test' test_distann_hot_cold_typed_materialization_and_visibility`
+- Cited result: `1 passed; 0 failed`; exact-vector physical ordinal, id/hot/cold/
+  mixed typed reconstruction, tier-lazy counters, identity drift, half-pair
+  failure, and both-missing behavior pass.
+
+### `hot-cold-projection-pg18-seq-09.log`
+
+- Command: `cargo test --lib --no-default-features --features 'pg18 pg_test' test_distann_hot_cold_projection_contract`
+- Cited result: `1 passed; 0 failed`; the three-owner production CustomScan
+  matrix passes with external cold-tier TOAST and local/remote, rescan,
+  deepening, and forced-retry shapes.
+
+### `sidecar-regression-pg18-seq-09.log`
+
+- Command: `cargo test --lib --no-default-features --features 'pg18 pg_test' test_distann_payload_projection_contract`
+- Cited result: `1 passed; 0 failed`; Task 229's three-owner payload-sidecar
+  projection contract remains unchanged.
+
+### `format-check-seq-09.log`
+
+- Command: `cargo fmt --all -- --check`
+- Cited result: exit status 0 (stable-rustfmt nightly-option warnings are
+  non-failures).
+
+### `clippy-seq-09.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Cited result: nonzero only for the same five pre-existing failures in
+  `ambuild.rs:139`, `generation_descriptor.rs:872`, `head_sample.rs:1818`,
+  `remote_endpoint.rs:1195`, and `ec_distann_physical_lifecycle.rs:8661`; no
+  failure is introduced by the seq-09 read implementation.
 
 ## Seq-08 receipt V3 / manifest V4 sealing artifacts
 

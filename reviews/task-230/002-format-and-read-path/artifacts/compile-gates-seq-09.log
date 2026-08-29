@@ -1,0 +1,9 @@
+Script started on 2026-08-28 23:09:05-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.05s
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 17.52s
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.23s
+
+Script done on 2026-08-28 23:09:42-07:00 [COMMAND_EXIT_CODE="0"]

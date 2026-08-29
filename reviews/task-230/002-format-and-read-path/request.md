@@ -5,16 +5,49 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-28
-seq: 08
+seq: 09
 ---
 
-# Task 230 packet 002 — receipt V3 and manifest V4 sealing
+# Task 230 packet 002 — production hot/cold read admission
 
-Review code checkpoint `5214b6d98` against the review-closed packet-001
-contract and reviewer seq-07, which accepted paired handoff and authorized
-receipt V3 / manifest V4 sealing. This remains a narrow packet-002 checkpoint:
-it seals and binds the paired heaps, but production read admission remains the
-next slice.
+Review code checkpoint `f4c8fcedf` against the review-closed packet-001
+contract and reviewer seq-08, which accepted receipt V3 / manifest V4 sealing
+and authorized production read admission. This is the final packet-002 slice;
+packet 003 lifecycle and DML remains separate.
+
+## Seq-09 production read scope
+
+- Dispatches every production physical graph read through the descriptor's
+  graph-record version. The three legacy tag-guarded V1 paths called out by the
+  reviewer remain unversioned.
+- Maps the logical indexed-vector attnum to its compact hot physical ordinal
+  for retained and physical-generation exact-distance reads. Hot opens lazily;
+  id-only and cold-only projections do not open the hot heap.
+- Resolves and validates both compact relation schemas against the frozen
+  logical descriptor and layout before admitting a retained hot/cold epoch.
+- Resolves Graph V2's hot/cold locator pair as the only payload locator
+  authority, partitions requested attnums by tier, fetches typed binary values,
+  validates requested and stored TID/`vec_id` echoes plus NULL/offset shape,
+  and reconstructs values in original logical attnum order.
+- Preserves projection-specific access: id-only opens neither tier, hot-only
+  opens no cold relation, cold-only opens no hot relation, and mixed or
+  `SELECT *` reads both. Missing halves fail closed; both missing remains the
+  established row-disappearance result; a newly visible tuple requests the
+  bounded latest-snapshot retry.
+- Routes owner-local hot/cold CustomScan hits through typed reconstruction.
+  This closes a crash found by the three-owner test: treating the compact hot
+  tuple as a full logical source row caused internal `vec_id` bits to be read
+  as a UUID Datum pointer. Task 229 sidecar routing remains unchanged.
+- Adds explicit hot/cold relation-open, tuple-read, requested-block,
+  payload-byte, and exact-vector read/byte counters for packet-004 attribution.
+- Makes manifest `.version()` agree with the all-or-none hot/cold validation
+  predicate, closing reviewer seq-08's carry-in.
+- Extends the three-owner projection contract with a real hot/cold arm and
+  externally TOASTed cold values. It covers id-only, hot, cold, mixed,
+  whole-row, qual-only, cached-parameter, correlated-rescan, deepening, forced
+  intent retry, and local/remote ownership paths. A focused typed test pins
+  physical-vector ordinal selection, tier laziness/counters, identity drift,
+  half-pair failure, and both-missing behavior.
 
 ## Seq-08 receipt/manifest scope
 
@@ -191,8 +224,18 @@ contract as requested by packet-001 reviewer seq-03.
 
 ## Validation
 
-Packet-local seq-08 output and provenance are recorded in
+Packet-local seq-09 output and provenance are recorded in
 `artifacts/manifest.md`:
+
+- the manifest all-or-none and identified SQL-builder unit tests pass;
+- all three PG18 compile gates pass (production, `pg_test`, and attribution);
+- focused PG18 typed hot/cold reconstruction and the three-owner hot/cold
+  projection contract pass;
+- the Task 229 three-owner sidecar projection contract passes unchanged;
+- formatting passes, and all-target PG18 clippy records only the same five
+  pre-existing repository failures, with no new Task 230 warning.
+
+Prior seq-08 evidence remains recorded in the same manifest:
 
 - eight active receipt/manifest tests pass (one deterministic emitter ignored);
 - all 26 DistANN independent on-disk fixture tests pass;
@@ -229,15 +272,15 @@ Prior seq-05 evidence remains recorded in the same manifest:
   repository failures already identified in seq-02; none is in a seq-05
   touched line.
 
-No benchmark is claimed for this sealing slice. Production reads, DML, full
-lifecycle, and benchmark coverage remain required before Task 230 closes.
+No benchmark is claimed for packet 002. DML, full lifecycle, and the
+10k/50k/100k release A/B remain required before Task 230 closes.
 
 ## Review request
 
-Please review append-only receipt/manifest dispatch, logical versus physical
-tier digest separation, paired-locator sealing and reconstruction, global
-roster-ordered tier digests, descriptor/manifest binding, SQL length admission,
-golden fixtures, and NULL-vector rejection at `5214b6d98`. If DONE, the next
-packet-002 slice will implement production exact-vector and typed payload read
-admission. Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths
-remain unversioned V1.
+Please review Graph V2 production-read dispatch, logical-to-physical vector
+ordinal mapping, lazy tier admission, authoritative paired-locator typed
+reconstruction, local/remote CustomScan routing and bounded visibility retry,
+the new attribution counters, and the PG18 projection matrix at `f4c8fcedf`.
+If DONE, packet 002 is review-closed and packet 003 lifecycle/DML is authorized.
+Legacy tag-guarded `expand.rs`, `reader.rs`, and `insert.rs` paths remain
+unversioned V1.
