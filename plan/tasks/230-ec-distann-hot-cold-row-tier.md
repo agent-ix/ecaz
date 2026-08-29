@@ -13,8 +13,10 @@ satisfied; packet 003 DML/lifecycle checkpoint 1 review-closed DONE (seq-01) at
 `6d439e1e3` (verdict
 `reviews/task-230/003-lifecycle-and-dml/feedback/2026-08-29-01-reviewer.md`),
 packet 003 still open with remote retry/fault, restart/owner-failure, recovery,
-retained predecessor, remaining drop/REINDEX, **and topology reporting
-(version-dispatched decode plus cold-tier accounting)** still owed; packet-001 §7
+retained predecessor, and remaining drop/REINDEX still owed; topology reporting
+checkpoint 2 implemented and review-open at `760ed15a7` (seq-02), with
+version-dispatched Graph V2 diagnostics, logical hot/cold reconstruction, and
+explicit cold row/orphan/byte accounting; packet-001 §7
 checkpoint 4 restart and owner-failure coverage explicitly moved to packet 003's
 lifecycle matrix and expressly not waived; seq-07
 format/clippy artifact debt closed immediately after verdict; persisted-format

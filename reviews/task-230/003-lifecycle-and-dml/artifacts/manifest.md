@@ -1,14 +1,42 @@
 # Task 230 packet 003 artifact manifest
 
-- Head SHA: `6d439e1e3ed1374d19e6fe9071d3251b9677ca68`
+- Head SHA: `760ed15a75bb2f3ed499665b8dbc0b7b3cd92a3c`
 - Task bucket: `reviews/task-230/003-lifecycle-and-dml/`
-- Packet: hot/cold DML and reclaim checkpoint, seq-01
+- Packet: hot/cold topology checkpoint, seq-02
 - Timestamp: 2026-08-29 America/Los_Angeles
 - Lane / fixture / storage format / rerank mode: local PG18 pgrx callbacks;
   descriptor V4, Graph V2, receipt V3, manifest V4, compact paired hot/cold
   heaps; no corpus benchmark or rerank measurement
 - Isolation: every focused callback creates its own transaction-scoped source
   index and generation relations; no shared-table benchmark surface
+
+## Seq-02 topology artifacts
+
+All seq-02 artifacts were produced at
+`760ed15a75bb2f3ed499665b8dbc0b7b3cd92a3c` on 2026-08-29 PDT.
+
+### `cargo-fmt-seq-02.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: exit 0. Stable-rustfmt nightly-option warnings are non-failures.
+- SHA-256: `bdcee12933694b90dbf4905fbea8a7d44c55e817841648513a37e48913c2a0d2`
+
+### `cargo-clippy-seq-02.log`
+
+- Command: `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: exit 101 only for the same five pre-existing findings recorded in
+  seq-01; no finding in `handoff.rs` or the new topology test.
+- SHA-256: `8a8645b4026124507d16252044418fdf8b7dcc4c8050c74251e2b20e56d386af`
+
+### `cargo-pgrx-test-topology-seq-02.log`
+
+- Command: `cargo pgrx test pg18 test_distann_hot_cold_topology_reports_both_tiers --no-default-features --features 'pg18 pg_test'`
+- Result: one passed, zero failed; 2,642 filtered out. The callback proves Graph
+  V2 diagnostic admission, logical reconstruction/digest equality, separate
+  hot/cold row counts and orphan counts, and both heap byte values.
+- SHA-256: `04d98fa364adffad5dd31b9a097a8f75b39888ee23536a158c0bdb7ce4218d39`
+
+## Seq-01 DML and reclaim artifacts
 
 ## `cargo-fmt-seq-01.log`
 

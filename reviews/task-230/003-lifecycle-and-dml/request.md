@@ -5,14 +5,41 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 1
+seq: 2
 ---
 
-# Task 230 packet 003 — hot/cold DML and reclaim checkpoint
+# Task 230 packet 003 — hot/cold topology checkpoint
 
-Review code checkpoint `6d439e1e3` for the first packet-003 slice.
+Review code checkpoint `760ed15a7` against reviewer seq-01's topology carry-in.
 
-## Scope
+## Seq-02 topology scope
+
+- Replaces the production topology diagnostic's hard-coded Graph V1 decode
+  with descriptor-version dispatch, admitting hot/cold Graph V2 records.
+- Opens and schema-validates the cold relation under the same inspection lock
+  set as hot/graph/directory, reconstructs the frozen logical row from both
+  compact tuples, and recomputes the unchanged logical row-tier digest.
+- Preserves every existing topology column and appends explicit optional
+  `cold_tier_row_count`, `cold_tier_orphan_row_count`, and `cold_tier_bytes`
+  columns to both build-id and fingerprint endpoints. Legacy/sidecar
+  generations report NULL for all three.
+- Adds a published PG18 hot/cold topology callback that proves V2 admission,
+  one hot plus one cold row, zero orphans in both tiers, byte accounting for
+  both heaps, and logical digest equality with the frozen manifest.
+
+## Seq-02 validation
+
+- `cargo fmt --all -- --check`: exit 0.
+- Focused PG18 topology callback: one passed, zero failed.
+- Mandatory all-target PG18 clippy: only the same five pre-existing findings;
+  no finding in `handoff.rs` or the new topology test.
+
+## Seq-01 accepted scope
+
+Reviewer seq-01 closed the DML/reclaim checkpoint as DONE. The accepted scope
+below remains for packet history.
+
+### DML and reclaim implementation
 
 - Physical inserts now map logical source attributes to the compact tier
   ordinals frozen in descriptor V4, append cold then hot, and publish a Graph
@@ -33,7 +60,7 @@ Review code checkpoint `6d439e1e3` for the first packet-003 slice.
   graph-only tombstone, injected-failure rollback, retirement, reclaim
   rollback, idempotent reclaim, and dropping the cold tier with the generation.
 
-## Validation
+### Seq-01 validation
 
 - `cargo fmt --all -- --check`: exit 0.
 - `cargo pgrx test pg18 test_distann_hot_cold_ --no-default-features --features
@@ -45,14 +72,13 @@ Review code checkpoint `6d439e1e3` for the first packet-003 slice.
 
 ## Packet status
 
-This is a reviewable narrow checkpoint, not packet-003 closure. Still owed in
-later checkpoints are retry/intent and remote-owner fault coverage, rebuild and
-retained-predecessor recovery, restart and owner-failure reads carried from
-packet 002, and the remaining drop/REINDEX lifecycle matrix.
+This is a reviewable narrow checkpoint, not packet-003 closure. Still owed are
+retry/intent and remote-owner fault coverage, rebuild and retained-predecessor
+recovery, restart and owner-failure reads carried from packet 002, and the
+remaining drop/REINDEX lifecycle matrix.
 
 ## Review request
 
-Please verify the logical-to-compact write mapping, cold-before-hot-before-graph
-atomicity, V2 locator preservation across backlinks/replacement/delete, and
-the retire/reclaim handling of the cold relation. Leave feedback under this
-packet's `feedback/` directory.
+Please verify version-dispatched diagnostic decode, fail-closed hot/cold
+pairing, logical digest reconstruction, and the appended cold-tier topology
+accounting. Leave feedback under this packet's `feedback/` directory.
