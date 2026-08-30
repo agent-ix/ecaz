@@ -92,3 +92,56 @@
   artifacts. PostgreSQL 18.3 reported checksums `on`, shared buffers `128MB`,
   extension profile `release`, and the exact run head SHA above. The remaining
   26 suite steps were selection-skipped and are not claimed as measurements.
+
+## Invalid decision attempt 001: prepared-lock self-deadlock
+
+- Timestamp: started `2026-08-30T01:51:00-07:00`; interrupted after diagnosis
+  at approximately `2026-08-30T02:21:00-07:00`.
+- Measurement extension SHA:
+  `1f88b553e140628e5d70f72632599f15705b1f25`; profile `release` on every
+  fixture node. Suite receipt commit at launch: `641901239`.
+- Command: `/home/peter/.cargo-target/debug/ecaz bench suite run --config
+  crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json --resume-from
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest-precheck.json
+  --manifest-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest.json
+  --results-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/results.jsonl
+  --log-file
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-run.log`.
+- Isolation: both attempted arms used fresh one-index-per-table, three-owner
+  fixtures in distinct directories under `/home/peter/.ecaz/clusters/`. The
+  runner cleaned the completed control fixture. The interrupted fixed fixture
+  was stopped with `pg_ctl -m fast` and removed after its diagnostic was copied
+  packet-locally; neither cluster is review evidence.
+- `run/suite-manifest.json` SHA-256:
+  `62b7181aaf1435d27ee944d5112e5af632a6fdb49fc4fce5f16eb71a16805774`.
+  It correctly records only the host precheck and
+  `task231-warm-10k-a-control-first` as succeeded; the fixed arm and all later
+  steps remain pending. `run/suite-run.log` SHA-256:
+  `b60b12bd6677d60ea4619f671fedaaa78283c8d5dc72d83900e7d410d9bc92cc`.
+- The completed control summary is
+  `run/warm/10k/pair-a/control-first/distann-multinode-summary.log`, SHA-256
+  `24c52a1e11d35f79532c2a930ee9ac6be3fff95c8c7778fec6d4ee84940be738`.
+  Key lines: distinct recall `0.9990`, warm concurrency-1 mean latency
+  `7.56 ms`, physical generation bytes `242860032`, and cluster raw node-store
+  DML growth `0`; every topology and workload gate passed. This arm is retained
+  as diagnostic evidence only, not as a final A/B control, because the decision
+  matrix will restart on one post-fix extension SHA.
+- The fixed arm passed build, checksum, topology, serving, recall, latency,
+  graph diagnostics, and the exact raw-store size relation before stalling in
+  routed DML. Its partial log is
+  `run/warm/10k/pair-a/fixed-second/distann-local-multinode.log`, SHA-256
+  `6355c22373d787b9e61b58c31bcf9ec965d71a3ac50225c5286dcdeff1e2dfed`.
+  Those partial measurements are invalid and are not used for an A/B claim.
+- `run/fixed-stride-10k-a-stall-diagnostic.md` SHA-256:
+  `86cdeb31b4cbdb374fd723e06749dea9babdd6ccaabbf9b5fc9404088acba417`.
+  It proves a prepared remote transaction held the fixed node store's
+  self-conflicting `ShareRowExclusiveLock` while a later backlink transaction
+  to the same owner waited for that lock. The coordinator could therefore
+  never reach the callback that resolved the prepared transaction.
+- Disposition: the attempt is invalid, not STOP/PROMOTE evidence. Code
+  checkpoint `fc4a4292681715d899a80d7df251955b5de6f711` releases the raw-tail
+  lock when the owner-local mutation context ends, before remote prepare. The
+  full matrix will restart from a fresh precheck and fresh fixtures only after
+  Packet 006 review closes that correction.

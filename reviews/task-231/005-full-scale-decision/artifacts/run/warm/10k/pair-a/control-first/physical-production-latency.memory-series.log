@@ -1,0 +1,15 @@
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=0 rss_kb=130924 hwm_kb=131416
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=27 rss_kb=130988 hwm_kb=131416
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=53 rss_kb=130988 hwm_kb=131416
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=80 rss_kb=131052 hwm_kb=131416
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=106 rss_kb=132396 hwm_kb=132396
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=132 rss_kb=133612 hwm_kb=133612
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=159 rss_kb=134572 hwm_kb=134572
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=185 rss_kb=136172 hwm_kb=136172
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=211 rss_kb=137068 hwm_kb=137068
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=237 rss_kb=137964 hwm_kb=137964
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=263 rss_kb=138476 hwm_kb=138476
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=289 rss_kb=139884 hwm_kb=139884
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=316 rss_kb=140588 hwm_kb=140588
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=343 rss_kb=141356 hwm_kb=141356
+[backend-memory] sweep=top_k=32 pid=1181633 elapsed_ms=369 rss_kb=142764 hwm_kb=142764

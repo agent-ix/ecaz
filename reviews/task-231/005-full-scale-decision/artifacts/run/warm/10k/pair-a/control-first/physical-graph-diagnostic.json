@@ -1,0 +1,481 @@
+{
+  "monolithic": {
+    "aggregate": {
+      "adjacency_sha256": "4336be1898dcc4e88afa3eae0770f90d7fcac621ada7b81f92733082b54fdb6f",
+      "articulation_candidate_count": 0,
+      "articulation_candidate_ids": [],
+      "bridge_candidate_count": 0,
+      "bridge_candidate_edges": [],
+      "directed_edges": 257058,
+      "duplicate_edges": 0,
+      "in_degree": {
+        "max": 2882,
+        "min": 2,
+        "p50": 22,
+        "p95": 52,
+        "p99": 79,
+        "zero": 0
+      },
+      "invalid_edges": 0,
+      "largest_strongly_connected_component": 10000,
+      "largest_weak_component": 10000,
+      "live_nodes": 10000,
+      "local_edges": 257058,
+      "out_degree": {
+        "max": 32,
+        "min": 3,
+        "p50": 27,
+        "p95": 32,
+        "p99": 32,
+        "zero": 0
+      },
+      "owner_ordinal": null,
+      "remote_edges": 0,
+      "self_edges": 0,
+      "stitch_edges": 0,
+      "stored_nodes": 10000,
+      "strongly_connected_components": 1,
+      "tombstones": 0,
+      "weak_components": 1
+    },
+    "owners": [
+      {
+        "adjacency_sha256": "4336be1898dcc4e88afa3eae0770f90d7fcac621ada7b81f92733082b54fdb6f",
+        "articulation_candidate_count": 0,
+        "articulation_candidate_ids": [],
+        "bridge_candidate_count": 0,
+        "bridge_candidate_edges": [],
+        "directed_edges": 257058,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 2882,
+          "min": 2,
+          "p50": 22,
+          "p95": 52,
+          "p99": 79,
+          "zero": 0
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 10000,
+        "largest_weak_component": 10000,
+        "live_nodes": 10000,
+        "local_edges": 257058,
+        "out_degree": {
+          "max": 32,
+          "min": 3,
+          "p50": 27,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 0,
+        "remote_edges": 0,
+        "self_edges": 0,
+        "stitch_edges": 0,
+        "stored_nodes": 10000,
+        "strongly_connected_components": 1,
+        "tombstones": 0,
+        "weak_components": 1
+      }
+    ],
+    "schema": "ec_distann_graph_diagnostic_v1",
+    "seed_reachability": [
+      {
+        "configured_seeds": 4096,
+        "live_seeds": 0,
+        "missing_seeds": 4096,
+        "name": "physical_persisted_head",
+        "reachable_fraction": 0.0,
+        "reachable_live_nodes": 0,
+        "unreachable_live_nodes": 10000
+      }
+    ],
+    "stitch_definition": "persisted cross-owner directed edge"
+  },
+  "monolithic_control": {
+    "identity_kind": "adjacency_sha256",
+    "index_bytes": 115687424,
+    "index_name": "task179_single_10k_idx",
+    "parameters": {
+      "distributed_control": false,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "neighbor_code_format": "rabitq"
+    },
+    "source_bytes": 282206208
+  },
+  "physical": {
+    "aggregate": {
+      "adjacency_sha256": "3b6e2155b3762ba1dfe6edf7c0e1dc821efd90a003d94f4f96d5ce6f48efa591",
+      "articulation_candidate_count": 0,
+      "articulation_candidate_ids": [],
+      "bridge_candidate_count": 0,
+      "bridge_candidate_edges": [],
+      "directed_edges": 257058,
+      "duplicate_edges": 0,
+      "in_degree": {
+        "max": 2882,
+        "min": 2,
+        "p50": 22,
+        "p95": 52,
+        "p99": 79,
+        "zero": 0
+      },
+      "invalid_edges": 0,
+      "largest_strongly_connected_component": 10000,
+      "largest_weak_component": 10000,
+      "live_nodes": 10000,
+      "local_edges": 85786,
+      "out_degree": {
+        "max": 32,
+        "min": 3,
+        "p50": 27,
+        "p95": 32,
+        "p99": 32,
+        "zero": 0
+      },
+      "owner_ordinal": null,
+      "remote_edges": 171272,
+      "self_edges": 0,
+      "stitch_edges": 171272,
+      "stored_nodes": 10000,
+      "strongly_connected_components": 1,
+      "tombstones": 0,
+      "weak_components": 1
+    },
+    "owners": [
+      {
+        "adjacency_sha256": "13170ae2e82fd1581e20d3913e0340aae88e3b734334c116fc76a9babe403f01",
+        "articulation_candidate_count": 6,
+        "articulation_candidate_ids": [
+          "1d5b10b6b2e2d32c",
+          "1e1782e998f4b3b6",
+          "539224727821ecd0",
+          "827320056a832e38",
+          "948a6559089de0a2",
+          "a9cc1d06847a462f"
+        ],
+        "bridge_candidate_count": 6,
+        "bridge_candidate_edges": [
+          [
+            "1d5b10b6b2e2d32c",
+            "c64a716c1334a5c6"
+          ],
+          [
+            "1e1782e998f4b3b6",
+            "c56e29e6c800cb83"
+          ],
+          [
+            "539224727821ecd0",
+            "e9ae332c89ba6ebb"
+          ],
+          [
+            "6a5bbfff9bd53826",
+            "a9cc1d06847a462f"
+          ],
+          [
+            "81f28cb841201c24",
+            "948a6559089de0a2"
+          ],
+          [
+            "827320056a832e38",
+            "ac2aa2b7414b465a"
+          ]
+        ],
+        "directed_edges": 85673,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 2882,
+          "min": 2,
+          "p50": 22,
+          "p95": 50,
+          "p99": 79,
+          "zero": 0
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 3318,
+        "largest_weak_component": 3321,
+        "live_nodes": 3323,
+        "local_edges": 29229,
+        "out_degree": {
+          "max": 32,
+          "min": 7,
+          "p50": 27,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 0,
+        "remote_edges": 56444,
+        "self_edges": 0,
+        "stitch_edges": 56444,
+        "stored_nodes": 3323,
+        "strongly_connected_components": 6,
+        "tombstones": 0,
+        "weak_components": 3
+      },
+      {
+        "adjacency_sha256": "9d9c5857bde414490e58da45cd5275a23ed15eab226cf47b32f5f06c18adb7ac",
+        "articulation_candidate_count": 12,
+        "articulation_candidate_ids": [
+          "4c26f4f2b0e518f7",
+          "5f1edaf2f70d0f09",
+          "7384323f9e882750",
+          "838a8612b64362c7",
+          "8e8f88873544a5ae",
+          "cb563cc7f69ae146",
+          "d302a576d5d1dba4",
+          "df728517db82ddfe",
+          "e0b402ac180d5a87",
+          "e4a962487a3a1dc5",
+          "eab35a931feb621d",
+          "fa2e2c6c06de41cc"
+        ],
+        "bridge_candidate_count": 12,
+        "bridge_candidate_edges": [
+          [
+            "05c4a2773cff1009",
+            "cb563cc7f69ae146"
+          ],
+          [
+            "0951b91ea28ffb1f",
+            "e4a962487a3a1dc5"
+          ],
+          [
+            "1111ebebc885f775",
+            "7384323f9e882750"
+          ],
+          [
+            "199f02396e329312",
+            "e0b402ac180d5a87"
+          ],
+          [
+            "34cfac83f27a15f5",
+            "d302a576d5d1dba4"
+          ],
+          [
+            "3654859b491daad2",
+            "838a8612b64362c7"
+          ],
+          [
+            "459f51ef0e505d8d",
+            "fa2e2c6c06de41cc"
+          ],
+          [
+            "48407782de61ba48",
+            "5f1edaf2f70d0f09"
+          ],
+          [
+            "4c26f4f2b0e518f7",
+            "96365e277c723ab7"
+          ],
+          [
+            "8c1c1998ed306ef3",
+            "df728517db82ddfe"
+          ],
+          [
+            "8e8f88873544a5ae",
+            "c612c91e1421cfa3"
+          ],
+          [
+            "d7f14ffc26bb41e9",
+            "eab35a931feb621d"
+          ]
+        ],
+        "directed_edges": 86757,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 148,
+          "min": 3,
+          "p50": 22,
+          "p95": 53,
+          "p99": 82,
+          "zero": 0
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 3381,
+        "largest_weak_component": 3388,
+        "live_nodes": 3391,
+        "local_edges": 28959,
+        "out_degree": {
+          "max": 32,
+          "min": 3,
+          "p50": 27,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 1,
+        "remote_edges": 57798,
+        "self_edges": 0,
+        "stitch_edges": 57798,
+        "stored_nodes": 3391,
+        "strongly_connected_components": 11,
+        "tombstones": 0,
+        "weak_components": 4
+      },
+      {
+        "adjacency_sha256": "0931ba8596f10ee36326586c3ca2bf9e6c860e6e6d5b2a6d4e218f5e6765bf8e",
+        "articulation_candidate_count": 14,
+        "articulation_candidate_ids": [
+          "040755964e41098b",
+          "067fd887b3c797ce",
+          "0cd76c9a42f932ad",
+          "1c84ebdd1bcb549c",
+          "26c894060ee8057f",
+          "3f12445d541b3044",
+          "5af7830525087257",
+          "7cddaa3fabfb5fe3",
+          "99cad8c74b768880",
+          "a29655342b1ef4be",
+          "bb8cadfdbecf8473",
+          "cba957bdf82bf247",
+          "d57c0fa725504225",
+          "ef4c33db4df0c560"
+        ],
+        "bridge_candidate_count": 14,
+        "bridge_candidate_edges": [
+          [
+            "040755964e41098b",
+            "a4bd78995f48f53f"
+          ],
+          [
+            "067fd887b3c797ce",
+            "6d6e1d57801774ef"
+          ],
+          [
+            "0a92ac007c183d09",
+            "3f12445d541b3044"
+          ],
+          [
+            "0cd76c9a42f932ad",
+            "a2f92df135e6a7f5"
+          ],
+          [
+            "1c84ebdd1bcb549c",
+            "f8c15fba7a7ca1d1"
+          ],
+          [
+            "244a57e86a2b96c3",
+            "cba957bdf82bf247"
+          ],
+          [
+            "26c894060ee8057f",
+            "8874e621a8519a41"
+          ],
+          [
+            "57e5d0382a2963a1",
+            "bb8cadfdbecf8473"
+          ],
+          [
+            "59630b4a6ed33f75",
+            "ef4c33db4df0c560"
+          ],
+          [
+            "5af7830525087257",
+            "97579a56e8f3f5ec"
+          ],
+          [
+            "608b75853d24ee77",
+            "a29655342b1ef4be"
+          ],
+          [
+            "6a8a7458632f414e",
+            "7cddaa3fabfb5fe3"
+          ],
+          [
+            "99cad8c74b768880",
+            "a3643f00e326abe0"
+          ],
+          [
+            "cddcb403a8849c5e",
+            "d57c0fa725504225"
+          ]
+        ],
+        "directed_edges": 84628,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 144,
+          "min": 4,
+          "p50": 22,
+          "p95": 53,
+          "p99": 78,
+          "zero": 0
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 3277,
+        "largest_weak_component": 3282,
+        "live_nodes": 3286,
+        "local_edges": 27598,
+        "out_degree": {
+          "max": 32,
+          "min": 6,
+          "p50": 27,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 2,
+        "remote_edges": 57030,
+        "self_edges": 0,
+        "stitch_edges": 57030,
+        "stored_nodes": 3286,
+        "strongly_connected_components": 10,
+        "tombstones": 0,
+        "weak_components": 5
+      }
+    ],
+    "schema": "ec_distann_graph_diagnostic_v1",
+    "seed_reachability": [
+      {
+        "configured_seeds": 4096,
+        "live_seeds": 4096,
+        "missing_seeds": 0,
+        "name": "persisted_head",
+        "reachable_fraction": 1.0,
+        "reachable_live_nodes": 10000,
+        "unreachable_live_nodes": 0
+      },
+      {
+        "configured_seeds": 1303,
+        "live_seeds": 1303,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_0",
+        "reachable_fraction": 1.0,
+        "reachable_live_nodes": 10000,
+        "unreachable_live_nodes": 0
+      },
+      {
+        "configured_seeds": 1431,
+        "live_seeds": 1431,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_1",
+        "reachable_fraction": 1.0,
+        "reachable_live_nodes": 10000,
+        "unreachable_live_nodes": 0
+      },
+      {
+        "configured_seeds": 1362,
+        "live_seeds": 1362,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_2",
+        "reachable_fraction": 1.0,
+        "reachable_live_nodes": 10000,
+        "unreachable_live_nodes": 0
+      }
+    ],
+    "stitch_definition": "persisted cross-owner directed edge"
+  },
+  "physical_generation": {
+    "identity": "0200dc7d89e86e089609dc9605d575aac885c93916538a18c4f4dc29c8d54259bf84",
+    "identity_kind": "epoch_fingerprint",
+    "parameters": {
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "neighbor_code_format": "rabitq",
+      "owners": 3
+    }
+  },
+  "scale": "10k",
+  "schema": "ec_distann_graph_diagnostic_file_v1"
+}

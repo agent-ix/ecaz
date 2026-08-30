@@ -1,0 +1,15 @@
+2026-08-30 01:52:33.112 PDT [1181373] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-30 01:52:33.125 PDT [1181373] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-30 01:52:33.125 PDT [1181373] LOG:  listening on IPv4 address "127.0.0.1", port 46400
+2026-08-30 01:52:33.137 PDT [1181379] LOG:  database system was shut down at 2026-08-30 01:52:31 PDT
+2026-08-30 01:52:33.150 PDT [1181373] LOG:  database system is ready to accept connections
+2026-08-30 01:57:04.329 PDT [1181377] LOG:  checkpoint starting: wal
+2026-08-30 02:00:04.633 PDT [1190349] FATAL:  role "peter" does not exist
+2026-08-30 02:00:05.141 PDT [1181373] LOG:  received fast shutdown request
+2026-08-30 02:00:05.148 PDT [1181373] LOG:  aborting any active transactions
+2026-08-30 02:00:05.151 PDT [1181373] LOG:  background worker "logical replication launcher" (PID 1181382) exited with exit code 1
+2026-08-30 02:00:05.485 PDT [1181377] LOG:  checkpoint complete: wrote 335 buffers (2.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=180.824 s, sync=0.154 s, total=181.181 s; sync files=324, longest=0.011 s, average=0.001 s; distance=533191 kB, estimate=533191 kB; lsn=0/2D641530, redo lsn=0/220064C0
+2026-08-30 02:00:05.485 PDT [1181377] LOG:  shutting down
+2026-08-30 02:00:05.489 PDT [1181377] LOG:  checkpoint starting: shutdown immediate
+2026-08-30 02:00:05.586 PDT [1181377] LOG:  checkpoint complete: wrote 2087 buffers (12.7%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 11 recycled; write=0.023 s, sync=0.014 s, total=0.101 s; sync files=31, longest=0.006 s, average=0.001 s; distance=186604 kB, estimate=498533 kB; lsn=0/2D6415A8, redo lsn=0/2D6415A8
+2026-08-30 02:00:05.613 PDT [1181373] LOG:  database system is shut down

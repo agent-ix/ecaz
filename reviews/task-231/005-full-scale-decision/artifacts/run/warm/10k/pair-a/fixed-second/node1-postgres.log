@@ -1,0 +1,21 @@
+2026-08-30 02:00:08.753 PDT [1190436] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-30 02:00:08.769 PDT [1190436] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-30 02:00:08.769 PDT [1190436] LOG:  listening on IPv4 address "127.0.0.1", port 46410
+2026-08-30 02:00:08.779 PDT [1190442] LOG:  database system was shut down at 2026-08-30 02:00:06 PDT
+2026-08-30 02:00:08.791 PDT [1190436] LOG:  database system is ready to accept connections
+2026-08-30 02:05:08.672 PDT [1190440] LOG:  checkpoint starting: time
+2026-08-30 02:06:11.960 PDT [1190440] LOG:  checkpoint complete: wrote 655 buffers (4.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 29 recycled; write=63.069 s, sync=0.082 s, total=63.288 s; sync files=316, longest=0.004 s, average=0.001 s; distance=473280 kB, estimate=473280 kB; lsn=0/1E584930, redo lsn=0/1E5848A0
+2026-08-30 02:20:08.145 PDT [1190440] LOG:  checkpoint starting: time
+2026-08-30 02:20:08.278 PDT [1190440] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.101 s, sync=0.007 s, total=0.134 s; sync files=1, longest=0.007 s, average=0.007 s; distance=0 kB, estimate=425952 kB; lsn=0/1E584B40, redo lsn=0/1E584AE8
+2026-08-30 02:21:20.423 PDT [1190436] LOG:  received fast shutdown request
+2026-08-30 02:21:20.434 PDT [1190436] LOG:  aborting any active transactions
+2026-08-30 02:21:20.434 PDT [1190790] FATAL:  terminating connection due to administrator command
+2026-08-30 02:21:20.434 PDT [1190786] FATAL:  terminating connection due to administrator command
+2026-08-30 02:21:20.436 PDT [1190436] LOG:  background worker "logical replication launcher" (PID 1190445) exited with exit code 1
+2026-08-30 02:21:20.437 PDT [1190556] FATAL:  terminating connection due to administrator command
+2026-08-30 02:21:20.437 PDT [1190556] STATEMENT:  INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding) SELECT 2000000, (substr(md5(2000000::text),1,8)||'-'||substr(md5(2000000::text),9,4)||'-4'||substr(md5(2000000::text),14,3)||'-8'||substr(md5(2000000::text),18,3)||'-'||substr(md5(2000000::text),21,12))::uuid, source, encode_to_ecvector(source, 4, 42) FROM task179_physical_10k_corpus ORDER BY id OFFSET 0 LIMIT 1
+2026-08-30 02:21:20.440 PDT [1192631] FATAL:  the database system is shutting down
+2026-08-30 02:21:20.481 PDT [1190440] LOG:  shutting down
+2026-08-30 02:21:20.486 PDT [1190440] LOG:  checkpoint starting: shutdown immediate
+2026-08-30 02:21:20.515 PDT [1190440] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.003 s, total=0.035 s; sync files=1, longest=0.003 s, average=0.003 s; distance=0 kB, estimate=383357 kB; lsn=0/1E584C18, redo lsn=0/1E584C18
+2026-08-30 02:21:20.550 PDT [1190436] LOG:  database system is shut down
