@@ -1,6 +1,13 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **implementation complete; Packet 004 full-scale decision is STOP, no
+Status: **implementation complete; Packet 004 STOP disposition unchanged;
+seq-04 re-scoped basis is REVIEW-OPEN at
+`reviews/task-230/004-full-scale-decision/request.md`. The decisive gate is
+100k pair B (8.67 → 9.47 ms), supported by reproduced -0.0020/-0.0025 recall
+deltas; the inherited result is stable 9.47/9.47 ms hot/cold versus
+position-sensitive 12.40/8.67 ms row-heap. GitHub issue #96 is authoritative.**
+
+Prior review status: **implementation complete; Packet 004 full-scale decision is STOP, no
 candidate — disposition CORRECT but seq-03 reviewed NOT DONE on its stated
 basis** (verdict
 `reviews/task-230/004-full-scale-decision/feedback/2026-08-29-03-reviewer.md`;

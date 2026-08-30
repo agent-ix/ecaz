@@ -2,9 +2,10 @@
 
 - Benchmark head SHA: `8bcccb56c6381527c4d2f3a4f4c9931b66b9235c`
 - Task bucket: `reviews/task-230/004-full-scale-decision/`
-- Packet: frozen full-scale PROMOTE/STOP decision, seq-03
+- Packet: frozen full-scale PROMOTE/STOP decision, seq-04 re-scoped basis
 - Timestamp: 2026-08-29 (America/Los_Angeles)
-- Lane: local Intel, PostgreSQL 18, release extension, no debug override
+- Lane: local Intel, PostgreSQL 18; release extension with no debug override;
+  debug/dev-profile CLI runner
 - Fixture / format: staged real 1,536-dimensional `ec_real_10k`,
   `ec_real_50k`, and `ec_real_100k`; production DistANN row-heap control versus
   descriptor V4 / Graph V2 hot/cold candidate; no rerank variant
@@ -18,7 +19,7 @@
 - Final disposition: **STOP**
 - Artifact inventory: `artifact-sha256.txt` records and verifies every other
   retained artifact in this packet; its SHA-256 is
-  `6fa13d817da902b639b69d465d781b7195a3ef1bd1cc5f112749269f8fd4e8df`.
+  `23e9c223a0c3e7913710f51a6fc855f7aad963700df81b39b2e9d3a8166ff042`.
   The Cargo receipts and dry-run log entries hash Git's committed
   LF-normalized bytes.
 
@@ -62,10 +63,14 @@
 - Command: `cargo pgrx install --release --pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config --no-default-features --features 'pg18 distann-head-attribution-benchmark'`
 - Result: exit 0; release extension installed after Packet 003's test install.
 
-### `cargo-build-cli-release-runner.log`
+### `cargo-build-cli-debug-runner.log`
 
-- Command: `cargo build --release -p ecaz-cli`
-- Result: exit 0; suite runner built from benchmark head.
+- Command: `cargo build -p ecaz-cli`
+- Result: exit 0; the suite runner was built from benchmark head in Cargo's
+  `dev` profile with debuginfo and invoked as
+  `/home/peter/.cargo-target/debug/ecaz`. The PG18 extension remained release
+  built; this CLI provenance matches Task 229 and biases percentages
+  conservatively, but the runner was not release-mode.
 
 ### `cargo-clippy-cli-entry.log`
 
@@ -88,13 +93,21 @@
 
 ## Key decision lines
 
-- Four 50k recall thresholds fail: all physical arms produce 0.9540–0.9545
-  against the frozen 0.980 floor.
-- Prediction SHA parity fails in 50k pair B and both 100k pairs.
-- 100k recall deltas fail in both pairs (-0.0025 and -0.0020).
-- 100k mean gate passes pair A (12.40 → 9.47 ms) and fails pair B
-  (8.67 → 9.47 ms); pair B p95/p99 also fail.
-- 50k pair-B replacement p95 fails at 2.734× control.
+- Decisive candidate gate: 100k pair A passes (12.40 → 9.47 ms), while pair B
+  fails (8.67 → 9.47 ms); the frozen rule requires both pairs. Pair-B p95/p99
+  also fail.
+- Reproduced supporting gate: candidate recall is 0.9275 in both 100k pairs;
+  controls are 0.9300/0.9295, so candidate deltas of -0.0025/-0.0020 exceed
+  the -0.001 tolerance against a measured 0.0005 control spread.
+- Position result: candidate is stable at 9.47/9.47 ms in opposite positions;
+  row-heap varies 12.40/8.67 ms. Hot/cold trades peak warm latency for
+  position-insensitivity and loses against the warm control.
+- Non-discriminating run-validity limits: every 50k arm misses the 0.980 floor;
+  prediction hashes diverge control-vs-control at 100k and therefore cannot
+  establish candidate semantic parity at decision scale.
+- 50k pair-B replacement p95 fails at 2.734× control but does not reproduce:
+  pair A passes at 0.704× control. It shares pair B, but not the arm, with the
+  row-heap prediction outlier.
 - Tier-laziness, both storage gates, build/publish, insert, and the other DML
   gates pass.
 - Direction predictions: id-only/hot-scalar falsified as a general claim;

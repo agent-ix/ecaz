@@ -1,4 +1,4 @@
-0cffde3b595a3a08ff0949be67effeccf0039a2839c474ed7f2a59f4af6b7007  cargo-build-cli-release-runner.log
+0cffde3b595a3a08ff0949be67effeccf0039a2839c474ed7f2a59f4af6b7007  cargo-build-cli-debug-runner.log
 4f3a58ac9fb5f738c3061f38cf8ddd4aa16ab7d344c866cf92236065b00f5ef2  cargo-clippy-cli-entry.log
 c6553b99c71d626ce5be04829d023d4c235f456886dce5f71fcece95924ef99f  cargo-pgrx-install-release-pg18.log
 81d7b3489a8a376924d3fc1b6b815ac21231b4c2619accadffc33eb901d3868b  io-attribution.md
