@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 03
+seq: 04
 ---
 
 # Task 231 fixed-stride graph/vector block design freeze
@@ -81,6 +81,28 @@ segment byte_offset = PG_PAGE_HEADER_BYTES + NODE_PAGE_HEADER_BYTES
 Block zero is a relation metadata page. A packed node never crosses a page; a
 multi-block node starts at its own fixed aligned extent. There is no graph-heap
 CTID in the addressing contract.
+
+## Frozen block-zero metadata
+
+The PostgreSQL page header on block zero is followed by this 160-byte admission
+record. The encoded layout descriptor is exactly 42 bytes; bytes 98..127 are
+canonical zero. Its digest is calculated with bytes 128..159 zeroed.
+
+```text
+0    magic[4]             "EFM1"
+4    format_version u16   1
+6    metadata_bytes u16   160
+8    generation_tag[16]
+24   layout_digest[32]    canonical layout SHA-256 domain digest
+56   layout_bytes[42]     admitted fixed-stride layout descriptor
+98   reserved[30]         zero
+128  metadata_digest[32]  SHA-256 domain digest of the full canonical record
+```
+
+Readers admit magic and version before consuming the version-sized record,
+then validate length, reserved bytes, metadata digest, layout decode and layout
+digest. The admitted layout and generation tag must equal the generation
+descriptor before any node data block is exposed.
 
 ## Frozen page envelope
 

@@ -5,15 +5,16 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 02
+seq: 03
 ---
 
 # Task 231 fixed-stride format and persisted selector checkpoint
 
 Review code checkpoints `1e0d5906abfa5a586091ca51b4ccf1a48690f37f`
-and `c644b3fb0cc7bad7027bd51d277a6578e69b81c1`. This is the second narrow
-Packet 003 slice; raw relation I/O and the production read-path switch remain
-open and will be requested as later sequences in this packet.
+and `c644b3fb0cc7bad7027bd51d277a6578e69b81c1`, plus block-zero metadata
+checkpoint `95c974ec61c1918d84136daafdfbe040f8f6ed6d`. Raw relation I/O and the
+production read-path switch remain open and will be requested as later
+sequences in this packet.
 
 The new `fixed_stride` module implements the Packet 001 arithmetic and byte
 contract without PostgreSQL backend dependencies:
@@ -55,3 +56,17 @@ The second checkpoint adds:
 The combined format/descriptor gate is 6/6 green with no compiler warnings;
 see `artifacts/fixed-stride-descriptor-tests.log`. Durable crash/replay binding
 of the selector belongs to Packet 004 and is not claimed here.
+
+## Sequence 03: block-zero admission record
+
+The third checkpoint freezes and implements the 160-byte `EFM1` block-zero
+metadata record called out in Packet 001 sequence 04. It binds the exact
+42-byte layout descriptor, its canonical SHA-256 digest, and the 16-byte
+generation tag under a second metadata digest. Decode remains version-first
+and rejects length, reserved-byte, digest, layout-digest, and descriptor
+arithmetic drift before relation data can be admitted.
+
+The focused gate remains 6/6 green; the generation-binding test now includes
+metadata round-trip and corruption rejection. See
+`artifacts/fixed-stride-metadata-tests.log`. PostgreSQL raw-page I/O remains the
+next slice in this packet.

@@ -1,0 +1,17 @@
+Script started on 2026-08-29 19:51:11-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 43s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-3a53383b035ade0a)
+
+running 6 tests
+test am::ec_distann::fixed_stride::tests::layout_covers_packed_one_page_and_multi_block_cases ... [32mok(B[m
+test am::ec_distann::fixed_stride::tests::generation_tag_binds_descriptor_index_and_build ... [32mok(B[m
+test am::ec_distann::fixed_stride::tests::persisted_layout_must_match_derived_arithmetic ... [32mok(B[m
+test am::ec_distann::fixed_stride::tests::node_round_trip_reuses_buffers_and_rejects_corruption ... [32mok(B[m
+test am::ec_distann::generation_descriptor::tests::generation_descriptor_v5_binds_fixed_stride_layout_and_graph_v3 ... [32mok(B[m
+test am::ec_distann::fixed_stride::tests::page_envelopes_bind_packed_and_every_multi_block_segment ... [32mok(B[m
+
+test result: [32mok(B[m. 6 passed; 0 failed; 0 ignored; 0 measured; 2635 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-29 19:52:50-07:00 [COMMAND_EXIT_CODE="0"]

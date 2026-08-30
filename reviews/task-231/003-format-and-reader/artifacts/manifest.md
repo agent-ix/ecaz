@@ -3,6 +3,7 @@
 - Head SHAs:
   - format: `1e0d5906abfa5a586091ca51b4ccf1a48690f37f`
   - persisted selector: `c644b3fb0cc7bad7027bd51d277a6578e69b81c1`
+  - block-zero metadata: `95c974ec61c1918d84136daafdfbe040f8f6ed6d`
 - Task/packet: `reviews/task-231/003-format-and-reader/`
 - Timestamp: `2026-08-29T19:34:24-07:00`
 - Lane: local Intel development host, Rust unit format gate
@@ -28,3 +29,12 @@
 - Covered result lines: the five format tests above plus generation descriptor
   V5 round-trip, digest corruption, layout/codec re-derivation, V3 graph-record
   binding, and layout mutual exclusion.
+
+## `fixed-stride-metadata-tests.log`
+
+- Command: `cargo test -p ecaz --lib fixed_stride`
+- Timestamp: `2026-08-29T19:53:02-07:00`
+- SHA-256: `af1ecd96db316ad6ac39232e82f33b142683f6f656896708eaeb45faf5e23893`
+- Result: `6 passed; 0 failed; 2635 filtered out`
+- Covered result lines: all prior format and descriptor gates plus EFM1
+  block-zero metadata round-trip and digest-corruption rejection.
