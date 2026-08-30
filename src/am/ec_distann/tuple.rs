@@ -23,6 +23,10 @@ pub const DISTANN_NODE_FORMAT_VERSION: u16 = 1;
 /// Task 230 hot/cold graph record. Every V1 byte retains its offset and the
 /// cold-tier TID is appended after the fixed-size adjacency/code arrays.
 pub const DISTANN_NODE_HOT_COLD_FORMAT_VERSION: u16 = 2;
+/// Task 231 graph/vector node-block layout selector. The raw fixed-stride node
+/// has its own inner V1 byte version; this outer graph-record discriminator
+/// prevents a generation descriptor from admitting the heap-tuple reader.
+pub const DISTANN_NODE_FIXED_STRIDE_FORMAT_VERSION: u16 = 3;
 
 /// FR-083 / ADR-085 D5 interim delta-buffer tuple: one inserted vector
 /// (vec_id + heap_tid + full-precision vector), chained via next_tid, exact-

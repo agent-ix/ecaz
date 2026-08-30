@@ -9,7 +9,7 @@ use crate::storage::page::{
     ItemPointer, ALIGNMENT_BYTES, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
 };
 
-use super::canonical_wire::domain_digest;
+use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
 
 pub(crate) const FIXED_STRIDE_LAYOUT_VERSION: u16 = 1;
 pub(crate) const FIXED_STRIDE_PAGE_FORMAT_VERSION: u16 = 1;
@@ -27,23 +27,24 @@ const NODE_FLAG_TOMBSTONE: u16 = 1;
 const PAGE_DOMAIN: &[u8] = b"ec_distann_fixed_stride_page_v1\0";
 const NODE_DOMAIN: &[u8] = b"ec_distann_fixed_stride_node_v1\0";
 const GENERATION_TAG_DOMAIN: &[u8] = b"ec_distann_fixed_stride_generation_tag_v1\0";
+const LAYOUT_DOMAIN: &[u8] = b"ec_distann_fixed_stride_layout_v1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FixedStrideLayoutV1 {
-    pub(crate) version: u16,
-    pub(crate) block_size: u32,
-    pub(crate) pg_page_header_bytes: u16,
-    pub(crate) page_header_bytes: u16,
-    pub(crate) node_header_bytes: u16,
-    pub(crate) dimensions: u16,
-    pub(crate) graph_degree: u16,
-    pub(crate) code_len: u32,
-    pub(crate) node_body_bytes: u32,
-    pub(crate) node_record_bytes: u32,
-    pub(crate) node_stride_bytes: u32,
-    pub(crate) page_payload_bytes: u32,
-    pub(crate) nodes_per_page: u16,
-    pub(crate) extent_blocks: u32,
+pub struct DistannFixedStrideLayoutDescriptorV1 {
+    pub version: u16,
+    pub block_size: u32,
+    pub pg_page_header_bytes: u16,
+    pub page_header_bytes: u16,
+    pub node_header_bytes: u16,
+    pub dimensions: u16,
+    pub graph_degree: u16,
+    pub code_len: u32,
+    pub node_body_bytes: u32,
+    pub node_record_bytes: u32,
+    pub node_stride_bytes: u32,
+    pub page_payload_bytes: u32,
+    pub nodes_per_page: u16,
+    pub extent_blocks: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,8 +55,8 @@ pub(crate) struct FixedStrideAddress {
     pub(crate) extent_blocks: u32,
 }
 
-impl FixedStrideLayoutV1 {
-    pub(crate) fn new(dimensions: u16, graph_degree: u16, code_len: usize) -> Result<Self, String> {
+impl DistannFixedStrideLayoutDescriptorV1 {
+    pub fn new(dimensions: u16, graph_degree: u16, code_len: usize) -> Result<Self, String> {
         Self::with_page_shape(
             dimensions,
             graph_degree,
@@ -157,7 +158,7 @@ impl FixedStrideLayoutV1 {
         })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         let derived = Self::with_page_shape(
             self.dimensions,
             self.graph_degree,
@@ -174,6 +175,59 @@ impl FixedStrideLayoutV1 {
             );
         }
         Ok(())
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let mut encoder = CanonicalEncoder::with_capacity(48);
+        encoder.put_u16(self.version);
+        encoder.put_u32(self.block_size);
+        encoder.put_u16(self.pg_page_header_bytes);
+        encoder.put_u16(self.page_header_bytes);
+        encoder.put_u16(self.node_header_bytes);
+        encoder.put_u16(self.dimensions);
+        encoder.put_u16(self.graph_degree);
+        encoder.put_u32(self.code_len);
+        encoder.put_u32(self.node_body_bytes);
+        encoder.put_u32(self.node_record_bytes);
+        encoder.put_u32(self.node_stride_bytes);
+        encoder.put_u32(self.page_payload_bytes);
+        encoder.put_u16(self.nodes_per_page);
+        encoder.put_u32(self.extent_blocks);
+        encoder.finish()
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
+        let mut decoder = CanonicalDecoder::new(input, "fixed-stride layout")?;
+        let version = decoder.get_u16("fixed-stride layout version")?;
+        if version != FIXED_STRIDE_LAYOUT_VERSION {
+            return Err(format!(
+                "EC_FIXED_STRIDE_FORMAT: unsupported layout version {version}"
+            ));
+        }
+        let layout = Self {
+            version,
+            block_size: decoder.get_u32("block size")?,
+            pg_page_header_bytes: decoder.get_u16("PostgreSQL page header bytes")?,
+            page_header_bytes: decoder.get_u16("node page header bytes")?,
+            node_header_bytes: decoder.get_u16("node header bytes")?,
+            dimensions: decoder.get_u16("dimensions")?,
+            graph_degree: decoder.get_u16("graph degree")?,
+            code_len: decoder.get_u32("code length")?,
+            node_body_bytes: decoder.get_u32("node body bytes")?,
+            node_record_bytes: decoder.get_u32("node record bytes")?,
+            node_stride_bytes: decoder.get_u32("node stride bytes")?,
+            page_payload_bytes: decoder.get_u32("page payload bytes")?,
+            nodes_per_page: decoder.get_u16("nodes per page")?,
+            extent_blocks: decoder.get_u32("extent blocks")?,
+        };
+        decoder.finish("fixed-stride layout")?;
+        layout.validate()?;
+        Ok(layout)
+    }
+
+    pub fn digest(&self) -> Result<[u8; 32], String> {
+        Ok(domain_digest(LAYOUT_DOMAIN, &self.encode()?))
     }
 
     pub(crate) fn is_packed(&self) -> bool {
@@ -299,7 +353,7 @@ impl FixedStrideNodeV1 {
         }
     }
 
-    fn validate(&self, layout: &FixedStrideLayoutV1) -> Result<(), String> {
+    fn validate(&self, layout: &DistannFixedStrideLayoutDescriptorV1) -> Result<(), String> {
         layout.validate()?;
         let degree = usize::from(layout.graph_degree);
         let code_len = layout.code_len as usize;
@@ -335,7 +389,10 @@ impl FixedStrideNodeV1 {
         Ok(())
     }
 
-    pub(crate) fn encode(&self, layout: &FixedStrideLayoutV1) -> Result<Vec<u8>, String> {
+    pub(crate) fn encode(
+        &self,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
+    ) -> Result<Vec<u8>, String> {
         self.validate(layout)?;
         let stride = layout.node_stride_bytes as usize;
         let mut out = vec![0_u8; stride];
@@ -379,7 +436,7 @@ impl FixedStrideNodeV1 {
 
     pub(crate) fn decode_into(
         input: &[u8],
-        layout: &FixedStrideLayoutV1,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
         expected_ordinal: u64,
         expected_vec_id: u64,
         out: &mut Self,
@@ -531,7 +588,7 @@ pub(crate) struct FixedStridePageEnvelopeV1 {
 impl FixedStridePageEnvelopeV1 {
     fn validate_shape(
         &self,
-        layout: &FixedStrideLayoutV1,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
         payload_len: usize,
         block_number: u32,
     ) -> Result<(), String> {
@@ -598,7 +655,7 @@ impl FixedStridePageEnvelopeV1 {
 
     pub(crate) fn encode(
         &self,
-        layout: &FixedStrideLayoutV1,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
         payload: &[u8],
         block_number: u32,
     ) -> Result<[u8; FIXED_STRIDE_PAGE_HEADER_BYTES], String> {
@@ -626,7 +683,7 @@ impl FixedStridePageEnvelopeV1 {
     pub(crate) fn decode(
         input: &[u8],
         payload: &[u8],
-        layout: &FixedStrideLayoutV1,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
         expected_generation_tag: &[u8; 16],
         block_number: u32,
     ) -> Result<Self, String> {
@@ -695,7 +752,10 @@ impl FixedStridePageEnvelopeV1 {
 mod tests {
     use super::*;
 
-    fn sample_node(layout: &FixedStrideLayoutV1, ordinal: u64) -> FixedStrideNodeV1 {
+    fn sample_node(
+        layout: &DistannFixedStrideLayoutDescriptorV1,
+        ordinal: u64,
+    ) -> FixedStrideNodeV1 {
         let degree = usize::from(layout.graph_degree);
         let code_len = layout.code_len as usize;
         let live = degree.saturating_sub(1);
@@ -727,7 +787,7 @@ mod tests {
 
     #[test]
     fn layout_covers_packed_one_page_and_multi_block_cases() {
-        let packed = FixedStrideLayoutV1::new(16, 4, 8).expect("packed layout");
+        let packed = DistannFixedStrideLayoutDescriptorV1::new(16, 4, 8).expect("packed layout");
         assert!(packed.nodes_per_page > 1);
         assert_eq!(packed.extent_blocks, 1);
         let last_first_page = packed
@@ -738,11 +798,13 @@ mod tests {
         assert_eq!(next_page.first_block, 2);
         assert_eq!(next_page.slot_index, 0);
 
-        let one_page = FixedStrideLayoutV1::new(1024, 16, 128).expect("one-page layout");
+        let one_page =
+            DistannFixedStrideLayoutDescriptorV1::new(1024, 16, 128).expect("one-page layout");
         assert_eq!(one_page.nodes_per_page, 1);
         assert_eq!(one_page.extent_blocks, 1);
 
-        let multi = FixedStrideLayoutV1::new(1536, 32, 192).expect("multi-block layout");
+        let multi =
+            DistannFixedStrideLayoutDescriptorV1::new(1536, 32, 192).expect("multi-block layout");
         assert_eq!(multi.nodes_per_page, 0);
         assert_eq!(multi.extent_blocks, 2);
         assert_eq!(multi.address(3).unwrap().first_block, 7);
@@ -751,14 +813,25 @@ mod tests {
 
     #[test]
     fn persisted_layout_must_match_derived_arithmetic() {
-        let mut layout = FixedStrideLayoutV1::new(32, 8, 16).unwrap();
+        let layout = DistannFixedStrideLayoutDescriptorV1::new(32, 8, 16).unwrap();
+        let encoded = layout.encode().unwrap();
+        assert_eq!(
+            DistannFixedStrideLayoutDescriptorV1::decode(&encoded).unwrap(),
+            layout
+        );
+
+        let mut unknown = encoded;
+        unknown[..2].copy_from_slice(&2_u16.to_le_bytes());
+        assert!(DistannFixedStrideLayoutDescriptorV1::decode(&unknown).is_err());
+
+        let mut layout = layout;
         layout.node_stride_bytes += 8;
         assert!(layout.validate().is_err());
     }
 
     #[test]
     fn node_round_trip_reuses_buffers_and_rejects_corruption() {
-        let layout = FixedStrideLayoutV1::new(16, 4, 8).unwrap();
+        let layout = DistannFixedStrideLayoutDescriptorV1::new(16, 4, 8).unwrap();
         let node = sample_node(&layout, 7);
         let encoded = node.encode(&layout).unwrap();
         assert_eq!(encoded.len(), layout.node_stride_bytes as usize);
@@ -823,7 +896,7 @@ mod tests {
     #[test]
     fn page_envelopes_bind_packed_and_every_multi_block_segment() {
         let tag = [7_u8; 16];
-        let packed = FixedStrideLayoutV1::new(16, 4, 8).unwrap();
+        let packed = DistannFixedStrideLayoutDescriptorV1::new(16, 4, 8).unwrap();
         let payload = vec![9_u8; packed.node_stride_bytes as usize * 2];
         let envelope = FixedStridePageEnvelopeV1 {
             kind: FixedStridePageKind::Packed,
@@ -844,7 +917,7 @@ mod tests {
         corrupt[0] ^= 1;
         assert!(FixedStridePageEnvelopeV1::decode(&encoded, &corrupt, &packed, &tag, 1).is_err());
 
-        let multi = FixedStrideLayoutV1::new(1536, 32, 192).unwrap();
+        let multi = DistannFixedStrideLayoutDescriptorV1::new(1536, 32, 192).unwrap();
         let address = multi.address(2).unwrap();
         let full = vec![3_u8; multi.node_stride_bytes as usize];
         for segment in 0..multi.extent_blocks {

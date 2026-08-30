@@ -219,6 +219,7 @@ struct EcDistannReloptions {
     covering_payload_attnums_offset: i32,
     row_tier_layout_offset: i32,
     hot_payload_attnums_offset: i32,
+    node_storage_layout_offset: i32,
 }
 
 /// Task 207 construction A/B. The graph topology (`build_shards`) and the
@@ -275,6 +276,36 @@ impl RowTierLayout {
             "hot_cold" => Ok(Self::HotCold),
             other => Err(format!(
                 "invalid ec_distann row_tier_layout reloption: expected 'row_heap' or 'hot_cold', got {other:?}"
+            )),
+        }
+    }
+}
+
+/// Task 231 graph/vector storage selector. `GraphHeap` preserves the current
+/// physical generation; `FixedStride` admits the dense-ordinal raw-page
+/// relation and is legal only for an otherwise-unstacked distributed build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeStorageLayout {
+    GraphHeap,
+    FixedStride,
+}
+
+impl NodeStorageLayout {
+    pub(crate) const DEFAULT: Self = Self::GraphHeap;
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::GraphHeap => "graph_heap",
+            Self::FixedStride => "fixed_stride",
+        }
+    }
+
+    fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "graph_heap" => Ok(Self::GraphHeap),
+            "fixed_stride" => Ok(Self::FixedStride),
+            other => Err(format!(
+                "invalid ec_distann node_storage_layout reloption: expected 'graph_heap' or 'fixed_stride', got {other:?}"
             )),
         }
     }
@@ -390,6 +421,9 @@ pub(super) struct EcDistannOptions {
     /// is resolved and frozen during distributed build registration.
     pub(super) row_tier_layout: RowTierLayout,
     pub(super) hot_payload_attnums: Option<Vec<u16>>,
+    /// Task 231 opt-in graph/vector node relation. Default keeps the current
+    /// graph heap and separate exact-vector row read.
+    pub(super) node_storage_layout: NodeStorageLayout,
 }
 
 impl EcDistannOptions {
@@ -410,6 +444,7 @@ impl EcDistannOptions {
         covering_payload_attnums: None,
         row_tier_layout: RowTierLayout::DEFAULT,
         hot_payload_attnums: None,
+        node_storage_layout: NodeStorageLayout::DEFAULT,
     };
 
     pub(super) fn validate_head_sizing_inputs(&self) -> Result<(), String> {
@@ -1563,6 +1598,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             None,
             offset_of!(EcDistannReloptions, hot_payload_attnums_offset) as i32,
         );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"node_storage_layout\0".as_ptr().cast(),
+            b"Task 231 graph/vector storage: 'graph_heap' (default) or opt-in 'fixed_stride'.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcDistannReloptions, node_storage_layout_offset) as i32,
+        );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     })
 }
@@ -1639,6 +1685,13 @@ impl EcDistannReloptionsView {
             .map(|value| {
                 parse_hot_payload_attnums(&value).unwrap_or_else(|error| pgrx::error!("{error}"))
             });
+        let node_storage_layout = match self
+            .read_string_reloption(reloptions.node_storage_layout_offset, "node_storage_layout")
+        {
+            Some(value) => NodeStorageLayout::parse_reloption(&value)
+                .unwrap_or_else(|error| pgrx::error!("{error}")),
+            None => NodeStorageLayout::DEFAULT,
+        };
         if covering_payload_attnums.is_some() && !reloptions.distributed_control {
             pgrx::error!(
                 "invalid ec_distann covering_payload_attnums reloption: a payload cover requires distributed_control=true"
@@ -1659,6 +1712,21 @@ impl EcDistannReloptionsView {
                 "invalid ec_distann row-tier reloptions: Task 229 payload cover and Task 230 hot_cold layout are mutually exclusive"
             );
         }
+        if node_storage_layout == NodeStorageLayout::FixedStride && !reloptions.distributed_control
+        {
+            pgrx::error!(
+                "invalid ec_distann node_storage_layout reloption: fixed_stride requires distributed_control=true"
+            );
+        }
+        if node_storage_layout == NodeStorageLayout::FixedStride
+            && (covering_payload_attnums.is_some()
+                || row_tier_layout != RowTierLayout::RowHeap
+                || hot_payload_attnums.is_some())
+        {
+            pgrx::error!(
+                "invalid ec_distann storage reloptions: Task 231 fixed_stride cannot stack Tasks 229/230"
+            );
+        }
 
         EcDistannOptions {
             graph_degree: reloptions.graph_degree,
@@ -1677,6 +1745,7 @@ impl EcDistannReloptionsView {
             covering_payload_attnums,
             row_tier_layout,
             hot_payload_attnums,
+            node_storage_layout,
         }
     }
 }
@@ -1694,7 +1763,8 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcDistannOpt
 mod tests {
     use super::{
         parse_covering_payload_attnums, parse_hot_payload_attnums, DistannSourceIdentityProvider,
-        EcDistannOptions, NeighborCodeFormat, RowTierLayout, ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        EcDistannOptions, NeighborCodeFormat, NodeStorageLayout, RowTierLayout,
+        ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
     };
 
     #[test]
@@ -1717,6 +1787,7 @@ mod tests {
         assert!(defaults.covering_payload_attnums.is_none());
         assert_eq!(defaults.row_tier_layout, RowTierLayout::RowHeap);
         assert!(defaults.hot_payload_attnums.is_none());
+        assert_eq!(defaults.node_storage_layout, NodeStorageLayout::GraphHeap);
     }
 
     #[test]
@@ -1760,6 +1831,16 @@ mod tests {
         );
         assert!(RowTierLayout::parse_reloption("columnar").is_err());
         assert_eq!(RowTierLayout::HotCold.as_str(), "hot_cold");
+        assert_eq!(
+            NodeStorageLayout::parse_reloption("graph_heap").unwrap(),
+            NodeStorageLayout::GraphHeap
+        );
+        assert_eq!(
+            NodeStorageLayout::parse_reloption("fixed_stride").unwrap(),
+            NodeStorageLayout::FixedStride
+        );
+        assert!(NodeStorageLayout::parse_reloption("columnar").is_err());
+        assert_eq!(NodeStorageLayout::FixedStride.as_str(), "fixed_stride");
     }
 
     #[test]

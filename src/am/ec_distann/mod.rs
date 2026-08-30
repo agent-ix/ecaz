@@ -103,6 +103,7 @@ pub(crate) fn quote_ident(identifier: &str) -> String {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
+pub use self::fixed_stride::DistannFixedStrideLayoutDescriptorV1;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
 pub use self::generation_descriptor::{

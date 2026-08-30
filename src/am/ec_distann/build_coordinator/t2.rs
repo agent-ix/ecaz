@@ -455,11 +455,25 @@ pub(super) fn build_epoch(
                 .map_err(|_| "EC_BUILD_STATE: code stride out of range".to_owned())?,
             "code_stride",
         )?;
+        let fixed_stride_layout = match options.node_storage_layout {
+            super::super::options::NodeStorageLayout::GraphHeap => None,
+            super::super::options::NodeStorageLayout::FixedStride => Some(
+                super::super::DistannFixedStrideLayoutDescriptorV1::new(
+                    dimensions,
+                    metadata.graph_degree_r,
+                    usize::try_from(code_stride).map_err(|_| {
+                        "EC_FIXED_STRIDE_FORMAT: code stride exceeds usize".to_owned()
+                    })?,
+                )?,
+            ),
+        };
 
         let descriptor = DistannGenerationDescriptor {
             coordinator_logical_index_uuid: metadata.logical_index_uuid,
             index_format_version: super::super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
-            graph_record_version: if resolved_row_tier_layout.is_some() {
+            graph_record_version: if fixed_stride_layout.is_some() {
+                super::super::tuple::DISTANN_NODE_FIXED_STRIDE_FORMAT_VERSION
+            } else if resolved_row_tier_layout.is_some() {
                 super::super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION
             } else {
                 super::super::tuple::DISTANN_NODE_FORMAT_VERSION
@@ -476,6 +490,7 @@ pub(super) fn build_epoch(
             // locks above. Never re-read reloptions after replay registration.
             payload_cover: resolved_payload_cover,
             row_tier_layout: resolved_row_tier_layout,
+            fixed_stride_layout,
         };
         let descriptor_bytes = descriptor.encode()?;
         let descriptor_digest = descriptor.digest()?;
