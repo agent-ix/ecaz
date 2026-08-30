@@ -18,7 +18,9 @@
 - Final disposition: **STOP**
 - Artifact inventory: `artifact-sha256.txt` records and verifies every other
   retained artifact in this packet; its SHA-256 is
-  `4a6e2f3e4760a9c6a8ab53db734aaae7e0d175a2525618607d469f922128e392`.
+  `6fa13d817da902b639b69d465d781b7195a3ef1bd1cc5f112749269f8fd4e8df`.
+  The Cargo receipts and dry-run log entries hash Git's committed
+  LF-normalized bytes.
 
 ## Canonical result surface
 
