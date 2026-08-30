@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 2
+seq: 3
 ---
 
 # Task 231 full-scale decision preregistration
@@ -31,11 +31,12 @@ not averaged and there is no tie-break. One pass plus one failure is **STOP**.
 Failure of either pair is STOP even if cold or wide-beam evidence is positive.
 
 The controlled-shared-buffer-cold arms are reported separately as mechanism
-evidence and cannot be called a warm-path win. The 100k BW16/H25 matched
-transfer pair is a guardrail: a candidate regression of both at least 5.0%
-and at least 0.50 ms is STOP; an improvement or result inside that band only
-supports transfer and cannot rescue a failed primary rule. Because the wide
-pair is not itself counterbalanced, it cannot independently produce PROMOTE.
+evidence and cannot be called a warm-path win. The single 100k BW16/H25
+control-first/fixed-second transfer pair is strictly **report-only** because it
+is not counterbalanced: it can neither PROMOTE nor STOP, and it cannot rescue
+or reverse the primary matrix's verdict. Its only role is to disclose the
+observed layout direction under the historically measured wider-beam regime;
+position remains a named confounder in its interpretation.
 
 A failed checksum/release/conformance prerequisite invalidates the affected
 run rather than becoming a candidate loss; it must be corrected and rerun.
@@ -129,8 +130,9 @@ twice the measured nonzero lane spread.
 Packet-local receipts and hashes are in `artifacts/manifest.md`. The suite
 audit passes 27/27 configured steps; the focused CLI tests pass 2/2.
 
-Please verify that all six seq-01 preregistration findings are resolved and
-review the full `be7264b5a` + `9bb9e0f1b` + `bf4b78ed2`
-instrumentation/config surface. The
-decision run will not start until this preregistration is review-closed and
-Packet 004's allocator rereview is closed.
+Please verify that seq-02's wide-pair asymmetry is removed and review-close the
+preregistration if DONE. I also request the offered exhaustive review of the
+full `be7264b5a` + `9bb9e0f1b` + `bf4b78ed2`
+instrumentation/config surface before authorizing the run. The
+decision run will not start until this preregistration is review-closed;
+Packet 004's allocator rereview is now closed DONE at seq-02.

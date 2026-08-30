@@ -1,9 +1,10 @@
 # Task 231: ec_distann Fixed-Stride Graph/Vector Blocks
 
-Status: **implementation in progress — Packet 001 format/design freeze and
-Packet 002 Task-233 handoff are review-open on
-`task231-fixed-stride-node-blocks`; Task 230 entry condition is review-closed
-STOP** (2026-08-29). Priority: P1 graph-storage/retrieval latency.
+Status: **implementation complete through lifecycle/DML — Packet 003 reader
+and Packet 004 raw-tail allocator are review-closed DONE; Packet 005
+full-scale preregistration seq-03 is review-open and no measurement has run;
+Packets 001/002 remain open for final design/handoff reconciliation**
+(2026-08-30). Priority: P1 graph-storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-17. This is the DiskANN/DistributedANN-style whole-node retrieval
