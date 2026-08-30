@@ -1,10 +1,28 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
 Status: **implementation complete; Packet 004 full-scale decision is STOP, no
-candidate; final seq-03 evidence/request is REVIEW-OPEN at
-`reviews/task-230/004-full-scale-decision/request.md` on benchmark head
-`8bcccb56c` (20/20 steps complete, audit clean). GitHub issue #96 is the
-authoritative tracking record.**
+candidate — disposition CORRECT but seq-03 reviewed NOT DONE on its stated
+basis** (verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-03-reviewer.md`;
+benchmark head `8bcccb56c`, 20/20 steps, audit clean). The decisive gate is
+uncontaminated and reviewer-verified independently: **100k pair B, control
+8.67 ms → candidate 9.47 ms, −9.23% / −0.80 ms**, against a rule requiring both
+pairs to improve ≥5.0% and ≥0.50 ms conjunctively. Storage also confirmed —
+hot main-heap 819,511,296 / raw-vector 614,400,000 = **1.3337×**, matching the
+derived 8192/6144 = 1.3333. **Three cited failures are artifacts that do not
+discriminate between arms and must be re-scoped:** (1) prediction byte-parity is
+a harness reproducibility property, not a candidate property — at 50k three of
+four arms share a hash and the outlier is a **control**, and at 100k all four
+differ including control-vs-control (`02dcd617…` vs `667bfe30…`); (2) the 50k
+recall floor misses 0.980 on **all four arms** with the candidate matching or
+exceeding control (0.9545/0.9545 vs 0.9545/0.9540); (3) the 100k recall delta
+(−0.0020/−0.0025, reproduced twice) is legitimate but must be reported against
+the demonstrated 100k noise floor. **Missing finding to add:** the *control* is
+the unstable arm — 100k controls span 12.40 and 8.67 ms (43%) while both
+candidates are 9.47 ms, so hot/cold trades peak warm latency for
+position-insensitivity and loses against a warm control. That, not "hot/cold is
+slower", is what Tasks 231/232 inherit. GitHub issue #96 is the authoritative
+tracking record.**
 
 Prior status history: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
