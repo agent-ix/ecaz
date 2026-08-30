@@ -342,6 +342,9 @@ CREATE TABLE ec_distann_generation (
         cold_tier_relid IS NULL OR cold_tier_relid <> '0'::oid
     ),
     graph_store_relid oid NOT NULL CHECK (graph_store_relid <> '0'::oid),
+    node_store_relid oid CHECK (
+        node_store_relid IS NULL OR node_store_relid <> '0'::oid
+    ),
     directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
     payload_sidecar_relid oid CHECK (
         payload_sidecar_relid IS NULL OR payload_sidecar_relid <> '0'::oid
@@ -421,6 +424,7 @@ CREATE TABLE ec_distann_generation (
     UNIQUE (row_tier_relid),
     UNIQUE (cold_tier_relid),
     UNIQUE (graph_store_relid),
+    UNIQUE (node_store_relid),
     UNIQUE (directory_relid),
     UNIQUE (payload_sidecar_relid),
     UNIQUE (payload_sidecar_directory_relid)

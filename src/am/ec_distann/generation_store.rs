@@ -19,9 +19,12 @@ use crate::storage::relation::{
     RelationHandle,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
+use crate::storage::relation_guard::RelationGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
 use super::canonical_wire::{domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
+use super::fixed_stride::{fixed_stride_generation_tag, FixedStrideMetadataV1};
+use super::fixed_stride_store;
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::handoff_wire::{owner_stream_digest, DistannHandoffShape, DistannOwnerStreamHasher};
@@ -70,6 +73,7 @@ pub(crate) struct GenerationRelations {
     pub(crate) row_tier_relid: pg_sys::Oid,
     pub(crate) cold_tier_relid: Option<pg_sys::Oid>,
     pub(crate) graph_store_relid: pg_sys::Oid,
+    pub(crate) node_store_relid: Option<pg_sys::Oid>,
     pub(crate) directory_relid: pg_sys::Oid,
     pub(crate) payload_sidecar_relid: Option<pg_sys::Oid>,
     pub(crate) payload_sidecar_directory_relid: Option<pg_sys::Oid>,
@@ -321,13 +325,14 @@ fn cstring_owned(pointer: *mut std::ffi::c_char, context: &str) -> Result<String
 fn generation_relation_names(
     index_oid: pg_sys::Oid,
     build_id: Uuid,
-) -> (String, String, String, String, String, String) {
+) -> (String, String, String, String, String, String, String) {
     let suffix = hex::encode(build_id.as_bytes());
     let oid = u32::from(index_oid);
     (
         format!("_ecdz_row_{oid}_{suffix}"),
         format!("_ecdz_cold_{oid}_{suffix}"),
         format!("_ecdz_graph_{oid}_{suffix}"),
+        format!("_ecdz_node_{oid}_{suffix}"),
         format!("_ecdz_dir_{oid}_{suffix}"),
         format!("_ecdz_cover_{oid}_{suffix}"),
         format!("_ecdz_cover_dir_{oid}_{suffix}"),
@@ -499,6 +504,7 @@ fn record_internal_dependency(dependent_oid: pg_sys::Oid, control_oid: pg_sys::O
 fn create_generation_relations(
     index_handle: RelationHandle,
     build_id: Uuid,
+    logical_index_uuid: Uuid,
     schema: &ResolvedRowSchema,
     descriptor: &DistannGenerationDescriptor,
 ) -> Result<GenerationRelations, String> {
@@ -521,13 +527,18 @@ fn create_generation_relations(
         row_name,
         cold_name,
         graph_name,
+        node_name,
         directory_name,
         payload_sidecar_name,
         payload_directory_name,
     ) = generation_relation_names(index_oid, build_id);
     let payload_cover = descriptor.payload_cover.is_some();
+    let fixed_stride_layout = descriptor.fixed_stride_layout.as_ref();
     let row_tier_layout = descriptor.row_tier_layout();
     let mut required_names = vec![&row_name, &graph_name, &directory_name];
+    if fixed_stride_layout.is_some() {
+        required_names.push(&node_name);
+    }
     if row_tier_layout.is_some() {
         required_names.push(&cold_name);
     }
@@ -545,6 +556,7 @@ fn create_generation_relations(
     let qualified_row = format!("{}.{}", quote_ident(&namespace), quote_ident(&row_name));
     let qualified_cold = format!("{}.{}", quote_ident(&namespace), quote_ident(&cold_name));
     let qualified_graph = format!("{}.{}", quote_ident(&namespace), quote_ident(&graph_name));
+    let qualified_node = format!("{}.{}", quote_ident(&namespace), quote_ident(&node_name));
     let qualified_payload_sidecar = format!(
         "{}.{}",
         quote_ident(&namespace),
@@ -585,16 +597,28 @@ fn create_generation_relations(
             .map_err(|error| format!("ec_distann hot-tier storage setup failed: {error}"))?;
         }
     }
+    let graph_record_column = if fixed_stride_layout.is_some() {
+        "node_ordinal bigint NOT NULL"
+    } else {
+        "graph_record bytea NOT NULL"
+    };
     Spi::run(&format!(
         "CREATE TABLE {qualified_graph} (\
              vec_id bigint NOT NULL, \
-             graph_record bytea NOT NULL, \
+             {graph_record_column}, \
              row_tid tid NOT NULL, \
              record_version bigint NOT NULL DEFAULT 0, \
              is_current boolean NOT NULL DEFAULT true\
          ){tablespace}"
     ))
     .map_err(|error| format!("ec_distann graph-store relation creation failed: {error}"))?;
+    if fixed_stride_layout.is_some() {
+        Spi::run(&format!(
+            "CREATE TABLE {qualified_node} (__ecdz_raw bytea) \
+             WITH (autovacuum_enabled=false){tablespace}"
+        ))
+        .map_err(|error| format!("ec_distann node-store relation creation failed: {error}"))?;
+    }
     Spi::run(&format!(
         // PostgreSQL requires an unqualified index name here.  The target
         // table's namespace determines the index namespace.
@@ -641,6 +665,13 @@ fn create_generation_relations(
         quote_ident(&owner)
     ))
     .map_err(|error| format!("ec_distann graph-store ownership change failed: {error}"))?;
+    if fixed_stride_layout.is_some() {
+        Spi::run(&format!(
+            "ALTER TABLE {qualified_node} OWNER TO {}",
+            quote_ident(&owner)
+        ))
+        .map_err(|error| format!("ec_distann node-store ownership change failed: {error}"))?;
+    }
     if payload_cover {
         Spi::run(&format!(
             "ALTER TABLE {qualified_payload_sidecar} OWNER TO {}",
@@ -655,6 +686,9 @@ fn create_generation_relations(
             .map(|_| relation_oid_by_name(namespace_oid, &cold_name))
             .transpose()?,
         graph_store_relid: relation_oid_by_name(namespace_oid, &graph_name)?,
+        node_store_relid: fixed_stride_layout
+            .map(|_| relation_oid_by_name(namespace_oid, &node_name))
+            .transpose()?,
         directory_relid: relation_oid_by_name(namespace_oid, &directory_name)?,
         payload_sidecar_relid: payload_cover
             .then(|| relation_oid_by_name(namespace_oid, &payload_sidecar_name))
@@ -674,6 +708,30 @@ fn create_generation_relations(
         record_internal_dependency(cold_tier_relid, index_oid);
     }
     record_internal_dependency(relations.graph_store_relid, index_oid);
+    if let Some(node_store_relid) = relations.node_store_relid {
+        record_internal_dependency(node_store_relid, index_oid);
+        let node_store = RelationGuard::try_open(
+            node_store_relid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+        )
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: could not open fixed-stride node store".to_owned()
+        })?;
+        let layout = fixed_stride_layout.expect("node store requires fixed-stride layout");
+        let descriptor_digest = descriptor.digest()?;
+        let metadata = FixedStrideMetadataV1 {
+            generation_tag: fixed_stride_generation_tag(
+                &descriptor_digest,
+                logical_index_uuid.as_bytes(),
+                build_id.as_bytes(),
+            ),
+            layout: layout.clone(),
+        };
+        let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+            "EC_GENERATION_MISSING: fixed-stride node store opened null".to_owned()
+        })?;
+        fixed_stride_store::initialize(handle, &metadata)?;
+    }
     record_internal_dependency(relations.directory_relid, index_oid);
     if let Some(payload_sidecar_relid) = relations.payload_sidecar_relid {
         record_internal_dependency(payload_sidecar_relid, index_oid);
@@ -797,6 +855,9 @@ pub(crate) fn drop_generation_relations(
         drop_relation_internal(payload_sidecar_relid, control_oid)?;
     }
     drop_relation_internal(relations.directory_relid, control_oid)?;
+    if let Some(node_store_relid) = relations.node_store_relid {
+        drop_relation_internal(node_store_relid, control_oid)?;
+    }
     drop_relation_internal(relations.graph_store_relid, control_oid)?;
     if let Some(cold_tier_relid) = relations.cold_tier_relid {
         drop_relation_internal(cold_tier_relid, control_oid)?;
@@ -829,6 +890,7 @@ fn validate_replay(
     expected_owner_digest: [u8; 32],
     payload_cover: bool,
     hot_cold: bool,
+    fixed_stride: bool,
 ) -> Result<(), String> {
     if row.epoch != epoch
         || row.owner_ordinal != owner_ordinal
@@ -867,6 +929,12 @@ fn validate_replay(
                 .to_owned(),
         );
     }
+    if row.node_store_relid.is_some() != fixed_stride {
+        return Err(
+            "EC_BUILD_ID_CONFLICT: cataloged node store differs from the generation descriptor"
+                .to_owned(),
+        );
+    }
     for relation_oid in [
         row.row_tier_relid,
         row.graph_store_relid,
@@ -874,6 +942,7 @@ fn validate_replay(
     ]
     .into_iter()
     .chain(row.cold_tier_relid)
+    .chain(row.node_store_relid)
     .chain(row.payload_sidecar_relid)
     .chain(row.payload_sidecar_directory_relid)
     {
@@ -1060,6 +1129,7 @@ fn ec_distann_begin_epoch_handoff(
                 expected_owner_digest,
                 descriptor.payload_cover.is_some(),
                 descriptor.row_tier_layout().is_some(),
+                descriptor.fixed_stride_layout.is_some(),
             )?;
             return Ok(existing);
         }
@@ -1073,8 +1143,13 @@ fn ec_distann_begin_epoch_handoff(
                     .to_owned(),
             );
         }
-        let relations =
-            create_generation_relations(handle, build_id, &resolved_schema, &descriptor)?;
+        let relations = create_generation_relations(
+            handle,
+            build_id,
+            logical_index_uuid,
+            &resolved_schema,
+            &descriptor,
+        )?;
         let row = GenerationCatalogRow {
             epoch,
             owner_ordinal,
@@ -1089,6 +1164,7 @@ fn ec_distann_begin_epoch_handoff(
             row_tier_relid: relations.row_tier_relid,
             cold_tier_relid: relations.cold_tier_relid,
             graph_store_relid: relations.graph_store_relid,
+            node_store_relid: relations.node_store_relid,
             directory_relid: relations.directory_relid,
             payload_sidecar_relid: relations.payload_sidecar_relid,
             payload_sidecar_directory_relid: relations.payload_sidecar_directory_relid,
@@ -1147,6 +1223,7 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
                 row_tier_relid: row.row_tier_relid,
                 cold_tier_relid: row.cold_tier_relid,
                 graph_store_relid: row.graph_store_relid,
+                node_store_relid: row.node_store_relid,
                 directory_relid: row.directory_relid,
                 payload_sidecar_relid: row.payload_sidecar_relid,
                 payload_sidecar_directory_relid: row.payload_sidecar_directory_relid,
@@ -1258,6 +1335,7 @@ pub(crate) fn reset_control_index_for_rebuild(
         row_tier_relid,
         cold_tier_relid,
         graph_store_relid,
+        node_store_relid,
         directory_relid,
         payload_sidecar_relid,
         payload_sidecar_directory_relid,
@@ -1269,6 +1347,7 @@ pub(crate) fn reset_control_index_for_rebuild(
                 row_tier_relid,
                 cold_tier_relid,
                 graph_store_relid,
+                node_store_relid,
                 directory_relid,
                 payload_sidecar_relid,
                 payload_sidecar_directory_relid,

@@ -15,7 +15,7 @@ use super::quote_ident;
 const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
     build_spec_digest, roster_digest, generation_descriptor,
     generation_descriptor_digest, expected_owner_count, expected_owner_digest,
-    row_tier_relid, cold_tier_relid, graph_store_relid, directory_relid,
+    row_tier_relid, cold_tier_relid, graph_store_relid, node_store_relid, directory_relid,
     payload_sidecar_relid, payload_sidecar_directory_relid, next_batch_seq,
     cumulative_record_count, cumulative_owner_digest, last_vec_id_le,
     owner_stream_sha256_state, ready_receipt";
@@ -124,6 +124,7 @@ pub(crate) struct GenerationCatalogRow {
     pub(crate) row_tier_relid: pg_sys::Oid,
     pub(crate) cold_tier_relid: Option<pg_sys::Oid>,
     pub(crate) graph_store_relid: pg_sys::Oid,
+    pub(crate) node_store_relid: Option<pg_sys::Oid>,
     pub(crate) directory_relid: pg_sys::Oid,
     pub(crate) payload_sidecar_relid: Option<pg_sys::Oid>,
     pub(crate) payload_sidecar_directory_relid: Option<pg_sys::Oid>,
@@ -271,6 +272,7 @@ fn decode_generation_row(
         row_tier_relid: required_oid(&row, "row_tier_relid")?,
         cold_tier_relid,
         graph_store_relid: required_oid(&row, "graph_store_relid")?,
+        node_store_relid: optional_oid(&row, "node_store_relid")?,
         directory_relid: required_oid(&row, "directory_relid")?,
         payload_sidecar_relid,
         payload_sidecar_directory_relid,
@@ -428,7 +430,7 @@ pub(crate) fn insert_generation(
              roster_digest, generation_descriptor,
              generation_descriptor_digest, expected_owner_count,
              expected_owner_digest, row_tier_relid, cold_tier_relid,
-             graph_store_relid, directory_relid, payload_sidecar_relid,
+             graph_store_relid, node_store_relid, directory_relid, payload_sidecar_relid,
              payload_sidecar_directory_relid, next_batch_seq, cumulative_record_count,
              cumulative_owner_digest, last_vec_id_le,
              owner_stream_sha256_state, ready_receipt
@@ -437,8 +439,8 @@ pub(crate) fn insert_generation(
              $5::integer, $6::integer, $7::text, $8::bytea,
              $9::bytea, $10::bytea, $11::bytea, $12::bigint,
              $13::bytea, $14::oid, $15::oid, $16::oid, $17::oid,
-             $18::oid, $19::oid, $20::bigint, $21::bigint,
-             $22::bytea, $23::bytea, $24::bytea, $25::bytea
+             $18::oid, $19::oid, $20::oid, $21::bigint, $22::bigint,
+             $23::bytea, $24::bytea, $25::bytea, $26::bytea
          )",
         catalogs.generation
     );
@@ -464,6 +466,7 @@ pub(crate) fn insert_generation(
                     row.row_tier_relid.into(),
                     row.cold_tier_relid.into(),
                     row.graph_store_relid.into(),
+                    row.node_store_relid.into(),
                     row.directory_relid.into(),
                     row.payload_sidecar_relid.into(),
                     row.payload_sidecar_directory_relid.into(),
@@ -803,6 +806,7 @@ pub(crate) fn generation_relations_for_index(
         pg_sys::Oid,
         Option<pg_sys::Oid>,
         pg_sys::Oid,
+        Option<pg_sys::Oid>,
         pg_sys::Oid,
         Option<pg_sys::Oid>,
         Option<pg_sys::Oid>,
@@ -811,7 +815,7 @@ pub(crate) fn generation_relations_for_index(
 > {
     let catalogs = CatalogRelations::resolve()?;
     let sql = format!(
-        "SELECT row_tier_relid, cold_tier_relid, graph_store_relid, directory_relid,
+        "SELECT row_tier_relid, cold_tier_relid, graph_store_relid, node_store_relid, directory_relid,
                 payload_sidecar_relid, payload_sidecar_directory_relid
            FROM {}
           WHERE index_oid = $1::oid",
@@ -835,6 +839,7 @@ pub(crate) fn generation_relations_for_index(
                     required_oid(&row, "row_tier_relid")?,
                     optional_oid(&row, "cold_tier_relid")?,
                     required_oid(&row, "graph_store_relid")?,
+                    optional_oid(&row, "node_store_relid")?,
                     required_oid(&row, "directory_relid")?,
                     payload_sidecar_relid,
                     payload_sidecar_directory_relid,

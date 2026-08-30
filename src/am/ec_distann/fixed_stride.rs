@@ -661,6 +661,27 @@ pub(crate) struct FixedStridePageEnvelopeV1 {
 }
 
 impl FixedStridePageEnvelopeV1 {
+    pub(crate) fn encoded_content_bytes(input: &[u8]) -> Result<usize, String> {
+        if input.len() < 6 {
+            return Err("EC_FIXED_STRIDE_FORMAT: page is too short for magic/version".to_owned());
+        }
+        if input[..4] != PAGE_MAGIC {
+            return Err("EC_FIXED_STRIDE_FORMAT: page magic mismatch".to_owned());
+        }
+        let version = u16::from_le_bytes(input[4..6].try_into().expect("version bytes"));
+        if version != FIXED_STRIDE_PAGE_FORMAT_VERSION {
+            return Err(format!(
+                "EC_FIXED_STRIDE_FORMAT: unsupported page version {version}"
+            ));
+        }
+        if input.len() != FIXED_STRIDE_PAGE_HEADER_BYTES {
+            return Err("EC_FIXED_STRIDE_FORMAT: page header length mismatch".to_owned());
+        }
+        Ok(usize::from(u16::from_le_bytes(
+            input[30..32].try_into().expect("content-byte bytes"),
+        )))
+    }
+
     fn validate_shape(
         &self,
         layout: &DistannFixedStrideLayoutDescriptorV1,
@@ -762,21 +783,7 @@ impl FixedStridePageEnvelopeV1 {
         expected_generation_tag: &[u8; 16],
         block_number: u32,
     ) -> Result<Self, String> {
-        if input.len() < 6 {
-            return Err("EC_FIXED_STRIDE_FORMAT: page is too short for magic/version".to_owned());
-        }
-        if input[..4] != PAGE_MAGIC {
-            return Err("EC_FIXED_STRIDE_FORMAT: page magic mismatch".to_owned());
-        }
-        let version = u16::from_le_bytes(input[4..6].try_into().expect("version bytes"));
-        if version != FIXED_STRIDE_PAGE_FORMAT_VERSION {
-            return Err(format!(
-                "EC_FIXED_STRIDE_FORMAT: unsupported page version {version}"
-            ));
-        }
-        if input.len() != FIXED_STRIDE_PAGE_HEADER_BYTES {
-            return Err("EC_FIXED_STRIDE_FORMAT: page header length mismatch".to_owned());
-        }
+        let _content_bytes = Self::encoded_content_bytes(input)?;
         if input[7] != 0
             || u16::from_le_bytes(input[8..10].try_into().expect("header bytes"))
                 != FIXED_STRIDE_PAGE_HEADER_BYTES as u16
