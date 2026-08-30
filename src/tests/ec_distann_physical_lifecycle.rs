@@ -150,6 +150,36 @@ fn configure_hot_cold_generation_fixture(
     fixture.descriptor_digest = descriptor.digest().unwrap().to_vec();
 }
 
+fn configure_fixed_stride_generation_fixture(fixture: &mut DistannPhysicalGenerationFixture) {
+    Spi::run(&format!(
+        "ALTER INDEX {} SET (node_storage_layout = 'fixed_stride')",
+        fixture.index_name
+    ))
+    .expect("fixed-stride reloption should configure");
+
+    let mut descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .expect("fixed-stride codec binding should restore");
+    let code_len = binding
+        .code_len(usize::from(descriptor.dimensions))
+        .expect("fixed-stride codec length should resolve");
+    descriptor.graph_record_version =
+        crate::am::ec_distann::tuple::DISTANN_NODE_FIXED_STRIDE_FORMAT_VERSION;
+    descriptor.fixed_stride_layout = Some(
+        crate::am::ec_distann::DistannFixedStrideLayoutDescriptorV1::new(
+            descriptor.dimensions,
+            descriptor.graph_degree,
+            code_len,
+        )
+        .expect("fixed-stride layout should derive"),
+    );
+    fixture.descriptor = descriptor.encode().unwrap();
+    fixture.descriptor_digest = descriptor.digest().unwrap().to_vec();
+}
+
 fn distann_catalog_name(name: &str) -> String {
     crate::am::ec_distann::catalog_relation_name(name)
         .expect("extension generation catalog should resolve")
@@ -807,6 +837,23 @@ fn distann_generation_relation_oids(
             .next()
             .expect("generation catalog row should exist")
     })
+}
+
+fn distann_node_store_relation_oid(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>(&format!(
+        "SELECT node_store_relid
+           FROM {}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+            AND build_id = '{}'::uuid",
+        distann_generation_catalog_name(),
+        u32::from(fixture.index_oid),
+        fixture.logical_index_uuid,
+        fixture.build_id,
+    ))
+    .unwrap()
+    .expect("fixed-stride generation should have a node store")
 }
 
 fn distann_payload_sidecar_relation_oids(
@@ -7296,6 +7343,98 @@ fn test_distann_stage_type_io_runs_as_restricted_control_owner() {
 }
 
 #[pg_test]
+fn test_distann_fixed_stride_stage_seal_receipt_and_topology() {
+    let mut fixture =
+        create_distann_physical_generation_fixture("ec_distann_fixed_stride_seal", 0x3d);
+    configure_fixed_stride_generation_fixture(&mut fixture);
+    let (batch_digest, encoded_batch, _) =
+        distann_stage_batch_fixture_with_entries(&fixture, 0, 0x7d, 3);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    begin_distann_physical_generation_count(&fixture, 3, &owner_digest);
+    assert_eq!(
+        stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch).0,
+        3
+    );
+
+    let (_, graph_oid, _) = distann_generation_relation_oids(&fixture);
+    let node_store_oid = distann_node_store_relation_oid(&fixture);
+    assert_eq!(
+        Spi::get_one::<Vec<i64>>(&format!(
+            "SELECT array_agg(node_ordinal ORDER BY node_ordinal)
+               FROM {}",
+            canonical_index_locator(graph_oid)
+        ))
+        .unwrap()
+        .unwrap(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT NOT EXISTS (
+                        SELECT 1 FROM pg_attribute
+                         WHERE attrelid = {graph_oid} AND attname = 'graph_record'
+                           AND NOT attisdropped
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM pg_attribute
+                         WHERE attrelid = {graph_oid} AND attname = 'node_ordinal'
+                           AND atttypid = 'bigint'::regtype AND NOT attisdropped
+                    )"
+        ))
+        .unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT reloptions @> ARRAY['autovacuum_enabled=false']
+               FROM pg_class WHERE oid = {node_store_oid}"
+        ))
+        .unwrap(),
+        Some(true)
+    );
+
+    let encoded_receipt = seal_distann_physical_generation(&fixture, 3, &owner_digest);
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(&encoded_receipt)
+        .expect("fixed-stride Ready receipt should decode");
+    let fixed = receipt
+        .fixed_stride
+        .as_ref()
+        .expect("fixed-stride Ready receipt evidence should exist");
+    assert_eq!(receipt.version(), 4);
+    assert_eq!(fixed.node_store_relid, u32::from(node_store_oid));
+    assert_eq!(fixed.committed_node_count, 3);
+    assert_ne!(fixed.layout_descriptor_digest, [0; 32]);
+    assert_ne!(fixed.committed_page_digest, [0; 32]);
+    assert!(fixed.node_store_bytes >= 2 * 8192);
+
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT record_count
+               FROM ec_distann_generation_topology('{}'::regclass, '{}'::uuid)",
+            fixture.index_name, fixture.build_id,
+        ))
+        .unwrap(),
+        Some(3),
+        "Ready topology must validate and count raw fixed-stride nodes"
+    );
+
+    let mut abort_fixture =
+        create_distann_physical_generation_fixture("ec_distann_fixed_stride_abort", 0x3e);
+    configure_fixed_stride_generation_fixture(&mut abort_fixture);
+    begin_distann_physical_generation(&abort_fixture, &abort_fixture.expected_owner_digest);
+    let abort_node_store = distann_node_store_relation_oid(&abort_fixture);
+    abort_distann_physical_generation(&abort_fixture);
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM pg_class WHERE oid = {abort_node_store}"
+        ))
+        .unwrap(),
+        Some(0),
+        "fixed-stride abort must drop the catalogued raw relation"
+    );
+}
+
+#[pg_test]
 fn test_distann_seal_ready_replay_and_receipt() {
     let fixture = create_distann_physical_generation_fixture("ec_distann_seal_ready", 0x3a);
     let (batch_digest, encoded_batch, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x76);
@@ -7684,6 +7823,20 @@ fn create_distann_participant_lifecycle_fixture_configured(
             })
             .transpose()
             .expect("participant lifecycle cold receipts should digest"),
+        fixed_stride_layout_descriptor_digest: descriptor
+            .fixed_stride_layout()
+            .map(|layout| layout.digest())
+            .transpose()
+            .expect("participant lifecycle fixed-stride layout should digest"),
+        global_fixed_stride_committed_page_digest: descriptor
+            .fixed_stride_layout()
+            .map(|_| {
+                crate::am::ec_distann::DistannEpochManifestV2::fixed_stride_global_committed_page_digest(
+                    std::slice::from_ref(&receipt),
+                )
+            })
+            .transpose()
+            .expect("participant lifecycle fixed-stride receipts should digest"),
         participant_receipts: vec![receipt],
     };
     let manifest_bytes = manifest.encode().unwrap();

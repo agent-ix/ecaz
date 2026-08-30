@@ -377,6 +377,9 @@ CREATE TABLE ec_distann_generation (
                 ) OR (
                     octet_length(ready_receipt) = 383
                     AND get_byte(ready_receipt, 0) = 3
+                ) OR (
+                    octet_length(ready_receipt) = 387
+                    AND get_byte(ready_receipt, 0) = 4
                 )
             )
             AND get_byte(ready_receipt, 1) = 0

@@ -24,7 +24,7 @@ const NODE_MAGIC: [u8; 4] = *b"EFN1";
 const METADATA_MAGIC: [u8; 4] = *b"EFM1";
 const PAGE_DIGEST_OFFSET: usize = 48;
 const PAGE_DIGEST_BYTES: usize = 32;
-const NODE_DIGEST_OFFSET: usize = 48;
+pub(crate) const NODE_DIGEST_OFFSET: usize = 48;
 const NODE_DIGEST_BYTES: usize = 32;
 const NODE_FLAG_TOMBSTONE: u16 = 1;
 const PAGE_DOMAIN: &[u8] = b"ec_distann_fixed_stride_page_v1\0";
@@ -250,6 +250,12 @@ impl DistannFixedStrideLayoutDescriptorV1 {
 
     pub(crate) fn address(&self, node_ordinal: u64) -> Result<FixedStrideAddress, String> {
         self.validate()?;
+        self.address_admitted(node_ordinal)
+    }
+
+    /// Address arithmetic for a layout already admitted from EFM1 at
+    /// generation open. Callers must not use this on unvalidated bytes.
+    pub(crate) fn address_admitted(&self, node_ordinal: u64) -> Result<FixedStrideAddress, String> {
         let data_offset = self.data_offset()?;
         if self.is_packed() {
             let nodes_per_page = u64::from(self.nodes_per_page);
@@ -517,6 +523,22 @@ impl FixedStrideNodeV1 {
         out: &mut Self,
     ) -> Result<(), String> {
         layout.validate()?;
+        Self::decode_into_admitted(input, layout, expected_ordinal, expected_vec_id, out, true)
+    }
+
+    /// Decode using a layout already admitted from EFM1. Cheap structural and
+    /// identity checks always run; full digest/padding verification is a drill
+    /// mode because hashing a complete stride per hop would dominate the
+    /// layout experiment. `out` is undefined on `Err` and callers must discard
+    /// it rather than observe partially decoded buffers.
+    pub(crate) fn decode_into_admitted(
+        input: &[u8],
+        layout: &DistannFixedStrideLayoutDescriptorV1,
+        expected_ordinal: u64,
+        expected_vec_id: u64,
+        out: &mut Self,
+        full_verification: bool,
+    ) -> Result<(), String> {
         if input.len() < 6 {
             return Err("EC_FIXED_STRIDE_FORMAT: node is too short for magic/version".to_owned());
         }
@@ -551,14 +573,16 @@ impl FixedStrideNodeV1 {
             return Err("EC_FIXED_STRIDE_FORMAT: node reserved bytes are non-zero".to_owned());
         }
 
-        let supplied_digest: [u8; 32] = input
-            [NODE_DIGEST_OFFSET..NODE_DIGEST_OFFSET + NODE_DIGEST_BYTES]
-            .try_into()
-            .expect("node digest bytes");
-        let mut canonical = input.to_vec();
-        canonical[NODE_DIGEST_OFFSET..NODE_DIGEST_OFFSET + NODE_DIGEST_BYTES].fill(0);
-        if domain_digest(NODE_DOMAIN, &canonical) != supplied_digest {
-            return Err("EC_FIXED_STRIDE_FORMAT: node digest mismatch".to_owned());
+        if full_verification {
+            let supplied_digest: [u8; 32] = input
+                [NODE_DIGEST_OFFSET..NODE_DIGEST_OFFSET + NODE_DIGEST_BYTES]
+                .try_into()
+                .expect("node digest bytes");
+            let mut canonical = input.to_vec();
+            canonical[NODE_DIGEST_OFFSET..NODE_DIGEST_OFFSET + NODE_DIGEST_BYTES].fill(0);
+            if domain_digest(NODE_DOMAIN, &canonical) != supplied_digest {
+                return Err("EC_FIXED_STRIDE_FORMAT: node digest mismatch".to_owned());
+            }
         }
 
         let node_ordinal = u64::from_le_bytes(input[16..24].try_into().expect("ordinal bytes"));
@@ -609,14 +633,15 @@ impl FixedStrideNodeV1 {
         out.neighbor_codes
             .extend_from_slice(&input[cursor..cursor + neighbor_code_bytes]);
         cursor += neighbor_code_bytes;
-        if input[cursor..].iter().any(|byte| *byte != 0) {
+        if full_verification && input[cursor..].iter().any(|byte| *byte != 0) {
             return Err("EC_FIXED_STRIDE_FORMAT: node alignment padding is non-zero".to_owned());
         }
         let live = usize::from(neighbor_count);
-        if out.neighbor_vec_ids[live..].iter().any(|value| *value != 0)
-            || out.neighbor_codes[live * code_len..]
-                .iter()
-                .any(|value| *value != 0)
+        if full_verification
+            && (out.neighbor_vec_ids[live..].iter().any(|value| *value != 0)
+                || out.neighbor_codes[live * code_len..]
+                    .iter()
+                    .any(|value| *value != 0))
         {
             return Err("EC_FIXED_STRIDE_FORMAT: adjacency padding is non-zero".to_owned());
         }
@@ -689,6 +714,15 @@ impl FixedStridePageEnvelopeV1 {
         block_number: u32,
     ) -> Result<(), String> {
         layout.validate()?;
+        self.validate_shape_admitted(layout, payload_len, block_number)
+    }
+
+    fn validate_shape_admitted(
+        &self,
+        layout: &DistannFixedStrideLayoutDescriptorV1,
+        payload_len: usize,
+        block_number: u32,
+    ) -> Result<(), String> {
         if usize::from(self.content_bytes) != payload_len
             || payload_len > layout.page_payload_bytes as usize
         {
@@ -707,7 +741,7 @@ impl FixedStridePageEnvelopeV1 {
                 {
                     return Err("EC_FIXED_STRIDE_FORMAT: invalid packed page shape".to_owned());
                 }
-                let expected = layout.address(self.base_ordinal)?.first_block;
+                let expected = layout.address_admitted(self.base_ordinal)?.first_block;
                 if block_number != expected {
                     return Err("EC_FIXED_STRIDE_FORMAT: packed page block mismatch".to_owned());
                 }
@@ -735,7 +769,7 @@ impl FixedStridePageEnvelopeV1 {
                     })?;
                 let expected_payload = remaining.min(layout.page_payload_bytes as usize);
                 let expected_block = layout
-                    .address(self.base_ordinal)?
+                    .address_admitted(self.base_ordinal)?
                     .first_block
                     .checked_add(u32::from(self.segment_index))
                     .ok_or_else(|| "EC_FIXED_STRIDE_FORMAT: segment block overflow".to_owned())?;
@@ -783,6 +817,25 @@ impl FixedStridePageEnvelopeV1 {
         expected_generation_tag: &[u8; 16],
         block_number: u32,
     ) -> Result<Self, String> {
+        layout.validate()?;
+        Self::decode_admitted(
+            input,
+            payload,
+            layout,
+            expected_generation_tag,
+            block_number,
+            true,
+        )
+    }
+
+    pub(crate) fn decode_admitted(
+        input: &[u8],
+        payload: &[u8],
+        layout: &DistannFixedStrideLayoutDescriptorV1,
+        expected_generation_tag: &[u8; 16],
+        block_number: u32,
+        full_verification: bool,
+    ) -> Result<Self, String> {
         let _content_bytes = Self::encoded_content_bytes(input)?;
         if input[7] != 0
             || u16::from_le_bytes(input[8..10].try_into().expect("header bytes"))
@@ -799,16 +852,18 @@ impl FixedStridePageEnvelopeV1 {
         if &generation_tag != expected_generation_tag {
             return Err("EC_FIXED_STRIDE_FORMAT: page generation binding mismatch".to_owned());
         }
-        let supplied_digest: [u8; 32] = input
-            [PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES]
-            .try_into()
-            .expect("page digest bytes");
-        let mut canonical = Vec::with_capacity(input.len() + payload.len());
-        canonical.extend_from_slice(input);
-        canonical[PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES].fill(0);
-        canonical.extend_from_slice(payload);
-        if domain_digest(PAGE_DOMAIN, &canonical) != supplied_digest {
-            return Err("EC_FIXED_STRIDE_FORMAT: page digest mismatch".to_owned());
+        if full_verification {
+            let supplied_digest: [u8; 32] = input
+                [PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES]
+                .try_into()
+                .expect("page digest bytes");
+            let mut canonical = Vec::with_capacity(input.len() + payload.len());
+            canonical.extend_from_slice(input);
+            canonical[PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES].fill(0);
+            canonical.extend_from_slice(payload);
+            if domain_digest(PAGE_DOMAIN, &canonical) != supplied_digest {
+                return Err("EC_FIXED_STRIDE_FORMAT: page digest mismatch".to_owned());
+            }
         }
         let envelope = Self {
             kind: FixedStridePageKind::decode(input[6])?,
@@ -825,13 +880,16 @@ impl FixedStridePageEnvelopeV1 {
             ),
             generation_tag,
         };
-        envelope.validate_shape(layout, payload.len(), block_number)?;
+        envelope.validate_shape_admitted(layout, payload.len(), block_number)?;
         Ok(envelope)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::hint::black_box;
+    use std::time::Instant;
+
     use super::*;
 
     fn sample_node(
@@ -1047,5 +1105,48 @@ mod tests {
         let mut corrupt = encoded;
         corrupt[60] ^= 1;
         assert!(FixedStrideMetadataV1::decode(&corrupt).is_err());
+    }
+
+    #[test]
+    #[ignore = "packet-local microbenchmark; run explicitly with --release --ignored"]
+    fn fixed_stride_decode_verification_cost_report() {
+        let layout = DistannFixedStrideLayoutDescriptorV1::new(768, 64, 96).unwrap();
+        let node = sample_node(&layout, 7);
+        let encoded = node.encode(&layout).unwrap();
+        let iterations = 10_000_u32;
+        let mut out = FixedStrideNodeV1::empty();
+
+        let fast_started = Instant::now();
+        for _ in 0..iterations {
+            FixedStrideNodeV1::decode_into_admitted(
+                black_box(&encoded),
+                black_box(&layout),
+                7,
+                node.vec_id,
+                black_box(&mut out),
+                false,
+            )
+            .unwrap();
+        }
+        let fast_ns = fast_started.elapsed().as_nanos() / u128::from(iterations);
+
+        let verified_started = Instant::now();
+        for _ in 0..iterations {
+            FixedStrideNodeV1::decode_into_admitted(
+                black_box(&encoded),
+                black_box(&layout),
+                7,
+                node.vec_id,
+                black_box(&mut out),
+                true,
+            )
+            .unwrap();
+        }
+        let verified_ns = verified_started.elapsed().as_nanos() / u128::from(iterations);
+        println!(
+            "fixed_stride_decode_cost dimensions=768 degree=64 code_len=96 stride={} iterations={iterations} fast_ns_per_node={fast_ns} verified_ns_per_node={verified_ns} verified_over_fast={:.2}",
+            layout.node_stride_bytes,
+            verified_ns as f64 / fast_ns.max(1) as f64,
+        );
     }
 }

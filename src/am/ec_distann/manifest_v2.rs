@@ -28,10 +28,12 @@ pub const DISTANN_SOURCE_SNAPSHOT_VERSION: u16 = 1;
 pub const DISTANN_READY_RECEIPT_VERSION: u16 = 1;
 pub const DISTANN_READY_RECEIPT_COVER_VERSION: u16 = 2;
 pub const DISTANN_READY_RECEIPT_HOT_COLD_VERSION: u16 = 3;
+pub const DISTANN_READY_RECEIPT_FIXED_STRIDE_VERSION: u16 = 4;
 /// Legacy/no-cover manifest version.
 pub const DISTANN_EPOCH_MANIFEST_VERSION: u16 = 2;
 pub const DISTANN_EPOCH_MANIFEST_COVER_VERSION: u16 = 3;
 pub const DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION: u16 = 4;
+pub const DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION: u16 = 5;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION: u16 = 1;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION: u16 = 2;
 pub const DISTANN_READY_RECEIPT_STATE: u8 = 1;
@@ -44,7 +46,8 @@ pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
 pub const DISTANN_READY_RECEIPT_COVER_BYTES: usize = 351;
 pub const DISTANN_READY_RECEIPT_HOT_COLD_BYTES: usize = 383;
-pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = DISTANN_READY_RECEIPT_HOT_COLD_BYTES;
+pub const DISTANN_READY_RECEIPT_FIXED_STRIDE_BYTES: usize = 387;
+pub const DISTANN_READY_RECEIPT_MAX_BYTES: usize = DISTANN_READY_RECEIPT_FIXED_STRIDE_BYTES;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES: usize = 31;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 73;
 
@@ -57,6 +60,8 @@ const HOT_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
     b"ec_distann_hot_tier_global_initial_content_v1\0";
 const COLD_TIER_GLOBAL_INITIAL_CONTENT_DOMAIN: &[u8] =
     b"ec_distann_cold_tier_global_initial_content_v1\0";
+const FIXED_STRIDE_GLOBAL_COMMITTED_PAGES_DOMAIN: &[u8] =
+    b"ec_distann_fixed_stride_global_committed_pages_v1\0";
 const DIGEST_BYTES: usize = 32;
 const BUILD_OPTIONS_V1_BYTES: usize = 26;
 const MANIFEST_BUILD_OPTIONS_V1_VERSION: u16 = 1;
@@ -444,6 +449,15 @@ pub struct DistannReadyReceiptHotCold {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistannReadyReceiptFixedStride {
+    pub layout_descriptor_digest: [u8; DIGEST_BYTES],
+    pub node_store_relid: u32,
+    pub committed_node_count: u64,
+    pub committed_page_digest: [u8; DIGEST_BYTES],
+    pub node_store_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannReadyReceipt {
     pub node_id: u32,
     pub epoch: u64,
@@ -463,6 +477,7 @@ pub struct DistannReadyReceipt {
     pub state: u8,
     pub payload_sidecar: Option<DistannReadyReceiptPayloadSidecar>,
     pub hot_cold: Option<DistannReadyReceiptHotCold>,
+    pub fixed_stride: Option<DistannReadyReceiptFixedStride>,
 }
 
 impl DistannReadyReceipt {
@@ -492,17 +507,34 @@ impl DistannReadyReceipt {
                 self.state
             ));
         }
-        if self.payload_sidecar.is_some() && self.hot_cold.is_some() {
+        if usize::from(self.payload_sidecar.is_some())
+            + usize::from(self.hot_cold.is_some())
+            + usize::from(self.fixed_stride.is_some())
+            > 1
+        {
             return Err(
-                "EC_READY_RECEIPT: payload sidecar and hot/cold evidence are mutually exclusive"
+                "EC_READY_RECEIPT: payload sidecar, hot/cold, and fixed-stride evidence are mutually exclusive"
                     .to_owned(),
             );
+        }
+        if let Some(fixed) = &self.fixed_stride {
+            if fixed.node_store_relid == 0
+                || fixed.committed_node_count != self.owned_record_count
+                || fixed.node_store_bytes == 0
+            {
+                return Err(
+                    "EC_READY_RECEIPT: fixed-stride relation, count, or byte evidence is invalid"
+                        .to_owned(),
+                );
+            }
         }
         Ok(())
     }
 
     pub fn version(&self) -> u16 {
-        if self.hot_cold.is_some() {
+        if self.fixed_stride.is_some() {
+            DISTANN_READY_RECEIPT_FIXED_STRIDE_VERSION
+        } else if self.hot_cold.is_some() {
             DISTANN_READY_RECEIPT_HOT_COLD_VERSION
         } else if self.payload_sidecar.is_some() {
             DISTANN_READY_RECEIPT_COVER_VERSION
@@ -542,6 +574,13 @@ impl DistannReadyReceipt {
             encoder.put_u64(hot_cold.hot_heap_bytes);
             encoder.put_u64(hot_cold.cold_heap_bytes);
         }
+        if let Some(fixed) = &self.fixed_stride {
+            encoder.put_fixed(&fixed.layout_descriptor_digest);
+            encoder.put_u32(fixed.node_store_relid);
+            encoder.put_u64(fixed.committed_node_count);
+            encoder.put_fixed(&fixed.committed_page_digest);
+            encoder.put_u64(fixed.node_store_bytes);
+        }
         encoder.finish()
     }
 
@@ -574,6 +613,7 @@ impl DistannReadyReceipt {
             DISTANN_READY_RECEIPT_VERSION
                 | DISTANN_READY_RECEIPT_COVER_VERSION
                 | DISTANN_READY_RECEIPT_HOT_COLD_VERSION
+                | DISTANN_READY_RECEIPT_FIXED_STRIDE_VERSION
         ) {
             return Err(format!(
                 "EC_READY_RECEIPT: unsupported receipt version {version}"
@@ -619,6 +659,20 @@ impl DistannReadyReceipt {
         } else {
             None
         };
+        let fixed_stride = if version == DISTANN_READY_RECEIPT_FIXED_STRIDE_VERSION {
+            Some(DistannReadyReceiptFixedStride {
+                layout_descriptor_digest: decoder
+                    .get_fixed("Ready receipt fixed-stride layout descriptor digest")?,
+                node_store_relid: decoder.get_u32("Ready receipt node-store relation OID")?,
+                committed_node_count: decoder
+                    .get_u64("Ready receipt committed fixed-stride node count")?,
+                committed_page_digest: decoder
+                    .get_fixed("Ready receipt committed fixed-stride page digest")?,
+                node_store_bytes: decoder.get_u64("Ready receipt node-store bytes")?,
+            })
+        } else {
+            None
+        };
         let receipt = Self {
             node_id,
             epoch,
@@ -638,6 +692,7 @@ impl DistannReadyReceipt {
             state,
             payload_sidecar,
             hot_cold,
+            fixed_stride,
         };
         decoder.finish("Ready receipt")?;
         receipt.validate()?;
@@ -665,6 +720,7 @@ impl DistannEpochFingerprint {
             DISTANN_EPOCH_MANIFEST_VERSION
                 | DISTANN_EPOCH_MANIFEST_COVER_VERSION
                 | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+                | DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {manifest_version}"
@@ -689,6 +745,7 @@ impl DistannEpochFingerprint {
             DISTANN_EPOCH_MANIFEST_VERSION
                 | DISTANN_EPOCH_MANIFEST_COVER_VERSION
                 | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+                | DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported fingerprint version {version}"
@@ -741,12 +798,18 @@ pub struct DistannEpochManifestV2 {
     pub row_tier_layout_descriptor_digest: Option<[u8; DIGEST_BYTES]>,
     pub global_hot_tier_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
     pub global_cold_tier_initial_content_digest: Option<[u8; DIGEST_BYTES]>,
+    pub fixed_stride_layout_descriptor_digest: Option<[u8; DIGEST_BYTES]>,
+    pub global_fixed_stride_committed_page_digest: Option<[u8; DIGEST_BYTES]>,
     pub participant_receipts: Vec<DistannReadyReceipt>,
 }
 
 impl DistannEpochManifestV2 {
     pub fn version(&self) -> u16 {
-        if matches!(
+        if self.fixed_stride_layout_descriptor_digest.is_some()
+            || self.global_fixed_stride_committed_page_digest.is_some()
+        {
+            DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
+        } else if matches!(
             (
                 self.row_tier_layout_descriptor_digest,
                 self.global_hot_tier_initial_content_digest,
@@ -762,6 +825,32 @@ impl DistannEpochManifestV2 {
         } else {
             DISTANN_EPOCH_MANIFEST_VERSION
         }
+    }
+
+    pub(crate) fn fixed_stride_global_committed_page_digest(
+        receipts: &[DistannReadyReceipt],
+    ) -> Result<[u8; DIGEST_BYTES], String> {
+        let mut encoder = CanonicalEncoder::with_capacity(4 + receipts.len() * 96);
+        encoder.put_u32(
+            u32::try_from(receipts.len()).map_err(|_| {
+                "EC_EPOCH_MANIFEST: fixed-stride receipt count exceeds u32".to_owned()
+            })?,
+        );
+        for receipt in receipts {
+            let fixed = receipt.fixed_stride.as_ref().ok_or_else(|| {
+                "EC_EPOCH_MANIFEST: fixed-stride manifest has a non-fixed Ready receipt".to_owned()
+            })?;
+            encoder.put_u32(receipt.node_id);
+            encoder.put_fixed(&fixed.layout_descriptor_digest);
+            encoder.put_u32(fixed.node_store_relid);
+            encoder.put_u64(fixed.committed_node_count);
+            encoder.put_fixed(&fixed.committed_page_digest);
+            encoder.put_u64(fixed.node_store_bytes);
+        }
+        Ok(domain_digest(
+            FIXED_STRIDE_GLOBAL_COMMITTED_PAGES_DOMAIN,
+            &encoder.finish()?,
+        ))
     }
 
     pub(crate) fn hot_cold_global_initial_content_digests(
@@ -826,7 +915,9 @@ impl DistannEpochManifestV2 {
             return Err("EC_EPOCH_MANIFEST: unsupported physical format version".to_owned());
         }
         let expected_graph_record_version =
-            if self.version() == DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION {
+            if self.version() == DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION {
+                super::tuple::DISTANN_NODE_FIXED_STRIDE_FORMAT_VERSION
+            } else if self.version() == DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION {
                 super::tuple::DISTANN_NODE_HOT_COLD_FORMAT_VERSION
             } else {
                 DISTANN_GRAPH_RECORD_VERSION
@@ -851,20 +942,22 @@ impl DistannEpochManifestV2 {
             self.row_tier_layout_descriptor_digest,
             self.global_hot_tier_initial_content_digest,
             self.global_cold_tier_initial_content_digest,
+            self.fixed_stride_layout_descriptor_digest,
+            self.global_fixed_stride_committed_page_digest,
         ) {
-            (None, None, None, None, None) => {
-                if self
-                    .participant_receipts
-                    .iter()
-                    .any(|receipt| receipt.payload_sidecar.is_some() || receipt.hot_cold.is_some())
-                {
+            (None, None, None, None, None, None, None) => {
+                if self.participant_receipts.iter().any(|receipt| {
+                    receipt.payload_sidecar.is_some()
+                        || receipt.hot_cold.is_some()
+                        || receipt.fixed_stride.is_some()
+                }) {
                     return Err(
                         "EC_EPOCH_MANIFEST: no-cover manifest contains a covered Ready receipt"
                             .to_owned(),
                     );
                 }
             }
-            (Some(_), Some(expected), None, None, None) => {
+            (Some(_), Some(expected), None, None, None, None, None) => {
                 if self
                     .participant_receipts
                     .iter()
@@ -885,7 +978,7 @@ impl DistannEpochManifestV2 {
                     );
                 }
             }
-            (None, None, Some(_), Some(expected_hot), Some(expected_cold)) => {
+            (None, None, Some(_), Some(expected_hot), Some(expected_cold), None, None) => {
                 if self
                     .participant_receipts
                     .iter()
@@ -901,6 +994,26 @@ impl DistannEpochManifestV2 {
                 if actual_hot != expected_hot || actual_cold != expected_cold {
                     return Err(
                         "EC_EPOCH_MANIFEST: global hot/cold initial-content digest mismatch"
+                            .to_owned(),
+                    );
+                }
+            }
+            (None, None, None, None, None, Some(layout_digest), Some(expected)) => {
+                if self.participant_receipts.iter().any(|receipt| {
+                    receipt.fixed_stride.as_ref().map_or(true, |fixed| {
+                        fixed.layout_descriptor_digest != layout_digest
+                    })
+                }) {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: fixed-stride receipt layout identity mismatch"
+                            .to_owned(),
+                    );
+                }
+                let actual =
+                    Self::fixed_stride_global_committed_page_digest(&self.participant_receipts)?;
+                if actual != expected {
+                    return Err(
+                        "EC_EPOCH_MANIFEST: global fixed-stride committed-page digest mismatch"
                             .to_owned(),
                     );
                 }
@@ -988,6 +1101,13 @@ impl DistannEpochManifestV2 {
             encoder.put_fixed(&hot_digest);
             encoder.put_fixed(&cold_digest);
         }
+        if let (Some(layout_digest), Some(committed_page_digest)) = (
+            self.fixed_stride_layout_descriptor_digest,
+            self.global_fixed_stride_committed_page_digest,
+        ) {
+            encoder.put_fixed(&layout_digest);
+            encoder.put_fixed(&committed_page_digest);
+        }
         encoder.put_u32(
             u32::try_from(encoded_receipts.len())
                 .map_err(|_| "EC_EPOCH_MANIFEST: receipt count exceeds u32".to_owned())?,
@@ -1006,6 +1126,7 @@ impl DistannEpochManifestV2 {
             DISTANN_EPOCH_MANIFEST_VERSION
                 | DISTANN_EPOCH_MANIFEST_COVER_VERSION
                 | DISTANN_EPOCH_MANIFEST_HOT_COLD_VERSION
+                | DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
         ) {
             return Err(format!(
                 "EC_EPOCH_MANIFEST: unsupported manifest version {version}"
@@ -1059,6 +1180,15 @@ impl DistannEpochManifestV2 {
         } else {
             (None, None, None)
         };
+        let (fixed_stride_layout_descriptor_digest, global_fixed_stride_committed_page_digest) =
+            if version == DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION {
+                (
+                    Some(decoder.get_fixed("manifest fixed-stride layout descriptor digest")?),
+                    Some(decoder.get_fixed("manifest global fixed-stride committed-page digest")?),
+                )
+            } else {
+                (None, None)
+            };
         let receipt_count = decoder.get_u32("manifest receipt count")? as usize;
         if receipt_count != roster.len()
             || receipt_count
@@ -1098,6 +1228,8 @@ impl DistannEpochManifestV2 {
             row_tier_layout_descriptor_digest,
             global_hot_tier_initial_content_digest,
             global_cold_tier_initial_content_digest,
+            fixed_stride_layout_descriptor_digest,
+            global_fixed_stride_committed_page_digest,
             participant_receipts,
         };
         manifest.validate()?;
@@ -1134,6 +1266,7 @@ fn sample_receipt(node_id: u32, count: u64) -> DistannReadyReceipt {
         state: DISTANN_READY_RECEIPT_STATE,
         payload_sidecar: None,
         hot_cold: None,
+        fixed_stride: None,
     }
 }
 
@@ -1187,6 +1320,8 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
         row_tier_layout_descriptor_digest: None,
         global_hot_tier_initial_content_digest: None,
         global_cold_tier_initial_content_digest: None,
+        fixed_stride_layout_descriptor_digest: None,
+        global_fixed_stride_committed_page_digest: None,
         participant_receipts: vec![sample_receipt(10, 6), sample_receipt(20, 4)],
     }
 }
@@ -1325,6 +1460,34 @@ mod tests {
             DistannReadyReceipt::decode(&hot_cold_bytes).unwrap(),
             hot_cold
         );
+        let mut fixed_stride = sample_receipt(10, 6);
+        fixed_stride.fixed_stride = Some(DistannReadyReceiptFixedStride {
+            layout_descriptor_digest: [0xD1; DIGEST_BYTES],
+            node_store_relid: 42,
+            committed_node_count: 6,
+            committed_page_digest: [0xD2; DIGEST_BYTES],
+            node_store_bytes: 32_768,
+        });
+        let fixed_stride_bytes = fixed_stride.encode().unwrap();
+        assert_eq!(
+            fixed_stride_bytes.len(),
+            DISTANN_READY_RECEIPT_FIXED_STRIDE_BYTES
+        );
+        assert_eq!(
+            u16::from_le_bytes(fixed_stride_bytes[..2].try_into().unwrap()),
+            DISTANN_READY_RECEIPT_FIXED_STRIDE_VERSION
+        );
+        assert_eq!(
+            DistannReadyReceipt::decode(&fixed_stride_bytes).unwrap(),
+            fixed_stride
+        );
+        let mut wrong_count = fixed_stride;
+        wrong_count
+            .fixed_stride
+            .as_mut()
+            .unwrap()
+            .committed_node_count += 1;
+        assert!(wrong_count.encode().is_err());
         let mut overlapping = hot_cold;
         overlapping.payload_sidecar = Some(DistannReadyReceiptPayloadSidecar {
             initial_content_digest: [0xC1; DIGEST_BYTES],
@@ -1465,6 +1628,46 @@ mod tests {
             .as_mut()
             .unwrap()[0] ^= 1;
         assert!(wrong_cold.encode().is_err());
+
+        let mut fixed_stride = sample_manifest_v2();
+        let layout_digest = [0xE1; DIGEST_BYTES];
+        for (index, receipt) in fixed_stride.participant_receipts.iter_mut().enumerate() {
+            receipt.fixed_stride = Some(DistannReadyReceiptFixedStride {
+                layout_descriptor_digest: layout_digest,
+                node_store_relid: 100 + index as u32,
+                committed_node_count: receipt.owned_record_count,
+                committed_page_digest: [0xE2 + index as u8; DIGEST_BYTES],
+                node_store_bytes: 40_960 + index as u64 * 8192,
+            });
+        }
+        fixed_stride.graph_record_version =
+            super::super::tuple::DISTANN_NODE_FIXED_STRIDE_FORMAT_VERSION;
+        fixed_stride.fixed_stride_layout_descriptor_digest = Some(layout_digest);
+        fixed_stride.global_fixed_stride_committed_page_digest = Some(
+            DistannEpochManifestV2::fixed_stride_global_committed_page_digest(
+                &fixed_stride.participant_receipts,
+            )
+            .unwrap(),
+        );
+        let fixed_stride_bytes = fixed_stride.encode().unwrap();
+        assert_eq!(
+            u16::from_le_bytes(fixed_stride_bytes[..2].try_into().unwrap()),
+            DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
+        );
+        assert_eq!(
+            DistannEpochManifestV2::decode(&fixed_stride_bytes).unwrap(),
+            fixed_stride
+        );
+        assert_eq!(
+            fixed_stride.fingerprint().unwrap().version(),
+            DISTANN_EPOCH_MANIFEST_FIXED_STRIDE_VERSION
+        );
+        let mut wrong_fixed = fixed_stride;
+        wrong_fixed
+            .global_fixed_stride_committed_page_digest
+            .as_mut()
+            .unwrap()[0] ^= 1;
+        assert!(wrong_fixed.encode().is_err());
     }
 
     #[test]

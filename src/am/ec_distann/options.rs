@@ -149,6 +149,8 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 /// asked to expand, simulating a `missing_node_record` (an owned record absent
 /// from the node's directory). The scan must error, never silently under-return.
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISTANN_DEBUG_FIXED_STRIDE_FULL_VERIFICATION_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 // Packet 051 rejected the batch-consistent append-when-room candidate on the
@@ -920,6 +922,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fixed_stride_full_verification",
+        c"Task 231 fixed-stride full page/node verification drill.",
+        c"When on, every fixed-stride node touch verifies the complete EFS1 page digest, EFN1 node digest, layout derivation, and canonical padding. Off by default so production measurement isolates layout rather than SHA-256 cost; EFM1 is always fully admitted once at generation open.",
+        &ECDISTANN_DEBUG_FIXED_STRIDE_FULL_VERIFICATION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     #[cfg(feature = "pg_test")]
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_force_frontier_retry",
@@ -1369,6 +1379,10 @@ pub(super) fn debug_fail_hop_round() -> Option<usize> {
 /// NFR-020 fault injection: force the FR-079 case-(c) missing-record fault.
 pub(super) fn debug_missing_node_record() -> bool {
     ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC.get()
+}
+
+pub(super) fn debug_fixed_stride_full_verification() -> bool {
+    ECDISTANN_DEBUG_FIXED_STRIDE_FULL_VERIFICATION_GUC.get()
 }
 
 #[cfg(feature = "pg_test")]

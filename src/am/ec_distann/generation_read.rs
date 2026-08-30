@@ -9,7 +9,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::ptr;
+use std::ptr::{self, NonNull};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,12 +26,14 @@ use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
 use sha2::{Digest, Sha256};
 
 use crate::storage::page::ItemPointer;
-use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard, RelationGuard};
 use crate::storage::scan_guard::IndexScanGuard;
 use crate::storage::slot_guard::TupleTableSlotGuard;
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
 use super::expand_error::DistannExpandError;
+use super::fixed_stride::{fixed_stride_generation_tag, FixedStrideMetadataV1};
+use super::fixed_stride_store;
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::manifest_v2::DistannEpochFingerprint;
@@ -196,7 +198,7 @@ fn graph_node_from_slot(
     graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
-) -> Result<DistannNodeTuple, DistannExpandError> {
+) -> Result<LookupGraphNode, DistannExpandError> {
     let stored_id = unsafe { pg_sys::DatumGetInt64(graph_slot_attr(slot, 1, "vec_id")?) };
     let record = unsafe {
         crate::am::common::detoast::DetoastedVarlena::packed_from_datum(graph_slot_attr(
@@ -235,7 +237,53 @@ fn graph_node_from_slot(
             "physical graph row identity/locator mismatch".to_owned(),
         ));
     }
-    Ok(node)
+    Ok(LookupGraphNode {
+        node,
+        exact_vector: None,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct LookupGraphNode {
+    node: DistannNodeTuple,
+    exact_vector: Option<Vec<f32>>,
+}
+
+struct FixedStrideDirectoryEntry {
+    vec_id: u64,
+    node_ordinal: u64,
+    row_tid: ItemPointer,
+}
+
+fn fixed_stride_directory_from_slot(
+    slot: &TupleTableSlotGuard<'_>,
+) -> Result<FixedStrideDirectoryEntry, DistannExpandError> {
+    let stored_id = unsafe { pg_sys::DatumGetInt64(graph_slot_attr(slot, 1, "vec_id")?) };
+    let ordinal = unsafe { pg_sys::DatumGetInt64(graph_slot_attr(slot, 2, "node ordinal")?) };
+    let ordinal = u64::try_from(ordinal).map_err(|_| {
+        DistannExpandError::GenerationMissing(
+            "fixed-stride directory contains a negative node ordinal".to_owned(),
+        )
+    })?;
+    let vec_id = u64::from_le_bytes(stored_id.to_le_bytes());
+    let row_tid_datum = graph_slot_attr(slot, 3, "row TID")?;
+    let row_tid_ptr = row_tid_datum.cast_mut_ptr::<pg_sys::ItemPointerData>();
+    if row_tid_ptr.is_null() {
+        return Err(DistannExpandError::GenerationMissing(
+            "fixed-stride directory row TID pointer is NULL".to_owned(),
+        ));
+    }
+    let row_tid = unsafe { ptr::read_unaligned(row_tid_ptr) };
+    let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(row_tid);
+    let directory_tid = ItemPointer {
+        block_number,
+        offset_number,
+    };
+    Ok(FixedStrideDirectoryEntry {
+        vec_id,
+        node_ordinal: ordinal,
+        row_tid: directory_tid,
+    })
 }
 
 /// Read immutable graph tuples through the generation's unique `vec_id`
@@ -249,8 +297,9 @@ fn lookup_graph_nodes<F>(
     graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
+    fixed_stride: Option<(&RelationGuard, &FixedStrideMetadataV1)>,
     missing: F,
-) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
+) -> Result<HashMap<u64, LookupGraphNode>, DistannExpandError>
 where
     F: Fn(u64) -> DistannExpandError,
 {
@@ -275,8 +324,13 @@ where
         DistannExpandError::Internal("could not allocate physical graph scan slot".to_owned())
     })?;
     let mut records = HashMap::with_capacity(vec_ids.len());
+    let mut fixed_directory_entries = Vec::with_capacity(vec_ids.len());
     for vec_id in vec_ids {
-        if records.contains_key(vec_id) {
+        if records.contains_key(vec_id)
+            || fixed_directory_entries
+                .iter()
+                .any(|entry: &FixedStrideDirectoryEntry| entry.vec_id == *vec_id)
+        {
             continue;
         }
         let stored_id = i64::from_le_bytes(vec_id.to_le_bytes());
@@ -303,14 +357,79 @@ where
         if !found {
             return Err(missing(*vec_id));
         }
-        let node = graph_node_from_slot(&slot, graph_record_version, graph_degree, code_len)?;
-        if node.vec_id != *vec_id {
+        if fixed_stride.is_some() {
+            let entry = fixed_stride_directory_from_slot(&slot)?;
+            if entry.vec_id != *vec_id {
+                return Err(DistannExpandError::GenerationMissing(format!(
+                    "physical graph directory returned vec_id {:#018x} for requested {vec_id:#018x}",
+                    entry.vec_id
+                )));
+            }
+            fixed_directory_entries.push(entry);
+            continue;
+        }
+        let record = graph_node_from_slot(&slot, graph_record_version, graph_degree, code_len)?;
+        if record.node.vec_id != *vec_id {
             return Err(DistannExpandError::GenerationMissing(format!(
                 "physical graph directory returned vec_id {:#018x} for requested {vec_id:#018x}",
-                node.vec_id
+                record.node.vec_id
             )));
         }
-        records.insert(node.vec_id, node);
+        records.insert(record.node.vec_id, record);
+    }
+    if let Some((node_store, metadata)) = fixed_stride {
+        let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+            DistannExpandError::GenerationMissing("fixed-stride node store opened null".to_owned())
+        })?;
+        let requests = fixed_directory_entries
+            .iter()
+            .map(|entry| fixed_stride_store::FixedStrideReadRequest {
+                node_ordinal: entry.node_ordinal,
+                vec_id: entry.vec_id,
+            })
+            .collect::<Vec<_>>();
+        let mut fixed_nodes = Vec::with_capacity(requests.len());
+        let telemetry =
+            fixed_stride_store::read_nodes(handle, metadata, &requests, &mut fixed_nodes)
+                .map_err(DistannExpandError::GenerationMissing)?;
+        for (entry, fixed) in fixed_directory_entries.into_iter().zip(fixed_nodes) {
+            if fixed.row_tid != entry.row_tid {
+                return Err(DistannExpandError::GenerationMissing(
+                    "fixed-stride node row locator differs from its directory".to_owned(),
+                ));
+            }
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::ExactVectorReads,
+                    1,
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::ExactVectorBytes,
+                    fixed
+                        .exact_vector
+                        .len()
+                        .saturating_mul(std::mem::size_of::<f32>()),
+                );
+            }
+            records.insert(
+                fixed.vec_id,
+                LookupGraphNode {
+                    exact_vector: Some(fixed.exact_vector),
+                    node: DistannNodeTuple {
+                        tombstoned: fixed.tombstoned,
+                        vec_id: fixed.vec_id,
+                        heap_tid: fixed.row_tid,
+                        cold_tid: None,
+                        neighbor_count: fixed.neighbor_count,
+                        search_code: fixed.search_code,
+                        neighbor_vec_ids: fixed.neighbor_vec_ids,
+                        neighbor_codes: fixed.neighbor_codes,
+                    },
+                },
+            );
+        }
+        let _ = telemetry;
     }
     Ok(records)
 }
@@ -462,13 +581,14 @@ fn lookup_graph_nodes_with_reopened_intent_retry<F, O>(
     graph_record_version: u16,
     graph_degree: u16,
     code_len: usize,
+    fixed_stride: Option<(&RelationGuard, &FixedStrideMetadataV1)>,
     graph_relation: HeapRelationGuard,
     directory_relation: IndexRelationGuard,
     open_relations: O,
     missing: F,
 ) -> Result<
     (
-        HashMap<u64, DistannNodeTuple>,
+        HashMap<u64, LookupGraphNode>,
         HeapRelationGuard,
         IndexRelationGuard,
         Option<RegisteredSnapshotGuard>,
@@ -507,6 +627,7 @@ where
             graph_record_version,
             graph_degree,
             code_len,
+            fixed_stride,
             missing,
         )
     };
@@ -541,6 +662,7 @@ where
             graph_record_version,
             graph_degree,
             code_len,
+            fixed_stride,
             missing,
         ) {
             Ok(found) => {
@@ -842,6 +964,7 @@ struct CachedRetainedEpoch {
     source_attnum: i32,
     code_len: usize,
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
+    fixed_stride_metadata: Option<FixedStrideMetadataV1>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
 }
@@ -1281,6 +1404,9 @@ struct RetainedGenerationScan {
     row_relation: Option<HeapRelationGuard>,
     graph_relation: Option<HeapRelationGuard>,
     directory_relation: Option<IndexRelationGuard>,
+    node_store: Option<RelationGuard>,
+    fixed_stride_metadata: Option<FixedStrideMetadataV1>,
+    fixed_exact_vectors: HashMap<u64, Vec<f32>>,
     retry_snapshot: Option<RegisteredSnapshotGuard>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     graph_relation_name: String,
@@ -1331,6 +1457,7 @@ impl RetainedGenerationScan {
                     "requested physical generation is not retained on this participant".to_owned(),
                 )
             })?;
+            let build_id = retained.build_id;
             let generation = retained.generation;
             let descriptor = Arc::new(
                 DistannGenerationDescriptor::decode(&generation.generation_descriptor)
@@ -1366,6 +1493,21 @@ impl RetainedGenerationScan {
                 resolve_retained_row_schema(&generation, &descriptor)
                     .map_err(DistannExpandError::GenerationMissing)?,
             );
+            let fixed_stride_metadata = descriptor
+                .fixed_stride_layout
+                .as_ref()
+                .map(|layout| {
+                    Ok::<_, String>(FixedStrideMetadataV1 {
+                        generation_tag: fixed_stride_generation_tag(
+                            &descriptor.digest()?,
+                            logical_index_uuid.as_bytes(),
+                            build_id.as_bytes(),
+                        ),
+                        layout: layout.clone(),
+                    })
+                })
+                .transpose()
+                .map_err(DistannExpandError::GenerationMissing)?;
             let cached = CachedRetainedEpoch {
                 index_oid,
                 fingerprint,
@@ -1374,6 +1516,7 @@ impl RetainedGenerationScan {
                 source_attnum,
                 code_len,
                 row_schema,
+                fixed_stride_metadata,
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_payload_plans: Rc::new(RefCell::new(VecDeque::new())),
             };
@@ -1386,6 +1529,7 @@ impl RetainedGenerationScan {
             source_attnum,
             code_len,
             row_schema,
+            fixed_stride_metadata,
             #[cfg(feature = "distann-head-attribution-benchmark")]
             owner_payload_plans,
             ..
@@ -1416,6 +1560,31 @@ impl RetainedGenerationScan {
                 "retained graph directory is absent".to_owned(),
             ));
         };
+        let node_store = match (generation.node_store_relid, fixed_stride_metadata.as_ref()) {
+            (Some(relid), Some(metadata)) => {
+                let relation =
+                    RelationGuard::try_open(relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                        .ok_or_else(|| {
+                            DistannExpandError::GenerationMissing(
+                                "retained fixed-stride node store is absent".to_owned(),
+                            )
+                        })?;
+                let handle = NonNull::new(relation.as_ptr()).ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "retained fixed-stride node store opened null".to_owned(),
+                    )
+                })?;
+                fixed_stride_store::read_metadata(handle, metadata)
+                    .map_err(DistannExpandError::GenerationMissing)?;
+                Some(relation)
+            }
+            (None, None) => None,
+            _ => {
+                return Err(DistannExpandError::GenerationMissing(
+                    "retained node store disagrees with fixed-stride descriptor".to_owned(),
+                ))
+            }
+        };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_relation_name =
             super::handoff::qualified_relation_name(generation.graph_store_relid)
@@ -1428,6 +1597,9 @@ impl RetainedGenerationScan {
             row_relation,
             graph_relation: Some(graph_relation),
             directory_relation: Some(directory_relation),
+            node_store,
+            fixed_stride_metadata,
+            fixed_exact_vectors: HashMap::new(),
             retry_snapshot: None,
             #[cfg(feature = "distann-head-attribution-benchmark")]
             graph_relation_name,
@@ -1930,6 +2102,8 @@ impl RetainedGenerationScan {
                 descriptor: &self.descriptor,
                 graph_relation: Some(graph_relation),
                 directory_relation: Some(directory_relation),
+                node_store: self.node_store.as_ref(),
+                fixed_stride_metadata: self.fixed_stride_metadata.as_ref(),
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
@@ -2082,6 +2256,8 @@ impl RetainedGenerationScan {
                         descriptor: &self.descriptor,
                         graph_relation: Some(graph_relation),
                         directory_relation: Some(directory_relation),
+                        node_store: self.node_store.as_ref(),
+                        fixed_stride_metadata: self.fixed_stride_metadata.as_ref(),
                         row_relation: self.row_relation_ref()?,
                         slot: &slot,
                         snapshot,
@@ -2093,7 +2269,15 @@ impl RetainedGenerationScan {
                     };
                     let mut owned = Vec::with_capacity(nodes.len());
                     for node in &nodes {
-                        owned.push((node.vec_id, expander.local_source_vector(node)?));
+                        owned.push((
+                            node.vec_id,
+                            expander.local_source_vector(
+                                node,
+                                self.fixed_exact_vectors
+                                    .get(&node.vec_id)
+                                    .map(Vec::as_slice),
+                            )?,
+                        ));
                     }
                     (owned, expander.graph_relation, expander.directory_relation)
                 };
@@ -2287,6 +2471,8 @@ impl RetainedGenerationScan {
                 descriptor: &self.descriptor,
                 graph_relation: Some(graph_relation),
                 directory_relation: Some(directory_relation),
+                node_store: self.node_store.as_ref(),
+                fixed_stride_metadata: self.fixed_stride_metadata.as_ref(),
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
@@ -2298,7 +2484,15 @@ impl RetainedGenerationScan {
             };
             let mut exported = Vec::with_capacity(nodes.len());
             for node in &nodes {
-                exported.push((node.vec_id, expander.local_source_vector(node)?));
+                exported.push((
+                    node.vec_id,
+                    expander.local_source_vector(
+                        node,
+                        self.fixed_exact_vectors
+                            .get(&node.vec_id)
+                            .map(Vec::as_slice),
+                    )?,
+                ));
             }
             (
                 exported,
@@ -2358,6 +2552,9 @@ impl RetainedGenerationScan {
             self.descriptor.graph_record_version,
             self.descriptor.graph_degree,
             self.code_len,
+            self.node_store
+                .as_ref()
+                .zip(self.fixed_stride_metadata.as_ref()),
             graph_relation,
             directory_relation,
             move || {
@@ -2397,14 +2594,23 @@ impl RetainedGenerationScan {
         if let Some(retry_snapshot) = retry_snapshot {
             self.retry_snapshot = Some(retry_snapshot);
         }
+        for record in records.values() {
+            if let Some(vector) = &record.exact_vector {
+                self.fixed_exact_vectors
+                    .insert(record.node.vec_id, vector.clone());
+            }
+        }
         vec_ids
             .iter()
             .map(|vec_id| {
-                records.get(vec_id).cloned().ok_or_else(|| {
-                    DistannExpandError::OwnedRecordMissing(format!(
-                        "retained physical generation lacks owned vec_id {vec_id:#018x}"
-                    ))
-                })
+                records
+                    .get(vec_id)
+                    .map(|record| record.node.clone())
+                    .ok_or_else(|| {
+                        DistannExpandError::OwnedRecordMissing(format!(
+                            "retained physical generation lacks owned vec_id {vec_id:#018x}"
+                        ))
+                    })
             })
             .collect()
     }
@@ -5855,6 +6061,8 @@ pub(crate) struct PhysicalGenerationScan {
     row_relation: Option<HeapRelationGuard>,
     graph_relation: Option<HeapRelationGuard>,
     directory_relation: Option<IndexRelationGuard>,
+    node_store: Option<RelationGuard>,
+    fixed_stride_metadata: Option<FixedStrideMetadataV1>,
     build_id: Uuid,
     fingerprint: [u8; 34],
     descriptor_digest: [u8; 32],
@@ -6349,63 +6557,110 @@ impl PhysicalGenerationScan {
         }
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
-        let (row_relation, graph_relation, directory_relation) = match generation.as_ref() {
-            Some(generation) => {
-                if generation.state != super::lifecycle_state::GenerationState::Published {
-                    return Err(format!(
-                        "EC_GENERATION_MISSING: active generation is {} rather than Published",
-                        generation.state
-                    ));
-                }
-                if load_head {
-                    let local_route =
-                        routes
+        let (row_relation, graph_relation, directory_relation, node_store, fixed_stride_metadata) =
+            match generation.as_ref() {
+                Some(generation) => {
+                    if generation.state != super::lifecycle_state::GenerationState::Published {
+                        return Err(format!(
+                            "EC_GENERATION_MISSING: active generation is {} rather than Published",
+                            generation.state
+                        ));
+                    }
+                    if load_head {
+                        let local_route = routes
                             .get(generation.owner_ordinal as usize)
                             .ok_or_else(|| {
                                 "EC_NODE_DESCRIPTOR: local generation owner is outside the roster"
                                     .to_owned()
                             })?;
-                    if !local_route.is_local {
-                        return Err(
+                        if !local_route.is_local {
+                            return Err(
                             "EC_NODE_DESCRIPTOR: local generation owner is not the local binding"
                                 .to_owned(),
                         );
+                        }
                     }
-                }
-                if generation.generation_descriptor_digest != descriptor_digest {
-                    return Err("EC_GENERATION_DESCRIPTOR: local generation descriptor differs from candidate".to_owned());
-                }
-                let row = HeapRelationGuard::try_access_share(generation.row_tier_relid)
-                    .ok_or_else(|| {
-                        "EC_GENERATION_MISSING: row-tier relation is absent".to_owned()
-                    })?;
-                #[cfg(feature = "distann-head-attribution-benchmark")]
-                if descriptor.row_tier_layout().is_some() {
-                    super::stage_counters::record_work(
-                        super::stage_counters::DistannMaterializationWork::HotTierRelationOpens,
-                        1,
-                    );
-                }
-                let graph = HeapRelationGuard::try_access_share(generation.graph_store_relid)
-                    .ok_or_else(|| {
+                    if generation.generation_descriptor_digest != descriptor_digest {
+                        return Err("EC_GENERATION_DESCRIPTOR: local generation descriptor differs from candidate".to_owned());
+                    }
+                    let row = HeapRelationGuard::try_access_share(generation.row_tier_relid)
+                        .ok_or_else(|| {
+                            "EC_GENERATION_MISSING: row-tier relation is absent".to_owned()
+                        })?;
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    if descriptor.row_tier_layout().is_some() {
+                        super::stage_counters::record_work(
+                            super::stage_counters::DistannMaterializationWork::HotTierRelationOpens,
+                            1,
+                        );
+                    }
+                    let graph = HeapRelationGuard::try_access_share(generation.graph_store_relid)
+                        .ok_or_else(|| {
                         "EC_GENERATION_MISSING: graph-store relation is absent".to_owned()
                     })?;
-                let Some(directory) =
-                    IndexRelationGuard::try_access_share(generation.directory_relid)
-                else {
-                    return Err("EC_GENERATION_MISSING: graph directory is absent".to_owned());
+                    let Some(directory) =
+                        IndexRelationGuard::try_access_share(generation.directory_relid)
+                    else {
+                        return Err("EC_GENERATION_MISSING: graph directory is absent".to_owned());
+                    };
+                    let fixed_stride_metadata = descriptor
+                        .fixed_stride_layout
+                        .as_ref()
+                        .map(|layout| {
+                            Ok::<_, String>(FixedStrideMetadataV1 {
+                                generation_tag: fixed_stride_generation_tag(
+                                    &descriptor_digest,
+                                    logical_index_uuid.as_bytes(),
+                                    active.build_id.as_bytes(),
+                                ),
+                                layout: layout.clone(),
+                            })
+                        })
+                        .transpose()?;
+                    let node_store = match (
+                    generation.node_store_relid,
+                    fixed_stride_metadata.as_ref(),
+                ) {
+                    (Some(relid), Some(metadata)) => {
+                        let relation = RelationGuard::try_open(
+                            relid,
+                            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                        )
+                        .ok_or_else(|| {
+                            "EC_GENERATION_MISSING: fixed-stride node store is absent".to_owned()
+                        })?;
+                        let handle = NonNull::new(relation.as_ptr()).ok_or_else(|| {
+                            "EC_GENERATION_MISSING: fixed-stride node store opened null".to_owned()
+                        })?;
+                        fixed_stride_store::read_metadata(handle, metadata)?;
+                        Some(relation)
+                    }
+                    (None, None) => None,
+                    _ => {
+                        return Err(
+                            "EC_GENERATION_MISSING: node store disagrees with fixed-stride descriptor"
+                                .to_owned(),
+                        )
+                    }
                 };
-                (Some(row), Some(graph), Some(directory))
-            }
-            None => {
-                if routes.iter().any(|route| route.is_local) {
-                    return Err(
-                        "EC_GENERATION_MISSING: local binding has no active generation".to_owned(),
-                    );
+                    (
+                        Some(row),
+                        Some(graph),
+                        Some(directory),
+                        node_store,
+                        fixed_stride_metadata,
+                    )
                 }
-                (None, None, None)
-            }
-        };
+                None => {
+                    if routes.iter().any(|route| route.is_local) {
+                        return Err(
+                            "EC_GENERATION_MISSING: local binding has no active generation"
+                                .to_owned(),
+                        );
+                    }
+                    (None, None, None, None, None)
+                }
+            };
         Ok(Self {
             index_oid,
             descriptor,
@@ -6413,6 +6668,8 @@ impl PhysicalGenerationScan {
             row_relation,
             graph_relation,
             directory_relation,
+            node_store,
+            fixed_stride_metadata,
             build_id: active.build_id,
             fingerprint: active.fingerprint,
             descriptor_digest,
@@ -6684,6 +6941,8 @@ impl PhysicalGenerationScan {
                 descriptor: &self.descriptor,
                 graph_relation: Some(graph_relation),
                 directory_relation: Some(directory_relation),
+                node_store: self.node_store.as_ref(),
+                fixed_stride_metadata: self.fixed_stride_metadata.as_ref(),
                 row_relation,
                 slot,
                 snapshot,
@@ -8085,6 +8344,8 @@ struct GenerationExpander<'a> {
     descriptor: &'a DistannGenerationDescriptor,
     graph_relation: Option<HeapRelationGuard>,
     directory_relation: Option<IndexRelationGuard>,
+    node_store: Option<&'a RelationGuard>,
+    fixed_stride_metadata: Option<&'a FixedStrideMetadataV1>,
     row_relation: &'a HeapRelationGuard,
     slot: &'a TupleTableSlotGuard<'a>,
     snapshot: pg_sys::Snapshot,
@@ -8104,7 +8365,21 @@ impl GenerationExpander<'_> {
     /// Task 210 P2: an FR-080 head landmark is co-placed with its row-tier
     /// vector under the same FR-078 hash (ADR-085 D11), so an owner can
     /// materialise its own head shard without any vector crossing the wire.
-    fn local_source_vector(&self, node: &DistannNodeTuple) -> Result<Vec<f32>, DistannExpandError> {
+    fn local_source_vector(
+        &self,
+        node: &DistannNodeTuple,
+        fixed_exact_vector: Option<&[f32]>,
+    ) -> Result<Vec<f32>, DistannExpandError> {
+        if let Some(vector) = fixed_exact_vector {
+            if vector.len() != usize::from(self.descriptor.dimensions)
+                || vector.iter().any(|value| !value.is_finite())
+            {
+                return Err(DistannExpandError::GenerationMissing(
+                    "fixed-stride exact vector has invalid dimensions or values".to_owned(),
+                ));
+            }
+            return Ok(vector.to_vec());
+        }
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(
             &mut tid,
@@ -8180,7 +8455,16 @@ impl GenerationExpander<'_> {
         Ok(vector)
     }
 
-    fn exact_distance(&self, node: &DistannNodeTuple) -> Result<f32, DistannExpandError> {
+    fn exact_distance(
+        &self,
+        node: &DistannNodeTuple,
+        fixed_exact_vector: Option<&[f32]>,
+    ) -> Result<f32, DistannExpandError> {
+        if let Some(vector) = fixed_exact_vector {
+            return Ok(-crate::am::ec_diskann::source_inner_product_deterministic(
+                self.query, vector,
+            ));
+        }
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(
             &mut tid,
@@ -8321,6 +8605,7 @@ impl GenerationExpander<'_> {
             self.descriptor.graph_record_version,
             self.descriptor.graph_degree,
             self.code_len,
+            self.node_store.zip(self.fixed_stride_metadata),
             graph_relation,
             directory_relation,
             move || {
@@ -8366,12 +8651,13 @@ impl GenerationExpander<'_> {
         let mut responses = vec_ids
             .iter()
             .map(|vec_id| {
-                let node = records.get(vec_id).ok_or_else(|| {
+                let record = records.get(vec_id).ok_or_else(|| {
                     DistannExpandError::OwnedRecordMissing(format!(
                         "physical generation {} lacks vec_id {vec_id:#018x}",
                         self.generation.epoch
                     ))
                 })?;
+                let node = &record.node;
                 let (neighbor_vec_ids, neighbor_code_dists) = if skip_neighbors.contains(vec_id) {
                     (Vec::new(), Vec::new())
                 } else {
@@ -8395,7 +8681,7 @@ impl GenerationExpander<'_> {
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)
-                        .then(|| self.exact_distance(node))
+                        .then(|| self.exact_distance(node, record.exact_vector.as_deref()))
                         .transpose()?,
                     is_tombstone: node.tombstoned,
                     heap_tid: node.heap_tid,

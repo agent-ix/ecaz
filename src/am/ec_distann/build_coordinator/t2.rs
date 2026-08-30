@@ -758,6 +758,15 @@ pub(super) fn build_epoch(
             } else {
                 (None, None)
             };
+        let fixed_stride_layout_descriptor_digest = descriptor
+            .fixed_stride_layout()
+            .map(|layout| layout.digest())
+            .transpose()?;
+        let global_fixed_stride_committed_page_digest = fixed_stride_layout_descriptor_digest
+            .map(|_| {
+                DistannEpochManifestV2::fixed_stride_global_committed_page_digest(&receipts)
+            })
+            .transpose()?;
         let manifest = DistannEpochManifestV2 {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
@@ -785,6 +794,8 @@ pub(super) fn build_epoch(
             row_tier_layout_descriptor_digest,
             global_hot_tier_initial_content_digest,
             global_cold_tier_initial_content_digest,
+            fixed_stride_layout_descriptor_digest,
+            global_fixed_stride_committed_page_digest,
             participant_receipts: receipts,
         };
 

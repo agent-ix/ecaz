@@ -6,6 +6,7 @@
 
 use std::ffi::CStr;
 use std::panic::AssertUnwindSafe;
+use std::ptr::NonNull;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
@@ -15,10 +16,13 @@ use sha2::{Digest, Sha256};
 use crate::am::common::heap_slot::TupleSlotWriter;
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::relation_namespace_owner_persistence_handle;
-use crate::storage::relation_guard::HeapRelationGuard;
+use crate::storage::relation::RelationHandle;
+use crate::storage::relation_guard::{HeapRelationGuard, RelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
 use super::canonical_wire::{fixed_digest, is_rfc4122_v4_uuid};
+use super::fixed_stride::{fixed_stride_generation_tag, FixedStrideMetadataV1, FixedStrideNodeV1};
+use super::fixed_stride_store;
 use super::generation_catalog::{self, GenerationBatchCatalogRow, GenerationCatalogRow};
 use super::generation_descriptor::{
     roster_digest, DistannGenerationDescriptor, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
@@ -30,8 +34,8 @@ use super::handoff_wire::{
 use super::identity::vec_id_from_source_identity;
 use super::lifecycle_state::GenerationState;
 use super::manifest_v2::{
-    DistannEpochFingerprint, DistannReadyReceipt, DistannReadyReceiptHotCold,
-    DistannReadyReceiptPayloadSidecar, DISTANN_READY_RECEIPT_STATE,
+    DistannEpochFingerprint, DistannReadyReceipt, DistannReadyReceiptFixedStride,
+    DistannReadyReceiptHotCold, DistannReadyReceiptPayloadSidecar, DISTANN_READY_RECEIPT_STATE,
 };
 use super::payload_sidecar::DistannPayloadCoverDescriptorV1;
 use super::placement::owning_node;
@@ -57,6 +61,7 @@ struct PreparedEntry {
     datums: Vec<Option<pg_sys::Datum>>,
     cold_datums: Option<Vec<Option<pg_sys::Datum>>>,
     payload_sidecar: Option<Vec<u8>>,
+    exact_vector: Vec<f32>,
     node: DistannNodeTuple,
 }
 
@@ -312,10 +317,13 @@ fn validate_generation_relations(
         ]
     });
 
-    let valid = Spi::connect(|client| {
-        client
-            .select(
-                "SELECT
+    let graph_value_check = if descriptor.fixed_stride_layout.is_some() {
+        "NOT atthasdef AND attname = 'node_ordinal' AND atttypid = 'bigint'::regtype"
+    } else {
+        "NOT atthasdef AND attname = 'graph_record' AND atttypid = 'bytea'::regtype"
+    };
+    let validation_sql = format!(
+        "SELECT
                     EXISTS (
                         SELECT 1 FROM pg_catalog.pg_class
                          WHERE oid = $1::oid AND relkind = 'r' AND relowner = $4::oid
@@ -406,7 +414,7 @@ fn validate_generation_relations(
                                AND attidentity = '' AND attgenerated = ''
                                AND CASE attnum
                                      WHEN 1 THEN NOT atthasdef AND attname = 'vec_id' AND atttypid = 'bigint'::regtype
-                                     WHEN 2 THEN NOT atthasdef AND attname = 'graph_record' AND atttypid = 'bytea'::regtype
+                                     WHEN 2 THEN {graph_value_check}
                                      WHEN 3 THEN NOT atthasdef AND attname = 'row_tid' AND atttypid = 'tid'::regtype
                                      WHEN 4 THEN attname = 'record_version' AND atttypid = 'int8'::regtype
                                      WHEN 5 THEN attname = 'is_current' AND atttypid = 'bool'::regtype
@@ -440,7 +448,13 @@ fn validate_generation_relations(
                         JOIN pg_catalog.pg_am am ON am.oid = c.relam
                          WHERE c.oid = $3::oid AND c.relkind = 'i'
                            AND c.relowner = $4::oid AND am.amname = 'btree'
-                    ) AS valid",
+                    ) AS valid"
+    );
+
+    let valid = Spi::connect(|client| {
+        client
+            .select(
+                &validation_sql,
                 None,
                 &[
                     row.row_tier_relid.into(),
@@ -474,6 +488,72 @@ fn validate_generation_relations(
             "EC_GENERATION_MISSING: generation relations violate their immutable physical shape"
                 .to_owned(),
         );
+    }
+    match (
+        row.node_store_relid,
+        descriptor.fixed_stride_layout.as_ref(),
+    ) {
+        (None, None) => {}
+        (Some(node_store_relid), Some(_)) => {
+            let node_store_valid = Spi::get_one_with_args::<bool>(
+                "SELECT
+                    EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_class c
+                         WHERE c.oid = $1::oid AND c.relkind = 'r'
+                           AND c.relowner = $2::oid AND c.relpersistence = 'p'
+                           AND NOT c.relrowsecurity AND NOT c.relforcerowsecurity
+                           AND c.reltablespace = (
+                               SELECT reltablespace FROM pg_catalog.pg_class WHERE oid = $3::oid
+                           )
+                           AND COALESCE(c.reloptions, ARRAY[]::text[])
+                               @> ARRAY['autovacuum_enabled=false']
+                    )
+                    AND (
+                        SELECT count(*) = 1
+                           AND bool_and(
+                               attnum = 1 AND attname = '__ecdz_raw'
+                               AND atttypid = 'bytea'::regtype AND NOT attnotnull
+                               AND NOT atthasdef AND attidentity = '' AND attgenerated = ''
+                           )
+                          FROM pg_catalog.pg_attribute
+                         WHERE attrelid = $1::oid AND attnum > 0 AND NOT attisdropped
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_index WHERE indrelid = $1::oid
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_constraint
+                         WHERE conrelid = $1::oid AND contype <> 'n'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_trigger
+                         WHERE tgrelid = $1::oid AND NOT tgisinternal
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_rewrite WHERE ev_class = $1::oid
+                    )",
+                &[
+                    node_store_relid.into(),
+                    control_owner.into(),
+                    row.row_tier_relid.into(),
+                ],
+            )
+            .map_err(|error| {
+                format!("EC_GENERATION_MISSING: node-store validation failed: {error}")
+            })?
+            .unwrap_or(false);
+            if !node_store_valid {
+                return Err(
+                    "EC_GENERATION_MISSING: node store violates its immutable raw shape".to_owned(),
+                );
+            }
+        }
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: node store disagrees with fixed-stride descriptor"
+                    .to_owned(),
+            )
+        }
     }
     let sidecar_pair = match (
         row.payload_sidecar_relid,
@@ -691,6 +771,7 @@ fn prepare_legacy_entries(
     let mut prepared = Vec::with_capacity(entries.len());
     for entry in entries {
         let mut datums = Vec::with_capacity(row_io.len());
+        let mut exact_vector = None;
         let mut payload_values = payload_cover.map(|cover| vec![None; cover.attributes.len()]);
         let mut non_dropped_position = 0_usize;
         let mut value_position = 0_usize;
@@ -733,6 +814,9 @@ fn prepare_legacy_entries(
                 }
             }
             let datum = unsafe { receive_and_verify(bytes, io, attnum)? };
+            if attnum == usize::from(indexed_vector_attnum) {
+                exact_vector = Some(unsafe { crate::am::ec_diskann::ecvector_datum_to_vec(datum) });
+            }
             datums.push(Some(datum));
         }
         if non_dropped_position != shape.non_dropped_attribute_count
@@ -773,6 +857,9 @@ fn prepare_legacy_entries(
             datums,
             cold_datums: None,
             payload_sidecar,
+            exact_vector: exact_vector.ok_or_else(|| {
+                "EC_SCHEMA_MISMATCH: indexed vector was not decoded during handoff".to_owned()
+            })?,
             node,
         });
     }
@@ -802,6 +889,7 @@ fn prepare_hot_cold_entries(
         cold_datums[0] = Some(pg_sys::Datum::from(stored_vec_id));
         let mut non_dropped_position = 0_usize;
         let mut value_position = 0_usize;
+        let mut exact_vector = None;
         for attribute in &row_schema.attributes {
             if attribute.dropped {
                 continue;
@@ -865,8 +953,11 @@ fn prepare_hot_cold_entries(
                         .to_owned(),
                 );
             }
-            *target =
-                Some(unsafe { receive_and_verify(bytes, io, usize::from(attribute.attnum))? });
+            let datum = unsafe { receive_and_verify(bytes, io, usize::from(attribute.attnum))? };
+            if attribute.attnum == layout.indexed_vector_attnum {
+                exact_vector = Some(unsafe { crate::am::ec_diskann::ecvector_datum_to_vec(datum) });
+            }
+            *target = Some(datum);
         }
         if non_dropped_position != shape.non_dropped_attribute_count
             || value_position != entry.row_values.len()
@@ -901,6 +992,9 @@ fn prepare_hot_cold_entries(
             datums: hot_datums,
             cold_datums: Some(cold_datums),
             payload_sidecar: None,
+            exact_vector: exact_vector.ok_or_else(|| {
+                "EC_SCHEMA_MISMATCH: indexed vector was not decoded during handoff".to_owned()
+            })?,
             node,
         });
     }
@@ -954,6 +1048,7 @@ fn insert_prepared_entries(
     entries: &mut [PreparedEntry],
     shape: DistannHandoffShape,
     graph_record_version: u16,
+    fixed_stride: Option<(RelationHandle, &FixedStrideMetadataV1, u64)>,
 ) -> Result<(), String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
         "EC_GENERATION_MISSING: could not allocate row-tier tuple slot".to_owned()
@@ -969,9 +1064,10 @@ fn insert_prepared_entries(
         .map_err(|_| "EC_HANDOFF_FORMAT: graph degree exceeds u16".to_owned())?;
     let mut graph_vec_ids = Vec::with_capacity(entries.len());
     let mut graph_records = Vec::with_capacity(entries.len());
+    let mut node_ordinals = Vec::with_capacity(entries.len());
     let mut graph_row_tids = Vec::with_capacity(entries.len());
     let mut payloads = payload_sidecar_relation.map(|_| Vec::with_capacity(entries.len()));
-    for entry in entries {
+    for (entry_index, entry) in entries.iter_mut().enumerate() {
         match (
             cold_relation,
             cold_slot.as_ref(),
@@ -1040,13 +1136,38 @@ fn insert_prepared_entries(
             block_number,
             offset_number,
         };
-        let graph_record = entry.node.encode_physical_version(
-            graph_record_version,
-            graph_degree,
-            shape.code_stride,
-        )?;
         graph_vec_ids.push(i64::from_le_bytes(entry.node.vec_id.to_le_bytes()));
-        graph_records.push(graph_record);
+        if let Some((node_store, metadata, ordinal_floor)) = fixed_stride {
+            let node_ordinal = ordinal_floor
+                .checked_add(entry_index as u64)
+                .ok_or_else(|| "EC_FIXED_STRIDE_FORMAT: node ordinal overflow".to_owned())?;
+            if entry.exact_vector.len() != usize::from(metadata.layout.dimensions) {
+                return Err(
+                    "EC_FIXED_STRIDE_FORMAT: handoff exact-vector dimensions mismatch".to_owned(),
+                );
+            }
+            let node = FixedStrideNodeV1 {
+                tombstoned: entry.node.tombstoned,
+                node_ordinal,
+                vec_id: entry.node.vec_id,
+                row_tid: entry.node.heap_tid,
+                neighbor_count: entry.node.neighbor_count,
+                exact_vector: entry.exact_vector.clone(),
+                search_code: entry.node.search_code.clone(),
+                neighbor_vec_ids: entry.node.neighbor_vec_ids.clone(),
+                neighbor_codes: entry.node.neighbor_codes.clone(),
+            };
+            fixed_stride_store::write_node(node_store, metadata, &node, ordinal_floor)?;
+            node_ordinals.push(i64::try_from(node_ordinal).map_err(|_| {
+                "EC_FIXED_STRIDE_FORMAT: node ordinal exceeds PostgreSQL bigint".to_owned()
+            })?);
+        } else {
+            graph_records.push(entry.node.encode_physical_version(
+                graph_record_version,
+                graph_degree,
+                shape.code_stride,
+            )?);
+        }
         graph_row_tids.push(row_tid);
         match (&mut payloads, entry.payload_sidecar.take()) {
             (Some(payloads), Some(payload)) => payloads.push(payload),
@@ -1106,9 +1227,26 @@ fn insert_prepared_entries(
         }
     }
     let inserted = Spi::connect_mut(|client| {
-        client
-            .update(
-                &format!(
+        let (sql, values) = if fixed_stride.is_some() {
+            (
+                format!(
+                    "WITH inserted AS (
+                         INSERT INTO {graph_relation} (vec_id, node_ordinal, row_tid)
+                         SELECT vec_id, node_ordinal, row_tid
+                           FROM unnest($1::bigint[], $2::bigint[], $3::tid[])
+                                AS batch(vec_id, node_ordinal, row_tid)
+                         RETURNING 1
+                     ) SELECT count(*)::bigint AS inserted_count FROM inserted"
+                ),
+                vec![
+                    graph_vec_ids.into(),
+                    node_ordinals.into(),
+                    graph_row_tids.into(),
+                ],
+            )
+        } else {
+            (
+                format!(
                     "WITH inserted AS (
                          INSERT INTO {graph_relation} (vec_id, graph_record, row_tid)
                          SELECT vec_id, graph_record, row_tid
@@ -1117,13 +1255,15 @@ fn insert_prepared_entries(
                          RETURNING 1
                      ) SELECT count(*)::bigint AS inserted_count FROM inserted"
                 ),
-                None,
-                &[
+                vec![
                     graph_vec_ids.into(),
                     graph_records.into(),
                     graph_row_tids.into(),
                 ],
             )
+        };
+        client
+            .update(&sql, None, &values)
             .map_err(|error| format!("EC_BATCH_CONFLICT: graph batch insert failed: {error}"))?
             .next()
             .ok_or_else(|| "EC_BATCH_CONFLICT: graph batch insert returned no count".to_owned())?
@@ -1559,6 +1699,12 @@ struct PhysicalSealSummary {
     directory_digest: [u8; 32],
 }
 
+#[derive(Clone, Copy)]
+struct FixedStrideScanContext<'a> {
+    relation: RelationHandle,
+    metadata: &'a FixedStrideMetadataV1,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn scan_physical_generation(
     generation: &GenerationCatalogRow,
@@ -1568,6 +1714,7 @@ fn scan_physical_generation(
     row_relation: &HeapRelationGuard,
     cold_relation: Option<&HeapRelationGuard>,
     graph_relation: &str,
+    fixed_stride: Option<FixedStrideScanContext<'_>>,
 ) -> Result<PhysicalSealSummary, String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation)
         .ok_or_else(|| "EC_GENERATION_MISSING: could not allocate seal row slot".to_owned())?;
@@ -1610,12 +1757,21 @@ fn scan_physical_generation(
     directory_hasher.update(LOCAL_DIRECTORY_DOMAIN);
     let mut record_count = 0_u64;
     let mut previous_vec_id = None;
-    let sql = format!(
-        "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
-           FROM {graph_relation}
-          WHERE is_current
-          ORDER BY (vec_id < 0), vec_id"
-    );
+    let sql = if fixed_stride.is_some() {
+        format!(
+            "SELECT vec_id, node_ordinal, row_tid
+               FROM {graph_relation}
+              WHERE is_current
+              ORDER BY (vec_id < 0), vec_id"
+        )
+    } else {
+        format!(
+            "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
+               FROM {graph_relation}
+              WHERE is_current
+              ORDER BY (vec_id < 0), vec_id"
+        )
+    };
     Spi::connect(|client| -> Result<(), String> {
         let mut cursor = client
             .try_open_cursor(&sql, &[])
@@ -1639,30 +1795,65 @@ fn scan_physical_generation(
                             .to_owned(),
                     );
                 }
-                let graph_record = row["graph_record"]
-                    .value::<Vec<u8>>()
-                    .map_err(|error| {
-                        format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
-                    })?
-                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
                 let row_tid = row["row_tid"]
                     .value::<pg_sys::ItemPointerData>()
                     .map_err(|error| {
                         format!("EC_BUILD_INCOMPLETE: row TID decode failed: {error}")
                     })?
                     .ok_or_else(|| "EC_BUILD_INCOMPLETE: row TID is NULL".to_owned())?;
-                let graph_tid = row["graph_tid"]
-                    .value::<pg_sys::ItemPointerData>()
-                    .map_err(|error| {
-                        format!("EC_BUILD_INCOMPLETE: graph TID decode failed: {error}")
-                    })?
-                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph TID is NULL".to_owned())?;
-                let node = DistannNodeTuple::decode_physical_version(
-                    &graph_record,
-                    descriptor.graph_record_version,
-                    descriptor.graph_degree,
-                    shape.code_stride,
-                )?;
+                let (node, graph_record, node_ordinal, graph_tid) = if let Some(fixed_stride) =
+                    fixed_stride
+                {
+                    let ordinal = row["node_ordinal"]
+                        .value::<i64>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: node ordinal decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: node ordinal is NULL".to_owned())?;
+                    let ordinal = u64::try_from(ordinal)
+                        .map_err(|_| "EC_BUILD_INCOMPLETE: node ordinal is negative".to_owned())?;
+                    let mut fixed = FixedStrideNodeV1::empty();
+                    fixed_stride_store::read_node_verified(
+                        fixed_stride.relation,
+                        fixed_stride.metadata,
+                        ordinal,
+                        vec_id,
+                        &mut fixed,
+                    )?;
+                    let node = DistannNodeTuple {
+                        tombstoned: fixed.tombstoned,
+                        vec_id: fixed.vec_id,
+                        heap_tid: fixed.row_tid,
+                        cold_tid: None,
+                        neighbor_count: fixed.neighbor_count,
+                        search_code: fixed.search_code,
+                        neighbor_vec_ids: fixed.neighbor_vec_ids,
+                        neighbor_codes: fixed.neighbor_codes,
+                    };
+                    let graph_record =
+                        node.encode_physical_v1(descriptor.graph_degree, shape.code_stride)?;
+                    (node, graph_record, Some(ordinal), None)
+                } else {
+                    let graph_record = row["graph_record"]
+                        .value::<Vec<u8>>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
+                    let graph_tid = row["graph_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: graph TID decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph TID is NULL".to_owned())?;
+                    let node = DistannNodeTuple::decode_physical_version(
+                        &graph_record,
+                        descriptor.graph_record_version,
+                        descriptor.graph_degree,
+                        shape.code_stride,
+                    )?;
+                    (node, graph_record, None, Some(graph_tid))
+                };
                 let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
                 if node.tombstoned
                     || node.vec_id != vec_id
@@ -1766,13 +1957,19 @@ fn scan_physical_generation(
                 for value in &row_values {
                     update_length_prefixed(&mut row_hasher, value)?;
                 }
-                let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
-                if graph_block == pg_sys::InvalidBlockNumber || graph_offset == 0 {
-                    return Err("EC_BUILD_INCOMPLETE: graph heap TID is invalid".to_owned());
-                }
                 directory_hasher.update(vec_id.to_le_bytes());
-                directory_hasher.update(graph_block.to_le_bytes());
-                directory_hasher.update(graph_offset.to_le_bytes());
+                if let Some(node_ordinal) = node_ordinal {
+                    directory_hasher.update(node_ordinal.to_le_bytes());
+                } else {
+                    let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(
+                        graph_tid.expect("legacy graph row has a heap TID"),
+                    );
+                    if graph_block == pg_sys::InvalidBlockNumber || graph_offset == 0 {
+                        return Err("EC_BUILD_INCOMPLETE: graph heap TID is invalid".to_owned());
+                    }
+                    directory_hasher.update(graph_block.to_le_bytes());
+                    directory_hasher.update(graph_offset.to_le_bytes());
+                }
 
                 record_count = record_count.checked_add(1).ok_or_else(|| {
                     "EC_BUILD_INCOMPLETE: physical record count overflow".to_owned()
@@ -1801,6 +1998,7 @@ struct GenerationSizes {
     directory_bytes: u64,
     payload_sidecar_heap_bytes: Option<u64>,
     payload_sidecar_index_bytes: Option<u64>,
+    node_store_bytes: Option<u64>,
 }
 
 fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes, String> {
@@ -1819,7 +2017,10 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes
                          END AS payload_sidecar_heap_bytes,
                         CASE WHEN $6::oid IS NULL THEN NULL
                              ELSE pg_catalog.pg_total_relation_size($6::oid::regclass)::bigint
-                         END AS payload_sidecar_index_bytes",
+                         END AS payload_sidecar_index_bytes,
+                        CASE WHEN $7::oid IS NULL THEN NULL
+                             ELSE pg_catalog.pg_relation_size($7::oid::regclass)::bigint
+                         END AS node_store_bytes",
                 None,
                 &[
                     generation.graph_store_relid.into(),
@@ -1828,6 +2029,7 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes
                     generation.cold_tier_relid.into(),
                     generation.payload_sidecar_relid.into(),
                     generation.payload_sidecar_directory_relid.into(),
+                    generation.node_store_relid.into(),
                 ],
             )
             .map_err(|error| format!("EC_BUILD_INCOMPLETE: size lookup failed: {error}"))?
@@ -1861,6 +2063,7 @@ fn generation_sizes(generation: &GenerationCatalogRow) -> Result<GenerationSizes
                     directory_bytes: required("directory_bytes")?,
                     payload_sidecar_heap_bytes: optional("payload_sidecar_heap_bytes")?,
                     payload_sidecar_index_bytes: optional("payload_sidecar_index_bytes")?,
+                    node_store_bytes: optional("node_store_bytes")?,
                 })
             })
             .next()
@@ -1954,6 +2157,7 @@ fn diagnose_physical_generation(
     graph_relation: &str,
     row_count: u64,
     cold_row_count: Option<u64>,
+    fixed_stride: Option<FixedStrideScanContext<'_>>,
 ) -> Result<PhysicalTopologySummary, String> {
     let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation)
         .ok_or_else(|| "EC_GENERATION_MISSING: could not allocate topology row slot".to_owned())?;
@@ -1988,12 +2192,21 @@ fn diagnose_physical_generation(
     let mut colocated_row_count = 0_u64;
     let roster_len = descriptor.roster.len();
     let owner_ordinal = generation.owner_ordinal as usize;
-    let sql = format!(
-        "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
-           FROM {graph_relation}
-          WHERE is_current
-          ORDER BY (vec_id < 0), vec_id"
-    );
+    let sql = if fixed_stride.is_some() {
+        format!(
+            "SELECT vec_id, node_ordinal, row_tid
+               FROM {graph_relation}
+              WHERE is_current
+              ORDER BY (vec_id < 0), vec_id"
+        )
+    } else {
+        format!(
+            "SELECT vec_id, graph_record, row_tid
+               FROM {graph_relation}
+              WHERE is_current
+              ORDER BY (vec_id < 0), vec_id"
+        )
+    };
     Spi::connect(|client| -> Result<(), String> {
         let mut cursor = client
             .try_open_cursor(&sql, &[])
@@ -2011,18 +2224,66 @@ fn diagnose_physical_generation(
                     .map_err(|error| format!("EC_BUILD_INCOMPLETE: vec_id decode failed: {error}"))?
                     .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph vec_id is NULL".to_owned())?;
                 let vec_id = u64::from_le_bytes(signed_vec_id.to_le_bytes());
-                let graph_record = row["graph_record"]
-                    .value::<Vec<u8>>()
-                    .map_err(|error| {
-                        format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
-                    })?
-                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
-                let node = DistannNodeTuple::decode_physical_version(
-                    &graph_record,
-                    descriptor.graph_record_version,
-                    descriptor.graph_degree,
-                    shape.code_stride,
-                )?;
+                let (node, graph_record, directory_locator_matches) = if let Some(fixed_stride) =
+                    fixed_stride
+                {
+                    let ordinal = row["node_ordinal"]
+                        .value::<i64>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: node ordinal decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: node ordinal is NULL".to_owned())?;
+                    let ordinal = u64::try_from(ordinal)
+                        .map_err(|_| "EC_BUILD_INCOMPLETE: node ordinal is negative".to_owned())?;
+                    let directory_tid = row["row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: row TID decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: row TID is NULL".to_owned())?;
+                    let (block_number, offset_number) =
+                        pgrx::itemptr::item_pointer_get_both(directory_tid);
+                    let mut fixed = FixedStrideNodeV1::empty();
+                    fixed_stride_store::read_node_verified(
+                        fixed_stride.relation,
+                        fixed_stride.metadata,
+                        ordinal,
+                        vec_id,
+                        &mut fixed,
+                    )?;
+                    let directory_locator_matches = fixed.row_tid
+                        == ItemPointer {
+                            block_number,
+                            offset_number,
+                        };
+                    let node = DistannNodeTuple {
+                        tombstoned: fixed.tombstoned,
+                        vec_id: fixed.vec_id,
+                        heap_tid: fixed.row_tid,
+                        cold_tid: None,
+                        neighbor_count: fixed.neighbor_count,
+                        search_code: fixed.search_code,
+                        neighbor_vec_ids: fixed.neighbor_vec_ids,
+                        neighbor_codes: fixed.neighbor_codes,
+                    };
+                    let graph_record =
+                        node.encode_physical_v1(descriptor.graph_degree, shape.code_stride)?;
+                    (node, graph_record, directory_locator_matches)
+                } else {
+                    let graph_record = row["graph_record"]
+                        .value::<Vec<u8>>()
+                        .map_err(|error| {
+                            format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
+                    let node = DistannNodeTuple::decode_physical_version(
+                        &graph_record,
+                        descriptor.graph_record_version,
+                        descriptor.graph_degree,
+                        shape.code_stride,
+                    )?;
+                    (node, graph_record, true)
+                };
 
                 // Every physical graph record contributes to the graph digest in
                 // vec_id order, matching the seal computation exactly.
@@ -2045,6 +2306,10 @@ fn diagnose_physical_generation(
                 if node.tombstoned {
                     // Owned tombstones (post-FR-083 DML) carry no live row tier;
                     // they are neither orphans nor part of the owned-live digest.
+                    continue;
+                }
+                if !directory_locator_matches {
+                    orphan_record_count += 1;
                     continue;
                 }
                 // Owned and live: the frozen row must be co-located and share the
@@ -2165,6 +2430,8 @@ type DistannTopologyRow = (
 /// storage, and reads the exact relation sizes.
 fn build_topology_row(
     index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
     generation: &GenerationCatalogRow,
     control_owner: pg_sys::Oid,
 ) -> Result<DistannTopologyRow, String> {
@@ -2198,6 +2465,13 @@ fn build_topology_row(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )
     .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+    let node_store_guard = generation
+        .node_store_relid
+        .map(|relation_oid| {
+            RelationGuard::try_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                .ok_or_else(|| "EC_GENERATION_MISSING: node-store relation is absent".to_owned())
+        })
+        .transpose()?;
     // The local directory is a unique index on the graph relation, not a heap,
     // so it is lock-held by OID rather than opened as a table.
     unsafe {
@@ -2221,6 +2495,33 @@ fn build_topology_row(
         };
     }
     validate_generation_relations(generation, &descriptor, control_owner)?;
+    let fixed_stride_metadata = match (
+        descriptor.fixed_stride_layout.as_ref(),
+        node_store_guard.as_ref(),
+    ) {
+        (Some(layout), Some(node_store)) => {
+            let metadata = FixedStrideMetadataV1 {
+                generation_tag: fixed_stride_generation_tag(
+                    &generation.generation_descriptor_digest,
+                    logical_index_uuid.as_bytes(),
+                    build_id.as_bytes(),
+                ),
+                layout: layout.clone(),
+            };
+            let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+                "EC_GENERATION_MISSING: node-store relation opened null".to_owned()
+            })?;
+            fixed_stride_store::read_metadata(handle, &metadata)?;
+            Some((handle, metadata))
+        }
+        (None, None) => None,
+        _ => {
+            return Err(
+                "EC_GENERATION_MISSING: node store disagrees with fixed-stride descriptor"
+                    .to_owned(),
+            )
+        }
+    };
     let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
     let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
     let cold_relation_name = generation
@@ -2262,6 +2563,12 @@ fn build_topology_row(
             &graph_relation,
             row_count,
             cold_row_count,
+            fixed_stride_metadata
+                .as_ref()
+                .map(|(relation, metadata)| FixedStrideScanContext {
+                    relation: *relation,
+                    metadata,
+                }),
         )
     })?;
     let sizes = generation_sizes(generation)?;
@@ -2382,6 +2689,8 @@ fn ec_distann_generation_topology(
         }
         Ok(vec![build_topology_row(
             index_oid,
+            logical_index_uuid,
+            build_id,
             &generation,
             control_owner,
         )?])
@@ -2458,6 +2767,7 @@ fn ec_distann_epoch_topology(
                 "EC_GENERATION_MISSING: the epoch generation has been reclaimed".to_owned(),
             );
         };
+        let retained_build_id = retained.build_id;
         let generation = retained.generation;
         if !matches!(
             generation.state,
@@ -2470,6 +2780,8 @@ fn ec_distann_epoch_topology(
         }
         Ok(vec![build_topology_row(
             index_oid,
+            logical_index_uuid,
+            retained_build_id,
             &generation,
             control_owner,
         )?])
@@ -2649,6 +2961,16 @@ fn ec_distann_stage_epoch_batch(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+        let node_store_guard = generation
+            .node_store_relid
+            .map(|relation_oid| {
+                RelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| "EC_GENERATION_MISSING: node-store relation is absent".to_owned())
+            })
+            .transpose()?;
         let _payload_sidecar_guard = generation
             .payload_sidecar_relid
             .map(|relation_oid| {
@@ -2662,6 +2984,33 @@ fn ec_distann_stage_epoch_batch(
             })
             .transpose()?;
         validate_generation_relations(&generation, &descriptor, control_owner)?;
+        let fixed_stride_metadata = match (
+            descriptor.fixed_stride_layout.as_ref(),
+            node_store_guard.as_ref(),
+        ) {
+            (Some(layout), Some(node_store)) => {
+                let metadata = FixedStrideMetadataV1 {
+                    generation_tag: fixed_stride_generation_tag(
+                        &descriptor.digest()?,
+                        logical_index_uuid.as_bytes(),
+                        build_id.as_bytes(),
+                    ),
+                    layout: layout.clone(),
+                };
+                let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+                    "EC_GENERATION_MISSING: node-store relation opened null".to_owned()
+                })?;
+                fixed_stride_store::read_metadata(handle, &metadata)?;
+                Some((handle, metadata, generation.cumulative_record_count))
+            }
+            (None, None) => None,
+            _ => {
+                return Err(
+                    "EC_GENERATION_MISSING: node store disagrees with fixed-stride descriptor"
+                        .to_owned(),
+                )
+            }
+        };
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
         let payload_sidecar_relation = generation
             .payload_sidecar_relid
@@ -2714,6 +3063,9 @@ fn ec_distann_stage_epoch_batch(
             &mut prepared,
             shape,
             descriptor.graph_record_version,
+            fixed_stride_metadata
+                .as_ref()
+                .map(|(handle, metadata, floor)| (*handle, metadata, *floor)),
         )?;
         let journal = GenerationBatchCatalogRow {
             batch_seq,
@@ -2855,6 +3207,16 @@ fn ec_distann_seal_epoch_handoff(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+        let node_store_guard = generation
+            .node_store_relid
+            .map(|relation_oid| {
+                RelationGuard::try_open(
+                    relation_oid,
+                    pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+                )
+                .ok_or_else(|| "EC_GENERATION_MISSING: node-store relation is absent".to_owned())
+            })
+            .transpose()?;
         unsafe {
             pg_sys::LockRelationOid(
                 generation.directory_relid,
@@ -2882,6 +3244,33 @@ fn ec_distann_seal_epoch_handoff(
             };
         }
         validate_generation_relations(&generation, &descriptor, control_owner)?;
+        let fixed_stride_metadata = match (
+            descriptor.fixed_stride_layout.as_ref(),
+            node_store_guard.as_ref(),
+        ) {
+            (Some(layout), Some(node_store)) => {
+                let metadata = FixedStrideMetadataV1 {
+                    generation_tag: fixed_stride_generation_tag(
+                        &generation.generation_descriptor_digest,
+                        logical_index_uuid.as_bytes(),
+                        build_id.as_bytes(),
+                    ),
+                    layout: layout.clone(),
+                };
+                let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+                    "EC_GENERATION_MISSING: node-store relation opened null".to_owned()
+                })?;
+                fixed_stride_store::read_metadata(handle, &metadata)?;
+                Some((handle, metadata))
+            }
+            (None, None) => None,
+            _ => {
+                return Err(
+                    "EC_GENERATION_MISSING: node store disagrees with fixed-stride descriptor"
+                        .to_owned(),
+                )
+            }
+        };
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
         let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
         let payload_sidecar_relation = generation
@@ -2898,6 +3287,12 @@ fn ec_distann_seal_epoch_handoff(
                 &row_relation,
                 cold_relation.as_ref(),
                 &graph_relation,
+                fixed_stride_metadata
+                    .as_ref()
+                    .map(|(relation, metadata)| FixedStrideScanContext {
+                        relation: *relation,
+                        metadata,
+                    }),
             )
         })?;
         let row_count = relation_row_count(&row_relation_name)?;
@@ -2982,6 +3377,32 @@ fn ec_distann_seal_epoch_handoff(
             .row_tier_bytes
             .checked_add(sizes.cold_tier_bytes.unwrap_or(0))
             .ok_or_else(|| "EC_BUILD_INCOMPLETE: row-tier byte count overflow".to_owned())?;
+        let fixed_stride = match (
+            fixed_stride_metadata.as_ref(),
+            generation.node_store_relid,
+            sizes.node_store_bytes,
+        ) {
+            (Some((relation, metadata)), Some(node_store_relid), Some(node_store_bytes)) => {
+                Some(DistannReadyReceiptFixedStride {
+                    layout_descriptor_digest: metadata.layout.digest()?,
+                    node_store_relid: u32::from(node_store_relid),
+                    committed_node_count: physical.record_count,
+                    committed_page_digest: fixed_stride_store::committed_page_digest(
+                        *relation,
+                        metadata,
+                        physical.record_count,
+                    )?,
+                    node_store_bytes,
+                })
+            }
+            (None, None, None) => None,
+            _ => {
+                return Err(
+                    "EC_BUILD_INCOMPLETE: fixed-stride node-store evidence is incomplete"
+                        .to_owned(),
+                )
+            }
+        };
         let receipt = DistannReadyReceipt {
             node_id: generation.node_id,
             epoch: generation.epoch,
@@ -3001,6 +3422,7 @@ fn ec_distann_seal_epoch_handoff(
             state: DISTANN_READY_RECEIPT_STATE,
             payload_sidecar,
             hot_cold,
+            fixed_stride,
         };
         let encoded = receipt.encode()?;
         generation_catalog::mark_generation_ready(

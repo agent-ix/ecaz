@@ -260,6 +260,16 @@ impl DistannBuildCandidateV1 {
                 "EC_PUBLISH_DIGEST: manifest row-tier layout disagrees with descriptor".to_owned(),
             );
         }
+        let descriptor_fixed_stride_digest = descriptor
+            .fixed_stride_layout()
+            .map(|layout| layout.digest())
+            .transpose()?;
+        if manifest.fixed_stride_layout_descriptor_digest != descriptor_fixed_stride_digest {
+            return Err(
+                "EC_PUBLISH_DIGEST: manifest fixed-stride layout disagrees with descriptor"
+                    .to_owned(),
+            );
+        }
         if build_spec.epoch != manifest.epoch
             || build_spec.build_id != manifest.build_id
             || build_spec.parent_fingerprint != manifest.parent_fingerprint
