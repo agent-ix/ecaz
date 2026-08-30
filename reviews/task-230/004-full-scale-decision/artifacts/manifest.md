@@ -1,52 +1,106 @@
-# Task 230 packet 004 preregistration artifact manifest
+# Task 230 packet 004 final artifact manifest
 
-- Head SHA: `5837f4bec64076769415645b00fb86b4c4e7294a`
+- Benchmark head SHA: `8bcccb56c6381527c4d2f3a4f4c9931b66b9235c`
 - Task bucket: `reviews/task-230/004-full-scale-decision/`
-- Packet: full-scale decision preregistration, seq-02
-- Timestamp: 2026-08-29T05:54:54-07:00
-- Lane / fixture / storage format / rerank mode: local Intel PG18;
-  `ec_distann` row-heap control versus descriptor V4 / Graph V2 hot/cold;
-  staged 1,536-dimensional real 10k/50k/100k corpora; no rerank variant
-- Isolation: 20 fresh one-index-per-table fixtures, no reuse; two
-  counterbalanced primary pairs per scale and matched fresh 100k secondary
-  projection pairs; run directories live under `~/.ecaz/clusters`
-- Results state: **none**. Only config audit and dry-run expansion exist.
+- Packet: frozen full-scale PROMOTE/STOP decision, seq-03
+- Timestamp: 2026-08-29 (America/Los_Angeles)
+- Lane: local Intel, PostgreSQL 18, release extension, no debug override
+- Fixture / format: staged real 1,536-dimensional `ec_real_10k`,
+  `ec_real_50k`, and `ec_real_100k`; production DistANN row-heap control versus
+  descriptor V4 / Graph V2 hot/cold candidate; no rerank variant
+- Isolation: 20 fresh one-index-per-table fixtures; two counterbalanced primary
+  pairs per scale and four fresh matched 100k secondary projection pairs
+- Run directories: distinct children of `~/.ecaz/clusters`; all removed after
+  capture
+- Config: `crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json`
+- Config SHA-256:
+  `e141ac65a7e18eaf4512509c549ba750e3106a2a045942e0eb6a5ac8fcc5437c`
+- Final disposition: **STOP**
+- Artifact inventory: `artifact-sha256.txt` records and verifies every other
+  retained artifact in this packet; its SHA-256 is
+  `4a6e2f3e4760a9c6a8ab53db734aaae7e0d175a2525618607d469f922128e392`.
 
-## Seq-02 policy correction
+## Canonical result surface
 
-- The suite config, its SHA, its 20-step expansion, and every accepted entry
-  gate are unchanged from seq-01.
-- Storage now has two correctly denominated gates: published candidate hot
-  main-heap bytes at most 1.35× emitted logical raw-vector bytes, and total
-  generation bytes at most 1.15× matched row-heap control bytes.
-- Every preregistered §6 timing direction must be classified supported or
-  falsified in the final decision even when the applicable numeric guardrail
-  passes.
-- No measurement result exists at this revision.
+### `run/suite-manifest.json` and `run/results.jsonl`
 
-## `crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json`
+- Command:
+  `/home/peter/.cargo-target/debug/ecaz bench suite run --config crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json --artifact-dir reviews/task-230/004-full-scale-decision/artifacts/run --manifest-output reviews/task-230/004-full-scale-decision/artifacts/run/suite-manifest.json --results-output reviews/task-230/004-full-scale-decision/artifacts/run/results.jsonl`
+- Resumes used the same manifest/results paths after cleanup of startup-only
+  port collisions; see `step2-port-collision-retry.log`.
+- Final result: 20 succeeded steps, zero failed/skipped/dry-run steps, zero
+  missing or stale artifacts. The process exits nonzero only because four
+  frozen suite recall thresholds fail.
+- Each arm directory retains its review-grade `distann-multinode-summary.log`
+  and latency log; primary arms additionally retain recall logs and physical
+  prediction JSON.
 
-- Commit: `5837f4bec64076769415645b00fb86b4c4e7294a` contains the suite config and
-  no result artifact.
-- Shape: 20 steps, 12 absolute recall thresholds, 12 primary steps across
-  10k/50k/100k, and eight 100k secondary projection steps.
-- Release guard: zero steps set `allow_debug_extension`.
-- SHA-256: `e141ac65a7e18eaf4512509c549ba750e3106a2a045942e0eb6a5ac8fcc5437c`.
+### `suite-status-final.log` and `suite-audit-final.log`
 
-## `suite-audit.log`
+- Status command:
+  `/home/peter/.cargo-target/debug/ecaz bench suite status --manifest reviews/task-230/004-full-scale-decision/artifacts/run/suite-manifest.json --results reviews/task-230/004-full-scale-decision/artifacts/run/results.jsonl`
+- Status result: `completed=20 failed=0 skipped=0 dry_run=0
+  missing_artifacts=0 stale=0`.
+- Audit command:
+  `/home/peter/.cargo-target/debug/ecaz bench suite audit --config crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json --manifest reviews/task-230/004-full-scale-decision/artifacts/run/suite-manifest.json --results reviews/task-230/004-full-scale-decision/artifacts/run/results.jsonl`
+- Audit result: `audit passed: 20 steps`.
 
-- Command: `/home/peter/.cargo-target/debug/ecaz bench suite audit --config crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json --log-file reviews/task-230/004-full-scale-decision/artifacts/suite-audit.log`
-- Result: exit 0, `audit passed: 20 steps`; required staged inputs exist.
-- SHA-256: `a6a4ec8601b7bd5aff01c83e864314c642297b4256b8b7234a12b0bc457f64e9`.
+### `io-attribution.md`
 
-## `suite-dry-run.log` and `suite-dry-run-manifest.json`
+- Derived without remeasurement from the 20 retained per-arm summary logs.
+- Records every emitted `physical_benchmark_row_tier_io` row: node, tier, all
+  six `pg_statio_all_tables` deltas, and relation hit ratio.
+- Records every arm's total accesses, hits, aggregate shared-buffer hit ratio,
+  elapsed time, and iteration count.
 
-- Command: `/home/peter/.cargo-target/debug/ecaz bench suite run --config crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json --dry-run --manifest-output reviews/task-230/004-full-scale-decision/artifacts/suite-dry-run-manifest.json --results-output reviews/task-230/004-full-scale-decision/artifacts/suite-dry-run-results.jsonl`
-- Result: exit 0; 20 dry-run steps, all expected command expansions present,
-  no measurement results written.
-- Manifest runner commit:
-  `5837f4bec64076769415645b00fb86b4c4e7294a`.
-- Config SHA-256 embedded in manifest:
-  `e141ac65a7e18eaf4512509c549ba750e3106a2a045942e0eb6a5ac8fcc5437c`.
-- SHA-256: log `3903797016eefecd756215b699659e1b6b6311780b3ce93916d830425537d92c`;
-  manifest `fc1e21b1faeed7d38aa072090975615c006705ec6682eb0a430b6098f9c47495`.
+## Entry receipts
+
+### `cargo-pgrx-install-release-pg18.log`
+
+- Command: `cargo pgrx install --release --pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config --no-default-features --features 'pg18 distann-head-attribution-benchmark'`
+- Result: exit 0; release extension installed after Packet 003's test install.
+
+### `cargo-build-cli-release-runner.log`
+
+- Command: `cargo build --release -p ecaz-cli`
+- Result: exit 0; suite runner built from benchmark head.
+
+### `cargo-clippy-cli-entry.log`
+
+- Command: `cargo clippy -p ecaz-cli --all-targets`
+- Result: exit 0; accepted baseline unchanged at 77 binary warnings and 78 test
+  warnings.
+
+### `suite-audit-entry.log`
+
+- Command: `/home/peter/.cargo-target/debug/ecaz bench suite audit --config crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json`
+- Result: exit 0 before the real run; frozen 20-step config and staged inputs
+  admitted.
+
+### `step2-port-collision-retry.log`
+
+- Compact operational receipt for five startup-only PostgreSQL port
+  collisions. Each records the failed step and phase, verified-idle port and
+  process checks, fixture cleanup, same-manifest resume, and exclusion of a
+  failed decision row.
+
+## Key decision lines
+
+- Four 50k recall thresholds fail: all physical arms produce 0.9540–0.9545
+  against the frozen 0.980 floor.
+- Prediction SHA parity fails in 50k pair B and both 100k pairs.
+- 100k recall deltas fail in both pairs (-0.0025 and -0.0020).
+- 100k mean gate passes pair A (12.40 → 9.47 ms) and fails pair B
+  (8.67 → 9.47 ms); pair B p95/p99 also fail.
+- 50k pair-B replacement p95 fails at 2.734× control.
+- Tier-laziness, both storage gates, build/publish, insert, and the other DML
+  gates pass.
+- Direction predictions: id-only/hot-scalar falsified as a general claim;
+  exact-vector falsified; cold-only falsified; mixed supported; select-all
+  supported.
+
+Operational console replays, PostgreSQL server logs, memory sampling series,
+and regenerable membership snapshots were deliberately excluded under the
+repository's review-packet policy. Corpus/query/truth data are not committed;
+their prefixes and digests are recorded in the suite manifest/results and
+per-arm summaries.

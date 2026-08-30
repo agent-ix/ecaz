@@ -5,152 +5,100 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 02
+seq: 03
 ---
 
-# Task 230 full-scale decision preregistration
+# Task 230 full-scale decision: STOP
 
-Review the two seq-01 policy corrections below against the unchanged checked-in
-suite at `5837f4bec` before any full-scale result is produced. The accepted
-20-step shape and entry gates are not reopened. Packet 003 is review-closed
-DONE. This packet alone decides **PROMOTE** or **STOP**.
+Review the completed 20-step, frozen-config A/B decision at benchmark head
+`8bcccb56c6381527c4d2f3a4f4c9931b66b9235c`. The disposition is **STOP: do
+not promote the hot/cold row tier**. Multiple independent mandatory gates fail;
+no averaging or secondary result can rescue the candidate.
 
-Seq-02 changes only the two findings in
-`feedback/2026-08-29-01-reviewer.md`: storage ratios now use stated and measured
-denominators, and every preregistered directional prediction receives an
-explicit supported/falsified disposition.
+## Run validity
 
-## Frozen matrix
+- Suite status: `completed=20 failed=0 skipped=0 dry_run=0
+  missing_artifacts=0 stale=0`.
+- Suite audit: `audit passed: 20 steps`.
+- Config SHA-256 is the frozen
+  `e141ac65a7e18eaf4512509c549ba750e3106a2a045942e0eb6a5ac8fcc5437c`.
+- The PG18 extension was reinstalled in release mode after the Packet 003 test
+  install; all 20 arms report the benchmark head, unanimous release provenance,
+  and no debug override.
+- `cargo clippy -p ecaz-cli --all-targets` retained the accepted 77-warning
+  binary / 78-warning test baseline.
+- Five PostgreSQL startup-only port collisions occurred before the affected
+  arm's release preflight or measurement. Each port set was verified idle, the
+  failed fixture was cleaned, and the same manifest was resumed. No failed
+  result row was admitted. The compact receipt is
+  `artifacts/step2-port-collision-retry.log`.
+- All 20 run directories were distinct children of `~/.ecaz/clusters` and have
+  been removed after durable capture.
 
-The standard suite is
-`crates/ecaz-cli/suites/task230-hot-cold-10k-50k-100k.json`:
+## Primary results and gates
 
-- 12 primary steps: fresh row-heap versus fresh hot/cold at 10k, 50k, and
-  100k, with pair A running row-heap first and pair B running hot/cold first;
-- two independent counterbalanced primary pairs per scale;
-- recall, warm latency/tails, storage, build, DML, stage counters, and isolated
-  id-only I/O in every primary step;
-- eight additional fresh 100k steps: matched row-heap/hot-cold attribution for
-  exact-vector, cold-only, mixed, and select-all projections; and
-- id-only and hot-scalar are deliberately one identical measurement under two
-  labels, because both project only `id` in the frozen fixture.
+Candidate deltas use `candidate - control` for recall and the preregistered
+`100 * (1 - candidate/control)` for mean improvement.
 
-The 10k/50k/100k primary format matrix supplies the mandatory per-scale
-recall/latency/storage A/B. The secondary projection gates run at the largest
-decision scale because they are cost guardrails, never alternative promotion
-wins. Cold-only, mixed, and select-all use the same external uncompressed TOAST
-fixture in both matched arms. Every shape has a fresh fixture; reuse is absent.
+| Scale/pair | Recall control → candidate | Recall gate | Mean ms control → candidate | Mean gate | Prediction SHA parity |
+|---|---:|---|---:|---|---|
+| 10k A | 0.9990 → 0.9990 | PASS | 9.28 → 8.05 (+13.25%) | PASS | PASS |
+| 10k B | 0.9990 → 0.9990 | PASS | 9.02 → 7.72 (+14.41%) | PASS | PASS |
+| 50k A | 0.9545 → 0.9545 | **FAIL floor** | 9.47 → 9.14 (+3.48%) | PASS | PASS |
+| 50k B | 0.9540 → 0.9545 | **FAIL floor** | 9.77 → 9.72 (+0.51%) | PASS | **FAIL** |
+| 100k A | 0.9300 → 0.9275 (-0.0025) | **FAIL delta** | 12.40 → 9.47 (+23.63%, +2.93 ms) | PASS | **FAIL** |
+| 100k B | 0.9295 → 0.9275 (-0.0020) | **FAIL delta** | 8.67 → 9.47 (-9.23%, -0.80 ms) | **FAIL** | **FAIL** |
 
-All 20 run directories are distinct children of `~/.ecaz/clusters` and are
-removed after durable capture. Task 229 covering sidecars and Task 231 blocks
-are absent. No step sets `allow_debug_extension`.
+All four 50k physical arms miss the frozen absolute recall floor of 0.980.
+The suite therefore exited nonzero on four threshold checks even though every
+step itself completed successfully. Prediction files are byte-identical in
+both 10k pairs and 50k pair A, but not 50k pair B or either 100k pair.
 
-## Release and lint entry gates
+The 100k pair-B p95/p99 values also fail the combined tail guardrail:
+10.30 → 11.40 ms (+10.68%, +1.10 ms) and 11.00 → 11.90 ms (+8.18%,
++0.90 ms). The second conjunctive 100k mean win is absent.
 
-Before the real run:
+## Storage, build, and DML
 
-1. reinstall the extension **after** Packet 003's `pg_test` install with
-   `cargo pgrx install --release --pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config --no-default-features --features 'pg18 distann-head-attribution-benchmark'`;
-2. rebuild `ecaz-cli` from the same head;
-3. run `cargo clippy -p ecaz-cli --all-targets`; the recorded 77-warning binary
-   and 78-warning test baselines may shrink but must not grow; and
-4. require every multinode release preflight to report the preregistered SHA,
-   `extension_build_profile=release`, and `debug_override=false`.
+Both candidate storage gates pass at every scale. Candidate hot main-heap bytes
+are 82,018,304 / 409,812,992 / 819,511,296 against raw-vector bytes
+61,440,000 / 307,200,000 / 614,400,000, approximately 1.334×. Candidate total
+generation bytes are below their matched row-heap controls in all pairs.
+Physical build, publish, insert throughput, exact row distributions, and delete
+p95 also pass every gate.
 
-Any failed entry gate invalidates the run; it is fixed and rerun before results
-are interpreted.
+One DML gate fails: 50k pair-B replacement p95 is 768.535 → 2101.234 ms,
+2.734× control versus the 1.50× ceiling. Every other replacement gate passes.
 
-## Frozen decision math
+## Mechanism and secondary projections
 
-For every matched pair, control is the row-heap step and candidate is the
-hot/cold step. Percentage improvement is
-`100 * (1 - candidate/control)`; absolute improvement is
-`control - candidate`. No averaging can rescue a failed pair.
+Tier laziness passes. Every candidate id-only and exact-vector cold relation
+reports zero for all six heap/TOAST/tidx counters; cold-only reports zero for
+all six hot-tier counters. `artifacts/io-attribution.md` consolidates all 90
+per-node/per-relation rows plus the 20 arm totals and shared-buffer hit ratios.
 
-PROMOTE requires every gate below. Otherwise the disposition is STOP.
+| 100k shape | Control elapsed / 50 | Candidate elapsed / 50 | Candidate direction | Numeric gate | Prediction |
+|---|---:|---:|---|---|---|
+| exact-vector | 559.127 ms | 566.784 ms | +1.37%, +0.153 ms/query worse | PASS | **FALSIFIED** (predicted improve) |
+| cold-only | 491.319 ms | 474.840 ms | 3.35%, 0.330 ms/query better | PASS | **FALSIFIED** (predicted regress) |
+| mixed | 421.456 ms | 453.966 ms | +7.71%, +0.650 ms/query worse | PASS | SUPPORTED |
+| select-all | 846.281 ms | 867.906 ms | +2.56%, +0.433 ms/query worse | PASS | SUPPORTED |
 
-### 1. Semantic and quality gates
+The id-only/hot-scalar prediction is **FALSIFIED as a general prediction**:
+five matched pairs improve, but 100k pair B materially regresses. Id-only and
+hot-scalar remain one identical measurement under two labels, as frozen.
 
-- All selected steps, suite thresholds, release preflights, topology checks,
-  stage/calibration checks, and NFR-021 rows pass.
-- Corpus/query slice digests match within every pair; physical prediction
-  files are byte-identical within every primary pair.
-- Candidate `distinct_recall` and membership recall may not be more than
-  0.001 absolute below its matched control in any primary pair.
-- The suite's absolute recall floors also pass: 0.995 at 10k, 0.980 at 50k,
-  and 0.900 at 100k for every primary physical arm.
-- No non-owned graph row, corruption signal, or invalid hot/cold pair is
-  admitted.
+## Decision
 
-### 2. Primary id-only/hot-scalar latency gate
-
-- In **both** independent 100k pairs, candidate warm-concurrency-1 mean latency
-  must improve by at least **5.0% and 0.50 ms**.
-- At 10k and 50k, and for 100k p95/p99, a candidate value fails the guardrail
-  only when it regresses by both more than **5.0% and 0.50 ms**. This combined
-  rule prevents sub-millisecond noise from deciding the task while rejecting a
-  material tail regression.
-- The two 100k mean wins are conjunctive. There is no mean-of-pairs tie-break.
-
-### 3. Storage, build, and DML guardrails
-
-- The measured candidate hot main-heap bytes — the sum of published
-  `physical_topology.row_bytes` across the three owners — must be at most
-  **1.35×** `physical_benchmark_storage.raw_vector_bytes`. Both sides refer to
-  the indexed exact vector: one 8 KiB hot page per 6,144-byte logical vector is
-  about 1.333× before small relation overhead, directly testing the predicted
-  PLAIN page amplification.
-- Separately, candidate `physical_generation_bytes` must be at most **1.15×**
-  its matched row-heap control in every primary pair at every scale. At 100k,
-  the preregistered arithmetic is about +190 MB (819 MB PLAIN hot pages minus
-  roughly 633 MB control TOAST storage, plus about 4 MB of tuple/locator
-  overhead) on the Task 229 control's 2,498 MB generation, or about 1.08×.
-  The 1.15× ceiling leaves real margin while still catching an unexplained
-  whole-generation expansion.
-- Candidate physical build and publish time must each be at most **1.25×** the
-  matched control in every primary pair.
-- For routed replacement and delete, candidate p95 must be at most **1.50×**
-  matched control; the insert arm must preserve exact row distributions and
-  achieve at least **0.67×** control throughput. A gate is not attributed if
-  the two arms do not have the same fixture schema and payload.
-
-### 4. Mechanism and secondary projection guardrails
-
-- Hot/cold id-only and exact-vector attribution must show zero cold-tier
-  heap/TOAST/tidx accesses; cold-only must show zero hot-tier accesses. Any
-  violation is STOP because it falsifies tier laziness.
-- At 100k exact-vector projection fails only if hot/cold elapsed time per query
-  is both more than **5.0%** and **0.25 ms** worse than row-heap.
-- At 100k each of cold-only, mixed, and select-all fails its secondary cost gate
-  if hot/cold elapsed time per query is both more than **50%** and **1.0 ms**
-  worse than the matched row-heap arm. Cold/mixed regressions inside this bound
-  are disclosed costs, not promotion wins.
-- Report per relation and tier all six `pg_statio_all_tables` deltas (heap,
-  TOAST heap, TOAST index reads/hits), total accesses/hits, and shared-buffer
-  hit ratio for every shape. Shared-buffer hit ratio is explicit attribution,
-  not a post-hoc alternative decision metric.
-
-### 5. Directional prediction accounting
-
-The final PROMOTE/STOP request must classify every packet-001 §6 timing
-prediction as **supported** or **falsified**, independent of whether its numeric
-guardrail passes:
-
-- id-only/hot-scalar: improve or remain neutral;
-- exact-vector: improve;
-- cold-only: regress; and
-- mixed and select-all: regress.
-
-For an `elapsed_ms / iterations` secondary comparison, equality is neutral;
-strictly lower is improvement and strictly higher is regression. A flat or
-worse exact-vector result is therefore explicitly a falsified prediction even
-when it stays inside the 5%/0.25 ms guardrail. Conversely, an unexpectedly
-neutral or faster cold/mixed/all result is also reported as falsified rather
-than silently rewritten as success. Prediction classification is part of the
-decision record; the numeric gates above still determine PROMOTE versus STOP.
+**STOP.** The candidate fails semantic parity, quality, the conjunctive 100k
+latency win, a 100k tail guardrail, and one DML guardrail. The structural
+mechanism works and its storage cost is bounded, but the required end-to-end
+benefit is not repeatable. No Task 230 production/default promotion is
+authorized.
 
 ## Review request
 
-Please review only the corrected storage denominators/ceilings and the explicit
-directional-prediction disposition. If DONE, the real suite is authorized at
-the otherwise unchanged frozen config and policy.
+Please verify the run validity, each frozen gate calculation, prediction
+classification, consolidated I/O attribution, provenance, and STOP
+disposition. This request remains review-open until an outside reviewer writes
+a verdict under this packet's `feedback/` directory.

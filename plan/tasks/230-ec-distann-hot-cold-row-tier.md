@@ -1,6 +1,12 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
+Status: **implementation complete; Packet 004 full-scale decision is STOP, no
+candidate; final seq-03 evidence/request is REVIEW-OPEN at
+`reviews/task-230/004-full-scale-decision/request.md` on benchmark head
+`8bcccb56c` (20/20 steps complete, audit clean). GitHub issue #96 is the
+authoritative tracking record.**
+
+Prior status history: **planning packet 001 review-closed ACCEPT (seq-03); packet 002
 descriptor foundation review-closed DONE (seq-02), Graph V2 review-closed DONE
 (seq-04), descriptor V4/layout identity review-closed DONE (seq-05);
 generation-owned hot/cold relation creation review-closed DONE (seq-06) at
