@@ -1,0 +1,17 @@
+CREATE EXTENSION
+ data_checksums 
+----------------
+ on
+(1 row)
+
+                                                 version                                                 
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+                                                                                                         ?column?                                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ [suite-result] task231_host_precheck data_checksums=on data_checksums_numeric=1 server_version_num=180003 shared_buffers=128MB extension_build_profile=release extension_git_sha=1f88b553e140628e5d70f72632599f15705b1f25
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

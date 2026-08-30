@@ -1,13 +1,13 @@
 # Task 231 Packet 005 preregistration artifact manifest
 
-- Head SHA: `f432f0575b23471d792789df57e723e702c8cf25`.
+- Head SHA: `1f88b553e140628e5d70f72632599f15705b1f25`.
 - Task bucket and packet: `reviews/task-231/005-full-scale-decision/`.
 - Lane: local Intel development host, PostgreSQL 18 target.
 - Fixture/storage formats: isolated fresh current-heap control versus
   fixed-stride candidate; one index/table surface per suite step.
 - Rerank/search mode: production RaBitQ neighbor scoring with exact-vector
   materialization, BW4/H100 primary and BW16/H25 transfer pair.
-- Measurement state: preregistration only; no A/B result exists yet.
+- Measurement state: frozen host precheck passed; no A/B arm has run yet.
 - Suite config:
   `crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json`, SHA-256
   `48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211`.
@@ -44,3 +44,51 @@
   also proves that `physical_benchmark_residency_control` persists measured
   `resident_buffers_after` rather than falling through as a generic drill.
 - Suite audit at the same source checkpoint remains `audit passed: 27 steps`.
+
+## Decision-run build and host precheck
+
+- Timestamp: `2026-08-30T01:50:48-07:00`.
+- Head SHA: `1f88b553e140628e5d70f72632599f15705b1f25`.
+- The custom PG18 toolchain's matching source-tree `contrib/pg_buffercache`
+  was installed into `/home/peter/.ecaz/toolchains/pg18-ssl` before the run;
+  the controlled-cold steps remain responsible for creating and measuring the
+  extension independently on every fixture node.
+- `cargo-pgrx-install-release.log` records the release extension installation
+  into the custom multinode PG18 toolchain. Command: `cargo pgrx install
+  --release --pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config
+  --no-default-features --features 'pg18 distann-head-attribution-benchmark'`.
+  SHA-256: `03940300acfeb460bbdf27d8299fee6bf227042eb25af3530a83d74b1f9cd413`;
+  exit code 0.
+- `cargo-pgrx-install-release-precheck-host.log` records the same release
+  extension installation into the pgrx PG18 scratch prefix used only by the
+  suite host precheck. SHA-256:
+  `6a17de7f8baa2626b9e0dd9fd59461f62ed13cd479992b59603fbbb032753712`;
+  exit code 0.
+- `cargo-build-cli-debug-runner.log` records the CLI runner build. Command:
+  `cargo build -p ecaz-cli`. SHA-256:
+  `1d1771e09081166bc5a3dd380154c3fce4b57751b26c40896c1ee486769f950f`;
+  exit code 0. The single dead-code warning is pre-existing and does not
+  affect the release extension backend used by measured fixtures.
+- `run/precheck-runtime-identity.log` is the post-restart direct identity
+  check. SHA-256:
+  `1c902bc5448d9e8ae14775e5eaa98bb7760968888c0484a9588f97ddf2ddd704`.
+  Key result: exact SHA `1f88b553e140628e5d70f72632599f15705b1f25`,
+  profile `release`, checksums `on`, shared buffers `128MB`.
+- Frozen precheck command: `/home/peter/.cargo-target/debug/ecaz bench suite
+  run --config crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json
+  --only precheck-host --manifest-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest-precheck.json
+  --results-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/results-precheck.jsonl
+  --log-file
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-precheck.log`.
+- `run/suite-precheck.log` SHA-256:
+  `3283998e1309dc211f3801dfad4fe0c56a1bbf72971428917daa7ca784c15d7f`;
+  `run/suite-manifest-precheck.json` SHA-256:
+  `b5dd097905cc48a6a97a08cc0485b5956c26006b5fe57172098357a0fa8e13f4`;
+  `run/results-precheck.jsonl` SHA-256:
+  `bcc1fd93cc804bf3a3ea1d4e26035ed1207425d5e3613021e35edf5945f5e566`.
+- Key result: one selected step completed, zero failed, zero missing or stale
+  artifacts. PostgreSQL 18.3 reported checksums `on`, shared buffers `128MB`,
+  extension profile `release`, and the exact run head SHA above. The remaining
+  26 suite steps were selection-skipped and are not claimed as measurements.
