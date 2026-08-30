@@ -35,17 +35,18 @@ remain unchanged.
 ## Frozen page arithmetic
 
 All integers are little-endian. The build descriptor persists `BLCKSZ`, every
-derived byte count below, and the inputs to a 16-byte binding computed as
-`BLAKE3(domain || descriptor_digest || logical_index_uuid || build_id)`.
+derived byte count below, and the inputs to a 16-byte binding computed by
+truncating the repository's canonical domain-separated SHA-256 digest over
+`descriptor_digest || logical_index_uuid || build_id`.
 Admission rejects a runtime `BLCKSZ` or derived value mismatch before opening
 the candidate path.
 
 ```text
 PG_PAGE_HEADER_BYTES = MAXALIGN(SizeOfPageHeaderData) = 24 at BLCKSZ=8192
-NODE_PAGE_HEADER_BYTES = 64
+NODE_PAGE_HEADER_BYTES = 80
 PAGE_PAYLOAD_BYTES = BLCKSZ - PG_PAGE_HEADER_BYTES - NODE_PAGE_HEADER_BYTES
-                   = 8104 at BLCKSZ=8192
-NODE_HEADER_BYTES = 64
+                   = 8088 at BLCKSZ=8192
+NODE_HEADER_BYTES = 80
 NODE_BODY_BYTES = 4*D + C + 8*R + R*C
 NODE_RECORD_BYTES = NODE_HEADER_BYTES + NODE_BODY_BYTES
 NODE_STRIDE_BYTES = MAXALIGN(NODE_RECORD_BYTES)
@@ -83,7 +84,7 @@ CTID in the addressing contract.
 
 ## Frozen page envelope
 
-Each data block begins with the PostgreSQL page header followed by this 64-byte
+Each data block begins with the PostgreSQL page header followed by this 80-byte
 candidate envelope:
 
 ```text
@@ -91,7 +92,7 @@ candidate envelope:
 4   format_version u16   1
 6   page_kind u8         1=packed, 2=multi-block
 7   flags u8             must be zero
-8   header_bytes u16     64
+8   header_bytes u16     80
 10  reserved u16         zero
 12  record_bytes u32     NODE_STRIDE_BYTES
 16  base_ordinal u64     first packed ordinal or the extent ordinal
@@ -100,7 +101,7 @@ candidate envelope:
 28  segment_count u16    1 for packed; extent_blocks otherwise
 30  content_bytes u16    initialized bytes in this page payload
 32  generation_tag[16]   descriptor-derived generation binding
-48  page_digest[16]      BLAKE3 domain digest of zeroed-digest envelope+content
+48  page_digest[32]      SHA-256 domain digest of zeroed-digest envelope+content
 ```
 
 Reads validate the PostgreSQL page bounds, magic and admitted version before
@@ -111,21 +112,21 @@ validated.
 
 ## Frozen node record
 
-The 64-byte node header is followed by fixed arrays and canonical zero padding:
+The 80-byte node header is followed by fixed arrays and canonical zero padding:
 
 ```text
 0   magic[4]             "EFN1"
 4   format_version u16   1
 6   flags u16            bit 0=tombstone; all others rejected
-8   header_bytes u16     64
+8   header_bytes u16     80
 10  neighbor_count u16   <= R
 12  reserved[4]          zero
 16  node_ordinal u64
 24  vec_id u64
 32  row_tid[6]           ordinary payload-row locator, never invalid
 38  reserved[10]         zero
-48  node_digest[16]      BLAKE3 domain digest of header with zero digest + body
-64  exact_vector[D]      IEEE-754 f32 little-endian
+48  node_digest[32]      SHA-256 domain digest of header with zero digest + body
+80  exact_vector[D]      IEEE-754 f32 little-endian
 ..  search_code[C]
 ..  neighbor_vec_ids[R]  u64 little-endian
 ..  neighbor_codes[R*C]
