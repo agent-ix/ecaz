@@ -2,7 +2,7 @@
 
 Status: **implementation complete through lifecycle/DML — Packet 003 reader
 and Packet 004 raw-tail allocator are review-closed DONE; Packet 005
-full-scale preregistration seq-03 is review-open and no measurement has run;
+full-scale preregistration seq-04 is review-open and no measurement has run;
 Packets 001/002 remain open for final design/handoff reconciliation**
 (2026-08-30). Priority: P1 graph-storage/retrieval latency.
 

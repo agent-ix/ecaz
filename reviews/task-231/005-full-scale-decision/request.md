@@ -5,14 +5,14 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 3
+seq: 4
 ---
 
 # Task 231 full-scale decision preregistration
 
 Status: review-open; **no measurement step has run**. Instrumentation/config
-checkpoint: `bf4b78ed2ad462e6c15816fa6544dfd46ee7414c` (building on
-`be7264b5a` and `9bb9e0f1b`). GitHub ticket: issue #97.
+checkpoint: `f432f0575b23471d792789df57e723e702c8cf25` (building on
+`be7264b5a`, `9bb9e0f1b`, and `bf4b78ed2`). GitHub ticket: issue #97.
 
 This request freezes the decision contract and asks for review of the runner
 instrumentation before the 10k/50k/100k A/B starts. The checked-in
@@ -110,9 +110,16 @@ twice the measured nonzero lane spread.
   fails before corpus loading unless it is `on`; the result is now persisted
   as `task231_integrity_preflight`. The existing unanimous release/SHA
   preflight remains mandatory and debug override is absent.
-- Controlled-cold steps build and scan an unlogged churn relation at 2.5x
-  `shared_buffers`, fail unless it reaches at least 2x, and allow exactly one
-  timed iteration with zero warmups.
+- Controlled-cold steps load `pg_buffercache` and snapshot every live
+  generation heap/index buffer on each owner before and after building the
+  2.5x-`shared_buffers` churn relation. The normal-clock-sweep INSERT is the
+  stated displacement mechanism; the sequential scan is only a materiality
+  guard because PostgreSQL uses its small bulk-read ring for large scans. The
+  step fails unless the churn relation reaches at least 2x shared buffers and
+  post-churn generation residency is at most `max(16, ceil(before / 100))`
+  buffers. It emits before/after/limit/evicted fraction with
+  `residency_measurement=pg_buffercache`, then allows exactly one timed
+  iteration with zero warmups.
 - Fixed reads now report directory probes, logical extents/bytes touched, and
   PostgreSQL `BufferUsage` shared hits versus reads. The graph diagnostic uses
   fixed-stride batch reads and validates directory/node identity. A fixed
@@ -130,9 +137,9 @@ twice the measured nonzero lane spread.
 Packet-local receipts and hashes are in `artifacts/manifest.md`. The suite
 audit passes 27/27 configured steps; the focused CLI tests pass 2/2.
 
-Please verify that seq-02's wide-pair asymmetry is removed and review-close the
-preregistration if DONE. I also request the offered exhaustive review of the
-full `be7264b5a` + `9bb9e0f1b` + `bf4b78ed2`
-instrumentation/config surface before authorizing the run. The
-decision run will not start until this preregistration is review-closed;
-Packet 004's allocator rereview is now closed DONE at seq-02.
+Please verify that seq-03's cold-residency finding is closed by direct
+`pg_buffercache` before/after measurement and the enforced approximately-zero
+postcondition. The exhaustive review of the remaining instrumentation is
+accepted as complete. The decision run will not start until this
+preregistration is review-closed; Packet 004's allocator rereview is closed
+DONE at seq-02.

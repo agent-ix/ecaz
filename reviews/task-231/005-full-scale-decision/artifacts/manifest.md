@@ -1,6 +1,6 @@
 # Task 231 Packet 005 preregistration artifact manifest
 
-- Head SHA: `bf4b78ed2ad462e6c15816fa6544dfd46ee7414c`.
+- Head SHA: `f432f0575b23471d792789df57e723e702c8cf25`.
 - Task bucket and packet: `reviews/task-231/005-full-scale-decision/`.
 - Lane: local Intel development host, PostgreSQL 18 target.
 - Fixture/storage formats: isolated fresh current-heap control versus
@@ -32,3 +32,15 @@
 - Key result: `2 passed; 0 failed`; exit code 0. The tests cover fixed-stride
   suite expansion/cold-profile validation and structured parsing of the
   checksum plus DML raw-store-growth metrics.
+
+## `preregistration-cold-residency-tests.log`
+
+- Timestamp: `2026-08-30T01:11:09-07:00`.
+- Head SHA: `f432f0575b23471d792789df57e723e702c8cf25`.
+- Command: `cargo test -p ecaz-cli task231` (captured through
+  `script -q -e -c`).
+- SHA-256: `84c32921fa59c86187887412120050d6b7d6ffb1856c76fcdf186729e159fb7b`.
+- Key result: `2 passed; 0 failed`; exit code 0. The result parser test now
+  also proves that `physical_benchmark_residency_control` persists measured
+  `resident_buffers_after` rather than falling through as a generic drill.
+- Suite audit at the same source checkpoint remains `audit passed: 27 steps`.
