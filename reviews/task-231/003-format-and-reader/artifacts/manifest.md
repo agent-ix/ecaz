@@ -5,6 +5,8 @@
   - persisted selector: `c644b3fb0cc7bad7027bd51d277a6578e69b81c1`
   - block-zero metadata: `95c974ec61c1918d84136daafdfbe040f8f6ed6d`
   - raw relation/WAL reader: `ee25eb7d92112697badc87944dd92ea1ee4a38e3f`
+  - handoff, Ready admission, batched production reader, and seq-01 fixes:
+    `65f166bf64664127ed7dfe52db9999145576c081`
 - Task/packet: `reviews/task-231/003-format-and-reader/`
 - Timestamp: `2026-08-29T19:34:24-07:00`
 - Lane: local Intel development host, Rust unit format gate
@@ -60,3 +62,50 @@
 - Exceptions: the two explicit allows are for pre-existing unrelated warnings
   in `ambuild.rs` and the Task 230 head-sizing descriptor path; neither file is
   changed by raw relation checkpoint `ee25eb7d9`.
+
+## Sequence 05 reviewer-finding evidence
+
+- Timestamp: `2026-08-29T21:53:40-07:00`
+- Head SHA: `65f166bf64664127ed7dfe52db9999145576c081`
+- Lane: local Intel development host, PostgreSQL 18 / pgrx 0.17
+- Fixture/storage format: isolated Task 231 fixed-stride V1 packed and aligned
+  multiblock relations plus the end-to-end three-node handoff fixture.
+- Isolation: one relation per raw-store test and one generation fixture; no
+  shared-table benchmark surface. These are correctness/cost gates, not the
+  Packet 005 10k/50k/100k A/B evidence.
+
+### `fixed-stride-decode-microbench.log`
+
+- Command: `cargo test --release -p ecaz fixed_stride_decode_verification_cost_report --lib -- --ignored --nocapture`
+- SHA-256: `154c0b199a3747713816fd3016ca4d1c855c994edea31199fc74790d9ac94827`
+- Result: `1 passed; 0 failed`.
+- Key line: dimensions 768, degree 64, code length 96, stride 9,904 bytes,
+  10,000 iterations: fast `1,174 ns/node`; fully verified `27,497 ns/node`;
+  verified/default ratio `23.42x`.
+
+### `fixed-stride-receipt-manifest-tests.log`
+
+- Command: `cargo test -p ecaz --lib fixed_stride`
+- SHA-256: `62de8a3b028e05da56444ff49ce72c976f95e14fe4f29d77e8357825d6358f2d`
+- Result: `7 passed; 0 failed; 1 ignored`.
+- Covered result lines: all pure fixed-stride format/descriptor/EFM1 gates,
+  Ready receipt V4 and manifest V5 binding, and the PG18 stage/seal/receipt/
+  topology fixture.
+
+### `fixed-stride-handoff-pg18.log`
+
+- Command: `cargo pgrx test pg18 fixed_stride`
+- SHA-256: `cfff0f8ba6771021da36db335cfb7c2fd561ac34b797bdc2ea46f913dc7cf05b`
+- Result: `9 passed; 0 failed; 1 ignored` in the filtered library surface.
+- Covered result lines: packed and multiblock store round-trip and batched
+  coalescing; zero-line-pointer heapam `SELECT`/`ANALYZE`; relation-level
+  corruption/truncation fail-closed matrix; end-to-end relation creation,
+  handoff, seal, Ready admission, topology, abort, and node-store drop.
+
+### `fixed-stride-store-clippy.log`
+
+- Command: `cargo clippy --lib --no-default-features --features pg18 -- -D warnings -A clippy::collapsible-if -A clippy::unnecessary-unwrap`
+- SHA-256: `f539e5706209d44540b5587578cb13ba4cdf9bc6defb4662f97350afacb4b160`
+- Result: PASS on the repository MSRV-aware PG18 library surface.
+- Exceptions: the two allows are the same pre-existing unrelated lints noted
+  above; no Task 231 warning is suppressed.

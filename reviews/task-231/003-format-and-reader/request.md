@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 04
+seq: 05
 ---
 
 # Task 231 fixed-stride format and persisted selector checkpoint
@@ -85,13 +85,13 @@ The new relation layer:
 - initializes and admits EFM1 on block zero;
 - appends packed nodes or aligned multi-block extents through GenericXLog
   full-page images;
-- advances `pd_lower` through initialized raw bytes so PostgreSQL does not
-  treat them as the WAL page hole;
+- seals raw heap pages with `pd_lower == pd_upper == PageHeaderData`, so heapam
+  sees zero line pointers while GenericXLog has a zero-length WAL page hole;
 - permits only the next dense ordinal or an idempotent rewrite of the
   unreferenced tail;
 - validates metadata, every EFS1 envelope/segment, node digest and directory
   identity before returning a node; and
-- reports physical blocks and bytes read for Packet 005 telemetry.
+- reports logical extent blocks and bytes touched for Packet 005 telemetry.
 
 The focused PG18 fixture passes for three packed nodes and two multi-block
 nodes, including retry, ordered identity, wrong-vec-id rejection, and the
@@ -103,3 +103,54 @@ head-sizing path. See `artifacts/fixed-stride-store-pg18.log` and
 Handoff publication and production lookup are still open in this packet; this
 sequence requests review only of raw-page durability/admission and relation
 lifecycle plumbing.
+
+## Sequence 05: reviewer findings, handoff, and production reader
+
+Source checkpoint `65f166bf64664127ed7dfe52db9999145576c081` resolves the five blocking findings in
+`feedback/2026-08-29-01-reviewer.md` and completes Packet 003's handoff/read
+slice:
+
+1. Every metadata/data page now presents a valid empty heap header with zero
+   line pointers. The PG18 fixture audits every block, executes heapam
+   `SELECT count(*)` and `ANALYZE`, and documents why database-wide VACUUM,
+   anti-wraparound vacuum, pg_dump, and explicit owner/superuser reads cannot
+   interpret EFM1/EFS1 bytes as `ItemId`s.
+2. EFM1 and its derived layout are admitted once when a generation is opened.
+   The default read path performs structural/identity checks plus direct
+   arithmetic and decode; complete page/node SHA-256 and canonical-padding
+   verification is retained behind the off-by-default
+   `ec_distann.debug_fixed_stride_full_verification` drill GUC. Batched reads
+   sort requested ordinals and decode each packed page once. The packet now
+   includes a release per-node decode microbenchmark with verification off/on.
+3. The V1 adjacency contract remains `neighbor_vec_ids`, deliberately. Task
+   231's frozen Goal/P1 explicitly requires `vec_id -> owner-local ordinal`
+   through a generation-local directory, while graph/community reordering and
+   changed distributed search semantics are non-goals. DISJOINT-SHARD placement
+   hashes canonical identity independently of graph edges, so its baseline
+   owner-local fraction is approximately `1 / roster_size` (one third in the
+   three-owner acceptance fixture), not “most.” A local-ordinal-plus-remote
+   escape would add a mixed edge encoding, require globally communicated
+   remote ordinals, change FR-079 request identity, and confound this layout
+   A/B. The implementation instead fulfills P2: resolve the batch directory,
+   sort/coalesce its admitted raw extents, and restore requested response order.
+   Packet 005 will report the measured owner-local edge fraction with the suite
+   evidence rather than treating the placement expectation as a measurement.
+4. Telemetry is renamed `logical_blocks_touched` /
+   `logical_bytes_touched`; it no longer claims physical I/O or buffer misses.
+5. The relation-level PG18 matrix now injects metadata/generation mismatch,
+   unpublished slots, block gaps, envelope/page digest and generation-tag
+   corruption, node version/ordinal/digest/padding corruption, and truncated
+   multiblock extents. The end-to-end fixture covers create, stage, seal,
+   receipt/manifest binding, topology admission, abort, and node-store drop.
+
+Packed build appends now document their page-bounded O(n^2) rehash cost;
+extension documents the generation-row single-writer lock; output state is
+explicitly undefined after decode error. Handoff writes dense ordinals and
+whole nodes into the WAL-backed relation, the Ready receipt/manifest binds the
+layout, relation OID, committed count, and committed-page digest, and retained
+search consumes exact vectors directly from the admitted node record.
+
+Please review the seq-01 finding dispositions, relation corruption/lifecycle
+coverage, Ready admission, batched production reader, and the decision to
+preserve the task's directory attribution boundary. Packet 004 remains the
+owner of append/overlay DML and crash/restart lifecycle work.
