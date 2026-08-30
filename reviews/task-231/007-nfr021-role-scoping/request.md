@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 1
+seq: 2
 ---
 
 # Task 231 NFR-021 role-scoping correction
@@ -37,11 +37,14 @@ registration, same-variant candidate rows do not, and unlabeled historical
 rows retain the fallback.
 
 No extension code, fixture command, suite config, measurement artifact, or
-accepted measurement SHA changed. After review, the CLI will be rebuilt and
-the unchanged all-succeeded suite manifest resumed; all 27 fixture steps must
-be reused, with only `results.jsonl` and the derived conformance assertion
-regenerated.
+accepted measurement SHA changed. The CLI was rebuilt and the unchanged
+all-succeeded suite manifest resumed: all 27 fixture steps were reused, only
+`results.jsonl` and the derived conformance assertion were regenerated, and
+the command exited zero. Candidate/control maximum normalized growth is now
+`0.998937`/`1.095044` against the `2.0` bound; every registration is conforming
+and decision-eligible.
 
 Please verify the role filter closes the cross-arm evidence contamination
-without breaking the documented one-declaration cross-scale fallback.
-
+without breaking the documented one-declaration cross-scale fallback, and
+that the unchanged-fixture re-extraction is sufficient for Packet 005's final
+decision evidence.
