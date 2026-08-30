@@ -7,6 +7,8 @@
   - raw relation/WAL reader: `ee25eb7d92112697badc87944dd92ea1ee4a38e3f`
   - handoff, Ready admission, batched production reader, and seq-01 fixes:
     `65f166bf64664127ed7dfe52db9999145576c081`
+  - seq-02 telemetry/memory/dedup/checksum/retry/digest fixes:
+    `a75a0bb039969c77eb8756aae05a70f29206d77a`
 - Task/packet: `reviews/task-231/003-format-and-reader/`
 - Timestamp: `2026-08-29T19:34:24-07:00`
 - Lane: local Intel development host, Rust unit format gate
@@ -109,3 +111,31 @@
 - Result: PASS on the repository MSRV-aware PG18 library surface.
 - Exceptions: the two allows are the same pre-existing unrelated lints noted
   above; no Task 231 warning is suppressed.
+
+## Sequence 06 reviewer-finding evidence
+
+- Timestamp: `2026-08-29T22:41:01-07:00`
+- Head SHA: `a75a0bb039969c77eb8756aae05a70f29206d77a`
+- Lane: local Intel development host, PostgreSQL 18 / pgrx 0.17.
+- PostgreSQL integrity prerequisite: both fixtures assert
+  `SHOW data_checksums = on`; `/home/peter/.pgrx/18.3/pgrx-install/bin/pg_controldata
+  /home/peter/.pgrx/data-18` reports `Data page checksum version: 1`.
+- Isolation: correctness fixtures only, one raw relation per store case and one
+  three-node generation; no benchmark corpus/shared-table surface.
+
+### `fixed-stride-review-seq02-store-pg18.log`
+
+- Command: `cargo pgrx test pg18 fixed_stride_store`
+- SHA-256: `20481afe736b00598884ab494b0331570b43e4edf42f2d2c757b49015c3f542f`
+- Result: `2 passed; 0 failed`.
+- Covered result lines: checksum-on assertion; packed/multiblock round-trip;
+  relation corruption matrix; page-local published-slot truncation rejection;
+  committed-prefix digest stability after changing an unreachable later slot.
+
+### `fixed-stride-review-seq02-seal-pg18.log`
+
+- Command: `cargo pgrx test pg18 test_distann_fixed_stride_stage_seal_receipt_and_topology`
+- SHA-256: `ca745e58b3bded6158c3a8905bcd4536fe6a5f25c5c6546c209c3b50d3c83000`
+- Result: `1 passed; 0 failed`.
+- Covered result lines: checksum-on assertion, dense staging, prefix-exact Ready
+  receipt V4, manifest/topology admission, and abort-time node-store drop.

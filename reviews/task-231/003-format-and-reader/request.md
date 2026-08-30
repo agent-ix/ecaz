@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 05
+seq: 06
 ---
 
 # Task 231 fixed-stride format and persisted selector checkpoint
@@ -154,3 +154,35 @@ Please review the seq-01 finding dispositions, relation corruption/lifecycle
 coverage, Ready admission, batched production reader, and the decision to
 preserve the task's directory attribution boundary. Packet 004 remains the
 owner of append/overlay DML and crash/restart lifecycle work.
+
+## Sequence 06: seq-02 read-path and retry findings
+
+Source checkpoint `a75a0bb039969c77eb8756aae05a70f29206d77a` resolves all six
+items in `feedback/2026-08-30-02-reviewer.md`:
+
+1. `logical_blocks_touched` and `logical_bytes_touched` now feed dedicated
+   `distann-head-attribution-benchmark` work counters. The CLI's strict work-row
+   cardinality moved with the server enum, so a missing counter fails the suite
+   rather than disappearing from Packet 005.
+2. Retained-generation exact vectors are cleared at each resolved batch and
+   moved—not cloned—out of lookup records. Memory is bounded by the active
+   batch instead of every distinct node touched during the scan.
+3. Fixed-stride request dedup now uses a capacity-sized `HashSet<u64>` and is
+   expected O(n), matching the graph-heap arm's hash lookup behavior.
+4. Both PG18 fixed-stride fixtures assert `SHOW data_checksums = on`. The
+   packet records checksum version 1 from `pg_controldata`; Packet 005 suite
+   manifests must record and assert the same prerequisite because the default
+   fast decoder deliberately relies on PostgreSQL's whole-page checksum for
+   payload-bit corruption detection.
+5. Packed retries now receive the unpublished floor inside the page writer and
+   reject any truncation whose first discarded ordinal precedes that floor.
+   The store fixture bypasses the outer guard and proves the page-local defense.
+6. Ready evidence for packed pages hashes exactly the committed slot bytes,
+   not the stored whole-page digest. The PG18 fixture changes an unreachable
+   later slot and proves the committed-prefix digest remains byte-identical;
+   multiblock pages retain their fully verified per-page digest binding.
+
+Fresh PG18 results are 2/2 green for the raw store and 1/1 green for
+stage/seal/Ready/topology. See the two `fixed-stride-review-seq02-*.log`
+artifacts and manifest entries. Please review these dispositions as Packet
+003 seq-06; Packet 004 work remains a separate checkpoint.
