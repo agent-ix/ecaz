@@ -55,6 +55,16 @@ impl FixedStrideDmlContext {
         let handle = NonNull::new(relation.as_ptr()).ok_or_else(|| {
             "EC_GENERATION_MISSING: fixed-stride DML node store opened null".to_owned()
         })?;
+        // Acquire exactly once per owner-local DML context and deliberately
+        // retain the lock through transaction end. ShareRowExclusive remains
+        // compatible with serving AccessShare readers while serializing the
+        // raw-store tail calculation and append across all isolation levels.
+        unsafe {
+            pg_sys::LockRelationOid(
+                (*relation.as_ptr()).rd_id,
+                pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            );
+        }
         fixed_stride_store::read_metadata(handle, &metadata)?;
         Ok(Some(Self {
             relation,
@@ -66,16 +76,6 @@ impl FixedStrideDmlContext {
     fn handle(&self) -> crate::storage::relation::RelationHandle {
         NonNull::new(self.relation.as_ptr())
             .expect("admitted fixed-stride DML relation must remain non-null")
-    }
-
-    /// Serialize overlay-ordinal allocation and retain the lock until xact
-    /// end. ShareRowExclusive is compatible with serving AccessShare readers
-    /// while ensuring two owner-local writers cannot publish one ordinal.
-    unsafe fn lock_mutations(&self) {
-        pg_sys::LockRelationOid(
-            (*self.relation.as_ptr()).rd_id,
-            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
-        );
     }
 }
 
@@ -680,9 +680,7 @@ unsafe fn insert_from_prepared_slot(
     };
     let fixed_stride_ordinal = fixed_stride
         .as_ref()
-        .map(|fixed_stride| unsafe {
-            append_fixed_stride_node(fixed_stride, &graph_name, &node, &vector)
-        })
+        .map(|fixed_stride| unsafe { append_fixed_stride_node(fixed_stride, &node, &vector) })
         .transpose()?;
     let graph_record = if fixed_stride_ordinal.is_none() {
         Some(node.encode_physical_version(
@@ -2099,47 +2097,8 @@ fn insert_graph_record(
     Ok(())
 }
 
-fn next_fixed_stride_ordinal(
-    graph_name: &str,
-    published_ordinal_floor: u64,
-) -> Result<u64, String> {
-    let maximum = Spi::connect(|client| {
-        client
-            .select(
-                &format!("SELECT max(node_ordinal) AS max_ordinal FROM {graph_name}"),
-                None,
-                &[],
-            )
-            .map_err(|error| {
-                format!("EC_INSERT_PUBLISH: fixed-stride ordinal lookup failed: {error}")
-            })?
-            .map(|row| {
-                row["max_ordinal"]
-                    .value::<i64>()
-                    .map_err(|error| error.to_string())
-            })
-            .next()
-            .transpose()
-            .map(|value| value.flatten())
-    })?;
-    let next = match maximum {
-        Some(maximum) => u64::try_from(maximum)
-            .map_err(|_| "EC_INSERT_PUBLISH: fixed-stride ordinal is negative".to_owned())?
-            .checked_add(1)
-            .ok_or_else(|| "EC_INSERT_PUBLISH: fixed-stride ordinal overflow".to_owned())?,
-        None => 0,
-    };
-    if next < published_ordinal_floor {
-        return Err(format!(
-            "EC_INSERT_PUBLISH: next fixed-stride ordinal {next} precedes Ready floor {published_ordinal_floor}"
-        ));
-    }
-    Ok(next)
-}
-
 unsafe fn append_fixed_stride_node(
     fixed_stride: &FixedStrideDmlContext,
-    graph_name: &str,
     node: &DistannNodeTuple,
     exact_vector: &[f32],
 ) -> Result<u64, String> {
@@ -2148,8 +2107,11 @@ unsafe fn append_fixed_stride_node(
             "EC_INSERT_PUBLISH: fixed-stride node cannot carry a cold-tier locator".to_owned(),
         );
     }
-    fixed_stride.lock_mutations();
-    let ordinal = next_fixed_stride_ordinal(graph_name, fixed_stride.published_ordinal_floor)?;
+    let ordinal = fixed_stride_store::next_append_ordinal(
+        fixed_stride.handle(),
+        &fixed_stride.metadata,
+        fixed_stride.published_ordinal_floor,
+    )?;
     let fixed_node = FixedStrideNodeV1 {
         tombstoned: node.tombstoned,
         node_ordinal: ordinal,
@@ -2227,7 +2189,7 @@ unsafe fn publish_fixed_stride_overlay(
     previous_graph_tid: ItemPointer,
     previous_record_version: i64,
 ) -> Result<(), String> {
-    let node_ordinal = append_fixed_stride_node(fixed_stride, graph_name, node, exact_vector)?;
+    let node_ordinal = append_fixed_stride_node(fixed_stride, node, exact_vector)?;
     let retired = Spi::connect_mut(|client| {
         client
             .update(

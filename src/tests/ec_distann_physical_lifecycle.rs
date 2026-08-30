@@ -8895,6 +8895,77 @@ fn apply_distann_owner_insert(
     }
 }
 
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_test_setup_fixed_stride_repeatable_read_fixture() -> String {
+    Spi::run("SET LOCAL search_path = tests, public, pg_catalog")
+        .expect("repeatable-read fixture should resolve pg-test extension objects");
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("repeatable-read fixture should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("repeatable-read fixture should identify its owner");
+    let fixture = create_fixed_stride_distann_participant_lifecycle_fixture(
+        "ec_distann_fixed_stride_repeatable_read",
+        0x6e,
+    );
+    publish_distann_participant(&fixture);
+    format!(
+        "{}|{}|{}",
+        u32::from(fixture.generation.index_oid),
+        hex::encode(&fixture.fingerprint),
+        u32::from(fixture.relations.1),
+    )
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_test_fixed_stride_repeatable_read_insert(
+    index_oid: pg_sys::Oid,
+    fingerprint_hex: String,
+    identity_marker: i32,
+) -> i64 {
+    Spi::run("SET LOCAL search_path = tests, public, pg_catalog")
+        .expect("repeatable-read insert should resolve pg-test extension objects");
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("repeatable-read insert should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("repeatable-read insert should identify its owner");
+    let marker = u8::try_from(identity_marker).expect("identity marker must fit u8");
+    let identity = distann_test_v4_uuid(marker);
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let mut source_vector = vec![0.0_f32; 4];
+    source_vector[usize::from(marker) % 4] = 1.0;
+    let (nulls, offsets, packed) = distann_owner_payload(
+        identity,
+        &format!("repeatable-read-{marker}"),
+        &source_vector,
+    );
+    let mut planned_forward = b"EPI1".to_vec();
+    planned_forward.extend_from_slice(&0_u32.to_le_bytes());
+    planned_forward.extend_from_slice(&4_u32.to_le_bytes());
+    let fingerprint = hex::decode(fingerprint_hex)
+        .expect("repeatable-read fingerprint must be hex")
+        .try_into()
+        .expect("repeatable-read fingerprint must be 34 bytes");
+    unsafe {
+        crate::am::ec_distann::insert_from_owner_payload_for_test(
+            index_oid,
+            fingerprint,
+            vec_id,
+            source_vector,
+            &identity,
+            &nulls,
+            &offsets,
+            &packed,
+            &planned_forward,
+            false,
+        )
+        .expect("repeatable-read fixed-stride insert should succeed");
+        pg_sys::CommandCounterIncrement();
+    }
+    i64::from_le_bytes(vec_id.to_le_bytes())
+}
+
 fn read_current_fixed_stride_node(
     fixture: &DistannParticipantLifecycleFixture,
     vec_id: u64,
@@ -9390,9 +9461,9 @@ fn test_distann_fixed_stride_dml_append_overlay_and_rollback() {
         false,
     );
     unsafe { pg_sys::CommandCounterIncrement() };
-    assert_eq!(counts(), (Some(4), Some(5), Some(4)));
+    assert_eq!(counts(), (Some(4), Some(5), Some(5)));
     let retried = read_current_fixed_stride_node(&fixture, failed_vec_id);
-    assert_eq!(retried.node_ordinal, 4);
+    assert_eq!(retried.node_ordinal, 5);
     assert_eq!(retried.exact_vector, failed_vector);
 
     let descriptor =
@@ -9427,18 +9498,145 @@ fn test_distann_fixed_stride_dml_append_overlay_and_rollback() {
         .expect("second fixed-stride backlink in one transaction should allocate the next ordinal");
         pg_sys::CommandCounterIncrement();
     }
-    assert_eq!(counts(), (Some(4), Some(7), Some(6)));
+    assert_eq!(counts(), (Some(4), Some(7), Some(7)));
     let amended = read_current_fixed_stride_node(&fixture, vec_id);
-    assert_eq!(amended.node_ordinal, 5);
+    assert_eq!(amended.node_ordinal, 6);
     assert!(amended.tombstoned, "backlink overlay must preserve tombstone");
     assert_eq!(amended.exact_vector, replacement_vector);
     assert_eq!(amended.neighbor_count, 1);
     assert_eq!(amended.neighbor_vec_ids[0], failed_vec_id);
     let reverse_amended = read_current_fixed_stride_node(&fixture, failed_vec_id);
-    assert_eq!(reverse_amended.node_ordinal, 6);
+    assert_eq!(reverse_amended.node_ordinal, 7);
     assert_eq!(reverse_amended.exact_vector, failed_vector);
     assert_eq!(reverse_amended.neighbor_count, 1);
     assert_eq!(reverse_amended.neighbor_vec_ids[0], vec_id);
+}
+
+#[pg_test]
+fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("repeatable-read setup connection should succeed");
+    let helper_schema = setup
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE p.proname = 'ec_distann_test_setup_fixed_stride_repeatable_read_fixture'",
+            &[],
+        )
+        .expect("test helper schema should resolve")
+        .try_get::<_, String>(0)
+        .expect("test helper schema should decode");
+    let setup_function = format!(
+        "{helper_schema}.ec_distann_test_setup_fixed_stride_repeatable_read_fixture"
+    );
+    let insert_function =
+        format!("{helper_schema}.ec_distann_test_fixed_stride_repeatable_read_insert");
+    let fixture = setup
+        .query_one(&format!("SELECT {setup_function}()"), &[])
+        .expect("repeatable-read fixture should publish")
+        .try_get::<_, String>(0)
+        .expect("repeatable-read fixture identity should decode");
+    let mut fields = fixture.split('|');
+    let index_oid = fields
+        .next()
+        .expect("fixture index oid")
+        .parse::<u32>()
+        .expect("fixture index oid should parse");
+    let fingerprint = fields
+        .next()
+        .expect("fixture fingerprint")
+        .to_owned();
+    let graph_oid = fields
+        .next()
+        .expect("fixture graph oid")
+        .parse::<u32>()
+        .expect("fixture graph oid should parse");
+    assert!(fields.next().is_none(), "fixture identity must have three fields");
+    let graph_name = setup
+        .query_one("SELECT $1::oid::regclass::text", &[&graph_oid])
+        .expect("graph relation name should resolve")
+        .try_get::<_, String>(0)
+        .expect("graph relation name should decode");
+
+    let mut first = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("first repeatable-read writer should connect");
+    let mut second = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("second repeatable-read writer should connect");
+    for client in [&mut first, &mut second] {
+        client
+            .batch_execute(&format!(
+                "BEGIN ISOLATION LEVEL REPEATABLE READ;
+                 SELECT count(*) FROM {graph_name};"
+            ))
+            .expect("writer should establish its repeatable-read snapshot");
+    }
+
+    let (appended_tx, appended_rx) = std::sync::mpsc::channel::<()>();
+    let first_function = insert_function.clone();
+    let first_fingerprint = fingerprint.clone();
+    let first_writer = std::thread::spawn(move || -> Result<i64, String> {
+        let vec_id = first
+            .query_one(
+                &format!("SELECT {first_function}($1::oid, $2::text, $3::integer)"),
+                &[&index_oid, &first_fingerprint, &0x8d_i32],
+            )
+            .map_err(|error| format!("first repeatable-read insert failed: {error}"))?
+            .try_get::<_, i64>(0)
+            .map_err(|error| format!("first repeatable-read vec_id failed: {error}"))?;
+        appended_tx
+            .send(())
+            .map_err(|error| format!("first append signal failed: {error}"))?;
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        first
+            .batch_execute("COMMIT")
+            .map_err(|error| format!("first repeatable-read commit failed: {error}"))?;
+        Ok(vec_id)
+    });
+    appended_rx
+        .recv()
+        .expect("first writer should hold the mutation lock after appending");
+
+    let second_writer = std::thread::spawn(move || -> Result<i64, String> {
+        let vec_id = second
+            .query_one(
+                &format!("SELECT {insert_function}($1::oid, $2::text, $3::integer)"),
+                &[&index_oid, &fingerprint, &0x8f_i32],
+            )
+            .map_err(|error| format!("second repeatable-read insert failed: {error}"))?
+            .try_get::<_, i64>(0)
+            .map_err(|error| format!("second repeatable-read vec_id failed: {error}"))?;
+        second
+            .batch_execute("COMMIT")
+            .map_err(|error| format!("second repeatable-read commit failed: {error}"))?;
+        Ok(vec_id)
+    });
+    let first_vec_id = first_writer
+        .join()
+        .expect("first writer thread should not panic")
+        .expect("first repeatable-read writer should commit");
+    let second_vec_id = second_writer
+        .join()
+        .expect("second writer thread should not panic")
+        .expect("second repeatable-read writer should commit");
+    assert_ne!(first_vec_id, second_vec_id);
+    let allocation = setup
+        .query_one(
+            &format!(
+                "SELECT string_agg(node_ordinal::text, ',' ORDER BY node_ordinal)
+                        || '|' || count(DISTINCT node_ordinal)::text
+                        || '|' || count(*)::text
+                   FROM {graph_name}
+                  WHERE is_current
+                    AND vec_id IN ($1, $2)"
+            ),
+            &[&first_vec_id, &second_vec_id],
+        )
+        .expect("repeatable-read allocations should be observable")
+        .try_get::<_, String>(0)
+        .expect("repeatable-read allocation summary should decode");
+    assert_eq!(allocation, "1,2|2|2");
 }
 
 #[pg_test]

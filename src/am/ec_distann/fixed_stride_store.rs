@@ -254,6 +254,59 @@ pub(crate) fn read_metadata(
     Ok(admitted)
 }
 
+/// Return the first never-written ordinal from raw relation state. Callers
+/// must hold the generation's transaction-scoped mutation lock. Unlike an
+/// MVCC directory aggregate, this remains authoritative under REPEATABLE READ
+/// and SERIALIZABLE snapshots. A transaction that aborts after its raw WAL
+/// write leaves an unreachable physical ordinal; subsequent writers append
+/// after it rather than risking reuse across a crash boundary.
+pub(crate) fn next_append_ordinal(
+    relation: RelationHandle,
+    metadata: &FixedStrideMetadataV1,
+    published_ordinal_floor: u64,
+) -> Result<u64, String> {
+    let blocks = main_fork_block_count_handle(relation);
+    if blocks == 0 {
+        return Err("EC_FIXED_STRIDE_FORMAT: node store metadata block is missing".to_owned());
+    }
+    let data_blocks = blocks - 1;
+    let layout = &metadata.layout;
+    let next = if data_blocks == 0 {
+        0
+    } else if layout.is_packed() {
+        let last_block = blocks - 1;
+        let buffer = read_data_block(relation, layout, last_block)?;
+        let (envelope, _) = decode_locked_page(&buffer, metadata, true)?;
+        if envelope.kind != FixedStridePageKind::Packed {
+            return Err("EC_FIXED_STRIDE_FORMAT: packed tail reached a non-packed page".to_owned());
+        }
+        let expected_base = u64::from(data_blocks - 1)
+            .checked_mul(u64::from(layout.nodes_per_page))
+            .ok_or_else(|| "EC_FIXED_STRIDE_FORMAT: packed tail ordinal overflow".to_owned())?;
+        if envelope.base_ordinal != expected_base {
+            return Err(
+                "EC_FIXED_STRIDE_FORMAT: packed tail page is not ordinal-contiguous".to_owned(),
+            );
+        }
+        expected_base
+            .checked_add(u64::from(envelope.slot_count))
+            .ok_or_else(|| "EC_FIXED_STRIDE_FORMAT: packed tail ordinal overflow".to_owned())?
+    } else {
+        if data_blocks % layout.extent_blocks != 0 {
+            return Err(
+                "EC_FIXED_STRIDE_FORMAT: multi-block tail ends in a partial extent".to_owned(),
+            );
+        }
+        u64::from(data_blocks / layout.extent_blocks)
+    };
+    if next < published_ordinal_floor {
+        return Err(format!(
+            "EC_FIXED_STRIDE_FORMAT: raw tail ordinal {next} precedes Ready floor {published_ordinal_floor}"
+        ));
+    }
+    Ok(next)
+}
+
 pub(crate) fn write_node(
     relation: RelationHandle,
     metadata: &FixedStrideMetadataV1,
