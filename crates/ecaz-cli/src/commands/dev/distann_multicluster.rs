@@ -7559,15 +7559,43 @@ async fn task231_control_shared_buffer_residency(
 ) -> Result<Vec<String>> {
     let mut lines = Vec::with_capacity(nodes.len());
     for node in nodes {
-        // The unlogged churn relation is 2.5x shared_buffers, uses EXTERNAL
-        // storage to keep its 1472-byte payload inline and uncompressed, and
-        // is dropped only after a full sequential read. Dropping invalidates
-        // the churn buffers after it has displaced the benchmark relations.
+        // Measure generation residency directly through pg_buffercache. The
+        // churn INSERT uses the normal clock sweep and is the displacement
+        // mechanism; the subsequent bulk-read scan is only a full-materiality
+        // guard (PostgreSQL intentionally scans large relations through a
+        // small BAS_BULKREAD ring). Dropping the churn relation invalidates its
+        // own buffers after the post-churn generation snapshot is captured.
         let output = capture_psql(
             psql,
             socket_dir,
             node.port,
             "SET client_min_messages = warning;
+             CREATE EXTENSION IF NOT EXISTS pg_buffercache;
+             CREATE TEMP TABLE ecaz_task231_generation_relids AS
+             WITH base AS (
+                 SELECT unnest(array_remove(ARRAY[
+                            row_tier_relid, cold_tier_relid,
+                            graph_store_relid, node_store_relid,
+                            directory_relid, payload_sidecar_relid,
+                            payload_sidecar_directory_relid
+                        ]::oid[], NULL::oid)) AS relid
+                   FROM ec_distann_generation
+                  WHERE index_oid = 'public.dm_idx'::regclass::oid
+                    AND state = 'Published'
+             )
+             SELECT DISTINCT relid FROM base
+             UNION
+             SELECT DISTINCT indexrelid
+               FROM pg_index
+              WHERE indrelid IN (SELECT relid FROM base);
+             CREATE TEMP TABLE ecaz_task231_residency_before AS
+             SELECT count(DISTINCT b.bufferid)::bigint AS buffers
+               FROM pg_buffercache AS b
+               JOIN ecaz_task231_generation_relids AS r
+                 ON b.relfilenode = pg_relation_filenode(r.relid)
+              WHERE b.reldatabase = (SELECT oid FROM pg_database
+                                      WHERE datname = current_database())
+                AND b.relforknumber = 0;
              DROP TABLE IF EXISTS public.ecaz_task231_buffer_churn;
              CREATE UNLOGGED TABLE public.ecaz_task231_buffer_churn (
                  id bigint NOT NULL,
@@ -7581,14 +7609,31 @@ async fn task231_control_shared_buffer_residency(
                    1,
                    ceil(pg_size_bytes(current_setting('shared_buffers'))::numeric
                         * 2.5 / 1500)::bigint
-               ) AS i;
+             ) AS i;
              ANALYZE public.ecaz_task231_buffer_churn;
-             SELECT count(*)::bigint || '|' ||
-                    pg_relation_size('public.ecaz_task231_buffer_churn')::bigint || '|' ||
-                    pg_size_bytes(current_setting('shared_buffers'))::bigint || '|' ||
+             CREATE TEMP TABLE ecaz_task231_residency_result AS
+             SELECT count(*)::bigint AS rows,
+                    pg_relation_size('public.ecaz_task231_buffer_churn')::bigint
+                        AS relation_bytes,
+                    pg_size_bytes(current_setting('shared_buffers'))::bigint
+                        AS shared_buffers_bytes,
                     coalesce(sum(id + octet_length(payload)), 0)::numeric
+                        AS scan_guard,
+                    (SELECT buffers FROM ecaz_task231_residency_before)
+                        AS resident_buffers_before,
+                    (SELECT count(DISTINCT b.bufferid)::bigint
+                       FROM pg_buffercache AS b
+                       JOIN ecaz_task231_generation_relids AS r
+                         ON b.relfilenode = pg_relation_filenode(r.relid)
+                      WHERE b.reldatabase = (SELECT oid FROM pg_database
+                                              WHERE datname = current_database())
+                        AND b.relforknumber = 0) AS resident_buffers_after
                FROM public.ecaz_task231_buffer_churn;
-             DROP TABLE public.ecaz_task231_buffer_churn;",
+             DROP TABLE public.ecaz_task231_buffer_churn;
+             SELECT rows || '|' || relation_bytes || '|' ||
+                    shared_buffers_bytes || '|' || scan_guard || '|' ||
+                    resident_buffers_before || '|' || resident_buffers_after
+               FROM ecaz_task231_residency_result;",
         )
         .await
         .wrap_err_with(|| {
@@ -7600,18 +7645,22 @@ async fn task231_control_shared_buffer_residency(
         let record = output
             .lines()
             .map(str::trim)
-            .find(|line| line.split('|').count() == 4)
+            .find(|line| line.split('|').count() == 6)
             .ok_or_else(|| eyre!("Task 231 buffer churn returned no measurement row"))?;
         let mut fields = record.split('|');
         let rows = fields.next().unwrap_or_default();
         let relation_bytes = fields.next().unwrap_or_default();
         let shared_buffers_bytes = fields.next().unwrap_or_default();
         let scan_guard = fields.next().unwrap_or_default();
+        let resident_buffers_before = fields.next().unwrap_or_default();
+        let resident_buffers_after = fields.next().unwrap_or_default();
         for (name, value) in [
             ("rows", rows),
             ("relation_bytes", relation_bytes),
             ("shared_buffers_bytes", shared_buffers_bytes),
             ("scan_guard", scan_guard),
+            ("resident_buffers_before", resident_buffers_before),
+            ("resident_buffers_after", resident_buffers_after),
         ] {
             value.parse::<u128>().wrap_err_with(|| {
                 format!("Task 231 buffer churn returned invalid {name}={value:?}")
@@ -7619,6 +7668,8 @@ async fn task231_control_shared_buffer_residency(
         }
         let relation_bytes = relation_bytes.parse::<u128>()?;
         let shared_buffers_bytes = shared_buffers_bytes.parse::<u128>()?;
+        let resident_buffers_before = resident_buffers_before.parse::<u128>()?;
+        let resident_buffers_after = resident_buffers_after.parse::<u128>()?;
         if relation_bytes < shared_buffers_bytes.saturating_mul(2) {
             bail!(
                 "Task 231 churn relation on node {} was too small: {} bytes versus {} shared-buffer bytes",
@@ -7627,8 +7678,23 @@ async fn task231_control_shared_buffer_residency(
                 shared_buffers_bytes
             );
         }
+        let max_after_buffers = resident_buffers_before.div_ceil(100).max(16);
+        if resident_buffers_after > max_after_buffers {
+            bail!(
+                "Task 231 churn left too many generation buffers resident on node {}: before={} after={} limit={}",
+                node.node_id,
+                resident_buffers_before,
+                resident_buffers_after,
+                max_after_buffers
+            );
+        }
+        let evicted_fraction = if resident_buffers_before == 0 {
+            1.0
+        } else {
+            1.0 - resident_buffers_after as f64 / resident_buffers_before as f64
+        };
         lines.push(format!(
-            "physical_benchmark_residency_control scale={scale} arm={arm} variant={variant} node={} profile=controlled_shared_buffer_cold rows={rows} relation_bytes={relation_bytes} shared_buffers_bytes={shared_buffers_bytes} scan_guard={scan_guard} relation_to_shared_buffers_ratio={:.6} pass=true",
+            "physical_benchmark_residency_control scale={scale} arm={arm} variant={variant} node={} profile=controlled_shared_buffer_cold rows={rows} relation_bytes={relation_bytes} shared_buffers_bytes={shared_buffers_bytes} scan_guard={scan_guard} relation_to_shared_buffers_ratio={:.6} resident_buffers_before={resident_buffers_before} resident_buffers_after={resident_buffers_after} max_after_buffers={max_after_buffers} evicted_fraction={evicted_fraction:.6} residency_measurement=pg_buffercache pass=true",
             node.node_id,
             relation_bytes as f64 / shared_buffers_bytes as f64,
         ));

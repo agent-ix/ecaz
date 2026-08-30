@@ -3701,6 +3701,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_dml_storage".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_residency_control ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_residency_control".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_paired_recall".into(), values));
@@ -7853,7 +7857,8 @@ psql header noise\n\
     fn distann_multinode_rows_parse_task231_integrity_and_dml_storage() {
         let raw = "\
 [distann-multicluster] task231_integrity_preflight node=1 data_checksums=on pass=true\n\
-[distann-multicluster] physical_benchmark_dml_storage scale=100k scope=cluster layout=fixed_stride owners=3 statements=64 node_store_growth_bytes=1048576 growth_bytes_per_statement=16384.000000 pass=true\n";
+[distann-multicluster] physical_benchmark_dml_storage scale=100k scope=cluster layout=fixed_stride owners=3 statements=64 node_store_growth_bytes=1048576 growth_bytes_per_statement=16384.000000 pass=true\n\
+[distann-multicluster] physical_benchmark_residency_control scale=100k arm=physical variant=production node=1 profile=controlled_shared_buffer_cold resident_buffers_before=4096 resident_buffers_after=8 max_after_buffers=41 evicted_fraction=0.998047 residency_measurement=pg_buffercache pass=true\n";
         let rows = parse_distann_multinode_rows(raw);
         let integrity = rows
             .iter()
@@ -7870,6 +7875,17 @@ psql header noise\n\
         assert_eq!(
             growth.1.get("node_store_growth_bytes").map(String::as_str),
             Some("1048576")
+        );
+        let residency = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_benchmark_residency_control")
+            .expect("Task 231 residency control row");
+        assert_eq!(
+            residency
+                .1
+                .get("resident_buffers_after")
+                .map(String::as_str),
+            Some("8")
         );
     }
 
