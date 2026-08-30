@@ -1,11 +1,31 @@
 # Task 230: ec_distann Hot/Cold Vertical Row Tier
 
-Status: **implementation complete; Packet 004 STOP disposition unchanged;
-seq-04 re-scoped basis is REVIEW-OPEN at
-`reviews/task-230/004-full-scale-decision/request.md`. The decisive gate is
-100k pair B (8.67 → 9.47 ms), supported by reproduced -0.0020/-0.0025 recall
-deltas; the inherited result is stable 9.47/9.47 ms hot/cold versus
-position-sensitive 12.40/8.67 ms row-heap. GitHub issue #96 is authoritative.**
+Status: **COMPLETE — review-closed STOP, no candidate. Packet 004 review-closed
+DONE at seq-04** (verdict
+`reviews/task-230/004-full-scale-decision/feedback/2026-08-29-04-reviewer.md`;
+all four packets plus 005–008 review-closed; benchmark head `8bcccb56c`, 20/20
+steps, frozen config `e141ac65…`, audit clean). **Decisive gate:** 100k pair B,
+control 8.67 ms → candidate 9.47 ms, −9.23% / −0.80 ms, against a rule requiring
+both independent pairs to improve ≥5.0% and ≥0.50 ms with no averaging or
+tie-break; supported by that pair's tail regression and by the 100k recall
+deficit of −0.0025/−0.0020 reproduced in both positions against a measured
+0.0005 control-vs-control spread. **Non-discriminating and explicitly not
+candidate failures:** the 50k 0.980 recall floor missed by all four arms
+(candidate equals or exceeds control), and prediction byte-parity, which at 100k
+fails control-vs-control and is therefore unmeasurable as semantic parity at the
+decision scale. The 50k pair-B replacement p95 outlier does not reproduce —
+pair A is 0.704× and pair B 2.734×, with replacement *means* tightly clustered at
+592/756/786/767 ms across all four arms. **What Task 230 established:** the
+mechanism works (zero cold-tier counters on every id-only and exact-vector
+candidate arm, zero hot-tier on cold-only); the storage cost is bounded and
+predicted (hot main-heap 819,511,296 / raw-vector 614,400,000 = 1.3337× against
+the derived 8192/6144 = 1.3333); and **hot/cold is position-insensitive at
+9.47 ms in both counterbalance positions while row-heap spans 8.67–12.40 ms** —
+it beats a cool control and loses to a warm one. Tasks 231/232 inherit that
+result, not "hot/cold is slower". Two of six §6 directional predictions were
+falsified and reported as such, including cold-only coming back *better* than
+predicted. **Carried:** propagate the STOP to GitHub issue #96 (now the
+authoritative tracker) and to the roadmap's ARCH-16 row.**
 
 Prior review status: **implementation complete; Packet 004 full-scale decision is STOP, no
 candidate — disposition CORRECT but seq-03 reviewed NOT DONE on its stated
