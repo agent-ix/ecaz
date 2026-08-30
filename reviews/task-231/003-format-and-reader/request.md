@@ -5,7 +5,7 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 03
+seq: 04
 ---
 
 # Task 231 fixed-stride format and persisted selector checkpoint
@@ -70,3 +70,36 @@ The focused gate remains 6/6 green; the generation-binding test now includes
 metadata round-trip and corruption rejection. See
 `artifacts/fixed-stride-metadata-tests.log`. PostgreSQL raw-page I/O remains the
 next slice in this packet.
+
+## Sequence 04: PostgreSQL raw relation and WAL-backed reader
+
+Code checkpoint `ee25eb7d92112697badc87944dd92ea1ee4a38e3f` adds the optional
+catalogued `node_store_relid`, deterministic auxiliary relation creation with
+autovacuum disabled, internal control-index ownership, and lifecycle drop /
+rebuild propagation. Candidate graph stores now have the frozen directory
+shape with `node_ordinal` in place of `graph_record`; control generations keep
+their existing heap shape.
+
+The new relation layer:
+
+- initializes and admits EFM1 on block zero;
+- appends packed nodes or aligned multi-block extents through GenericXLog
+  full-page images;
+- advances `pd_lower` through initialized raw bytes so PostgreSQL does not
+  treat them as the WAL page hole;
+- permits only the next dense ordinal or an idempotent rewrite of the
+  unreferenced tail;
+- validates metadata, every EFS1 envelope/segment, node digest and directory
+  identity before returning a node; and
+- reports physical blocks and bytes read for Packet 005 telemetry.
+
+The focused PG18 fixture passes for three packed nodes and two multi-block
+nodes, including retry, ordered identity, wrong-vec-id rejection, and the
+autovacuum reloption. The PG18 clippy surface is also clean after explicitly
+allowing two unrelated pre-existing lints in `ambuild.rs` and the Task 230
+head-sizing path. See `artifacts/fixed-stride-store-pg18.log` and
+`artifacts/fixed-stride-store-clippy.log`.
+
+Handoff publication and production lookup are still open in this packet; this
+sequence requests review only of raw-page durability/admission and relation
+lifecycle plumbing.
