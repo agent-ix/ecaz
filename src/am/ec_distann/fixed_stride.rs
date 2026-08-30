@@ -16,9 +16,12 @@ pub(crate) const FIXED_STRIDE_PAGE_FORMAT_VERSION: u16 = 1;
 pub(crate) const FIXED_STRIDE_NODE_FORMAT_VERSION: u16 = 1;
 pub(crate) const FIXED_STRIDE_PAGE_HEADER_BYTES: usize = 80;
 pub(crate) const FIXED_STRIDE_NODE_HEADER_BYTES: usize = 80;
+pub(crate) const FIXED_STRIDE_METADATA_BYTES: usize = 160;
+pub(crate) const FIXED_STRIDE_LAYOUT_BYTES: usize = 42;
 
 const PAGE_MAGIC: [u8; 4] = *b"EFS1";
 const NODE_MAGIC: [u8; 4] = *b"EFN1";
+const METADATA_MAGIC: [u8; 4] = *b"EFM1";
 const PAGE_DIGEST_OFFSET: usize = 48;
 const PAGE_DIGEST_BYTES: usize = 32;
 const NODE_DIGEST_OFFSET: usize = 48;
@@ -28,6 +31,7 @@ const PAGE_DOMAIN: &[u8] = b"ec_distann_fixed_stride_page_v1\0";
 const NODE_DOMAIN: &[u8] = b"ec_distann_fixed_stride_node_v1\0";
 const GENERATION_TAG_DOMAIN: &[u8] = b"ec_distann_fixed_stride_generation_tag_v1\0";
 const LAYOUT_DOMAIN: &[u8] = b"ec_distann_fixed_stride_layout_v1\0";
+const METADATA_DOMAIN: &[u8] = b"ec_distann_fixed_stride_metadata_v1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannFixedStrideLayoutDescriptorV1 {
@@ -194,7 +198,11 @@ impl DistannFixedStrideLayoutDescriptorV1 {
         encoder.put_u32(self.page_payload_bytes);
         encoder.put_u16(self.nodes_per_page);
         encoder.put_u32(self.extent_blocks);
-        encoder.finish()
+        let encoded = encoder.finish()?;
+        if encoded.len() != FIXED_STRIDE_LAYOUT_BYTES {
+            return Err("EC_FIXED_STRIDE_FORMAT: layout encoded length drift".to_owned());
+        }
+        Ok(encoded)
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
@@ -309,6 +317,73 @@ impl DistannFixedStrideLayoutDescriptorV1 {
 
     fn neighbor_codes_offset(&self) -> usize {
         self.neighbor_ids_offset() + usize::from(self.graph_degree) * 8
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FixedStrideMetadataV1 {
+    pub(crate) generation_tag: [u8; 16],
+    pub(crate) layout: DistannFixedStrideLayoutDescriptorV1,
+}
+
+impl FixedStrideMetadataV1 {
+    pub(crate) fn encode(&self) -> Result<[u8; FIXED_STRIDE_METADATA_BYTES], String> {
+        let layout = self.layout.encode()?;
+        let layout_digest = self.layout.digest()?;
+        let mut out = [0_u8; FIXED_STRIDE_METADATA_BYTES];
+        out[..4].copy_from_slice(&METADATA_MAGIC);
+        out[4..6].copy_from_slice(&FIXED_STRIDE_LAYOUT_VERSION.to_le_bytes());
+        out[6..8].copy_from_slice(&(FIXED_STRIDE_METADATA_BYTES as u16).to_le_bytes());
+        out[8..24].copy_from_slice(&self.generation_tag);
+        out[24..56].copy_from_slice(&layout_digest);
+        out[56..56 + FIXED_STRIDE_LAYOUT_BYTES].copy_from_slice(&layout);
+        let digest = domain_digest(METADATA_DOMAIN, &out);
+        out[128..160].copy_from_slice(&digest);
+        Ok(out)
+    }
+
+    pub(crate) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < 6 {
+            return Err(
+                "EC_FIXED_STRIDE_FORMAT: metadata is too short for magic/version".to_owned(),
+            );
+        }
+        if input[..4] != METADATA_MAGIC {
+            return Err("EC_FIXED_STRIDE_FORMAT: metadata magic mismatch".to_owned());
+        }
+        let version = u16::from_le_bytes(input[4..6].try_into().expect("version bytes"));
+        if version != FIXED_STRIDE_LAYOUT_VERSION {
+            return Err(format!(
+                "EC_FIXED_STRIDE_FORMAT: unsupported metadata version {version}"
+            ));
+        }
+        if input.len() != FIXED_STRIDE_METADATA_BYTES
+            || u16::from_le_bytes(input[6..8].try_into().expect("metadata length bytes"))
+                != FIXED_STRIDE_METADATA_BYTES as u16
+            || input[98..128].iter().any(|byte| *byte != 0)
+        {
+            return Err(
+                "EC_FIXED_STRIDE_FORMAT: metadata length or reserved bytes mismatch".to_owned(),
+            );
+        }
+        let supplied_digest: [u8; 32] = input[128..160].try_into().expect("metadata digest bytes");
+        let mut canonical = input.to_vec();
+        canonical[128..160].fill(0);
+        if domain_digest(METADATA_DOMAIN, &canonical) != supplied_digest {
+            return Err("EC_FIXED_STRIDE_FORMAT: metadata digest mismatch".to_owned());
+        }
+        let layout = DistannFixedStrideLayoutDescriptorV1::decode(
+            &input[56..56 + FIXED_STRIDE_LAYOUT_BYTES],
+        )?;
+        let expected_layout_digest: [u8; 32] =
+            input[24..56].try_into().expect("layout digest bytes");
+        if layout.digest()? != expected_layout_digest {
+            return Err("EC_FIXED_STRIDE_FORMAT: metadata layout digest mismatch".to_owned());
+        }
+        Ok(Self {
+            generation_tag: input[8..24].try_into().expect("generation tag bytes"),
+            layout,
+        })
     }
 }
 
@@ -955,5 +1030,15 @@ mod tests {
             tag,
             fixed_stride_generation_tag(&descriptor, &logical, &other_build)
         );
+
+        let metadata = FixedStrideMetadataV1 {
+            generation_tag: tag,
+            layout: DistannFixedStrideLayoutDescriptorV1::new(1536, 32, 192).unwrap(),
+        };
+        let encoded = metadata.encode().unwrap();
+        assert_eq!(FixedStrideMetadataV1::decode(&encoded).unwrap(), metadata);
+        let mut corrupt = encoded;
+        corrupt[60] ^= 1;
+        assert!(FixedStrideMetadataV1::decode(&corrupt).is_err());
     }
 }
