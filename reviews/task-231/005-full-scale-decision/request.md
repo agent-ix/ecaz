@@ -5,14 +5,15 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 6
+seq: 7
 ---
 
 # Task 231 full-scale decision
 
-Status: review-open for seq-05 write-up corrections; reviewer confirms the
-frozen-rule **STOP — do not promote fixed-stride node blocks on this 128 MiB
-shared-buffer lane** is correct. Accepted measurement extension SHA:
+Status: review-closed DONE at
+`feedback/2026-08-30-06-reviewer.md`; final disposition **STOP — do not
+promote fixed-stride node blocks on this 128 MiB shared-buffer lane**. Accepted
+measurement extension SHA:
 `66b53998a955b583ca43c0e967806aa29e0a4404`. GitHub ticket: issue #97.
 
 This request applies the already review-closed decision contract to the
@@ -181,11 +182,9 @@ twice the measured nonzero lane spread.
 
 ## Validation and requested final review
 
-Packet-local receipts and hashes are in `artifacts/manifest.md`. Please verify
-the frozen-rule STOP disposition, the result transcription, the explicit
-single-writer limitation, the startup-collision exclusion, and Packet 007's
-role-scoped NFR-021 re-extraction. Seq-05's status, order-controlled reading,
-overlay attribution, and shared-buffer condition are now carried in the task
-header, README row, request, and decision summary. Packets 001/002 are
-reconciled to the STOP and Task 233 handoff. Packet 004's allocator rereview,
-Packet 006's lock-lifetime correction, and Packet 007 are review-closed DONE.
+Packet-local receipts and hashes are in `artifacts/manifest.md`. The reviewer
+independently recomputed the frozen-rule STOP, result transcription,
+order-controlled reading, overlay attribution, and NFR-021 correction. The
+explicit single-writer and 128 MiB shared-buffer limits remain part of the
+verdict. Packets 001/002 are reconciled to the STOP and Task 233 handoff; all
+Task 231 packets are review-closed.

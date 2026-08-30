@@ -1,13 +1,11 @@
 # Task 231: ec_distann Fixed-Stride Graph/Vector Blocks
 
-Status: **full matrix complete — review-backed STOP, do not promote
-fixed-stride node blocks. Packet 005's frozen-rule STOP is confirmed correct at
-`reviews/task-231/005-full-scale-decision/feedback/2026-08-30-05-reviewer.md`;
-its final order-effect/overlay write-up corrections are review-open. Packet 007
-NFR-021 role scoping is review-closed DONE. The opt-in prototype remains only
-as the Task 233 factorial input, and Packets 001/002 are reconciled to that
-negative result and handoff** (2026-08-30). Priority: P1
-graph-storage/retrieval latency.
+Status: **complete — review-closed STOP, do not promote fixed-stride node
+blocks. All packets are closed; final decision/write-up verdict:
+`reviews/task-231/005-full-scale-decision/feedback/2026-08-30-06-reviewer.md`.
+The opt-in prototype remains only as an optional Task 233 factorial input, and
+Packets 001/002 are reconciled to that negative result and handoff**
+(2026-08-30). Priority: P1 graph-storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 ARCH-17. This is the DiskANN/DistributedANN-style whole-node retrieval
