@@ -3611,6 +3611,15 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 values.insert("pass_numeric".into(), if passed { "1" } else { "0" }.into());
                 rows.push(("multinode_release_preflight".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("task231_integrity_preflight ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let passed = values
+                    .get("data_checksums")
+                    .is_some_and(|value| value == "on")
+                    && values.get("pass").is_some_and(|value| value == "true");
+                values.insert("pass_numeric".into(), if passed { "1" } else { "0" }.into());
+                rows.push(("task231_integrity_preflight".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("RECALL_RESULT") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 let identity_ok = values
@@ -3687,6 +3696,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_dml_latency ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_dml_latency".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_dml_storage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_dml_storage".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
@@ -7833,6 +7846,30 @@ psql header noise\n\
         assert!(
             drills.iter().any(|d| d.contains("qual_correctness")),
             "qual drill outcome captured: {drills:?}"
+        );
+    }
+
+    #[test]
+    fn distann_multinode_rows_parse_task231_integrity_and_dml_storage() {
+        let raw = "\
+[distann-multicluster] task231_integrity_preflight node=1 data_checksums=on pass=true\n\
+[distann-multicluster] physical_benchmark_dml_storage scale=100k scope=cluster layout=fixed_stride owners=3 statements=64 node_store_growth_bytes=1048576 growth_bytes_per_statement=16384.000000 pass=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        let integrity = rows
+            .iter()
+            .find(|(metric, _)| metric == "task231_integrity_preflight")
+            .expect("Task 231 integrity row");
+        assert_eq!(
+            integrity.1.get("pass_numeric").map(String::as_str),
+            Some("1")
+        );
+        let growth = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_benchmark_dml_storage")
+            .expect("Task 231 DML storage row");
+        assert_eq!(
+            growth.1.get("node_store_growth_bytes").map(String::as_str),
+            Some("1048576")
         );
     }
 

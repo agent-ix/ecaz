@@ -4221,11 +4221,32 @@ fn task229_dml_latency(samples: &[u128]) -> Result<Task229DmlLatency> {
 
 async fn task229_replacement_delete_latency(
     coordinator: &tokio_postgres::Client,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
     scale: &str,
     physical_corpus: &str,
     benchmark_position: &str,
     covered_generation: bool,
+    fixed_stride_node_storage: bool,
 ) -> Result<Vec<String>> {
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT encode(epoch_fingerprint, 'hex')
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await
+        .wrap_err("reading pre-DML epoch fingerprint")?
+        .get::<_, String>(0);
+    let selector = format!(
+        "ec_distann_epoch_topology('public.dm_idx'::regclass, decode('{fingerprint}', 'hex'))"
+    );
+    let mut node_store_before = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        node_store_before.push(physical_topology(psql, socket_dir, node, &selector).await?);
+    }
     let rows = coordinator
         .query(
             &format!(
@@ -4291,7 +4312,7 @@ async fn task229_replacement_delete_latency(
 
     let replacement = task229_dml_latency(&replacement_samples)?;
     let delete = task229_dml_latency(&delete_samples)?;
-    Ok([
+    let mut lines = [
         ("replacement", replacement),
         ("delete", delete),
     ]
@@ -4302,7 +4323,51 @@ async fn task229_replacement_delete_latency(
             stats.mean_ms, stats.p50_ms, stats.p95_ms, stats.p99_ms, stats.max_ms,
         )
     })
-    .collect())
+    .collect::<Vec<_>>();
+
+    let statements = i64::try_from(TASK229_DML_SAMPLES * 2).expect("sample count fits i64");
+    let mut cluster_growth_bytes = 0_i64;
+    for (node, before) in nodes.iter().zip(&node_store_before) {
+        let after = physical_topology(psql, socket_dir, node, &selector).await?;
+        if before.node_id != after.node_id || before.state != after.state {
+            bail!(
+                "Task 231 DML storage identity changed on node {}: before={before:?} after={after:?}",
+                node.node_id
+            );
+        }
+        let before_bytes = before.node_store_bytes.max(0);
+        let after_bytes = after.node_store_bytes.max(0);
+        let growth_bytes = after_bytes
+            .checked_sub(before_bytes)
+            .ok_or_else(|| eyre!("Task 231 node-store bytes shrank during DML"))?;
+        cluster_growth_bytes = cluster_growth_bytes
+            .checked_add(growth_bytes)
+            .ok_or_else(|| eyre!("Task 231 cluster DML storage growth overflow"))?;
+        lines.push(format!(
+            "physical_benchmark_dml_storage scale={scale} scope=owner node={} layout={} statements={statements} replacement_statements={TASK229_DML_SAMPLES} delete_statements={TASK229_DML_SAMPLES} node_store_before_bytes={before_bytes} node_store_after_bytes={after_bytes} node_store_growth_bytes={growth_bytes} growth_bytes_per_statement={:.6} benchmark_position={benchmark_position} pass=true",
+            node.node_id,
+            if fixed_stride_node_storage { "fixed_stride" } else { "row_heap_control" },
+            growth_bytes as f64 / statements as f64,
+        ));
+    }
+    let cluster_pass = if fixed_stride_node_storage {
+        cluster_growth_bytes > 0
+    } else {
+        cluster_growth_bytes == 0
+    };
+    if !cluster_pass {
+        bail!(
+            "Task 231 cluster DML storage growth violated layout expectation: fixed_stride={} growth={cluster_growth_bytes}",
+            fixed_stride_node_storage
+        );
+    }
+    lines.push(format!(
+        "physical_benchmark_dml_storage scale={scale} scope=cluster layout={} owners={} statements={statements} replacement_statements={TASK229_DML_SAMPLES} delete_statements={TASK229_DML_SAMPLES} node_store_growth_bytes={cluster_growth_bytes} growth_bytes_per_statement={:.6} benchmark_position={benchmark_position} pass=true",
+        if fixed_stride_node_storage { "fixed_stride" } else { "row_heap_control" },
+        nodes.len(),
+        cluster_growth_bytes as f64 / statements as f64,
+    ));
+    Ok(lines)
 }
 
 fn task167_insert_trial_items(
@@ -10125,10 +10190,14 @@ async fn run_physical_benchmarks(
         lines.extend(
             task229_replacement_delete_latency(
                 coordinator,
+                psql,
+                socket_dir,
+                nodes,
                 scale,
                 &physical_corpus,
                 &benchmark_position,
                 args.covering_payload_attnums.is_some(),
+                args.fixed_stride_node_storage,
             )
             .await?,
         );
