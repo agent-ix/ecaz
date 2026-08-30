@@ -254,13 +254,15 @@ pub(crate) enum DistannMaterializationWork {
     ColdTierPayloadBytes,
     ExactVectorReads,
     ExactVectorBytes,
+    FixedStrideLogicalBlocksTouched,
+    FixedStrideLogicalBytesTouched,
 }
 
 impl DistannMaterializationWork {
     // Keep DISTANN_WORK_ROWS in
     // crates/ecaz-cli/src/commands/dev/distann_multicluster.rs synchronized:
     // the CLI contract is this server count plus client_result_rows.
-    pub(crate) const ALL: [Self; 61] = [
+    pub(crate) const ALL: [Self; 63] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -322,6 +324,8 @@ impl DistannMaterializationWork {
         Self::ColdTierPayloadBytes,
         Self::ExactVectorReads,
         Self::ExactVectorBytes,
+        Self::FixedStrideLogicalBlocksTouched,
+        Self::FixedStrideLogicalBytesTouched,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -393,6 +397,8 @@ impl DistannMaterializationWork {
             Self::ColdTierPayloadBytes => "cold_tier_payload_bytes",
             Self::ExactVectorReads => "exact_vector_reads",
             Self::ExactVectorBytes => "exact_vector_bytes",
+            Self::FixedStrideLogicalBlocksTouched => "fixed_stride_logical_blocks_touched",
+            Self::FixedStrideLogicalBytesTouched => "fixed_stride_logical_bytes_touched",
         }
     }
 
@@ -459,6 +465,8 @@ impl DistannMaterializationWork {
             Self::ColdTierPayloadBytes => 58,
             Self::ExactVectorReads => 59,
             Self::ExactVectorBytes => 60,
+            Self::FixedStrideLogicalBlocksTouched => 61,
+            Self::FixedStrideLogicalBytesTouched => 62,
         }
     }
 }

@@ -239,6 +239,7 @@ pub(crate) fn write_node(
             node.node_ordinal,
             address.slot_index,
             &encoded,
+            unpublished_tail_floor,
         )
     } else {
         write_multiblock_node(
@@ -398,7 +399,8 @@ pub(crate) fn committed_page_digest(
         let block = u32::try_from(data_index + 1)
             .map_err(|_| "EC_FIXED_STRIDE_FORMAT: committed block number exceeds u32".to_owned())?;
         let buffer = read_data_block(relation, layout, block)?;
-        let (envelope, _) = decode_locked_page(&buffer, metadata, true)?;
+        let (envelope, payload) = decode_locked_page(&buffer, metadata, true)?;
+        hasher.update(block.to_le_bytes());
         if layout.is_packed() {
             let expected_slots = if data_index + 1 == data_blocks {
                 let remainder = committed_node_count % u64::from(layout.nodes_per_page);
@@ -416,18 +418,36 @@ pub(crate) fn committed_page_digest(
                         .to_owned(),
                 );
             }
+            let committed_bytes = usize::from(expected_slots)
+                .checked_mul(layout.node_stride_bytes as usize)
+                .ok_or_else(|| {
+                    "EC_FIXED_STRIDE_FORMAT: committed packed prefix overflow".to_owned()
+                })?;
+            let committed_prefix = payload.get(..committed_bytes).ok_or_else(|| {
+                "EC_FIXED_STRIDE_FORMAT: committed packed prefix exceeds page payload".to_owned()
+            })?;
+            // Bind exactly the committed slot prefix. An aborted later batch
+            // may leave unreachable raw slots because GenericXLog pages are
+            // not MVCC-undone; those bytes must not perturb Ready evidence for
+            // the same committed generation prefix.
+            hasher.update(b"packed-prefix\0");
+            hasher.update(expected_slots.to_le_bytes());
+            hasher.update(committed_prefix);
+        } else {
+            let header = read_page_region(
+                &buffer,
+                usize::from(layout.pg_page_header_bytes),
+                FIXED_STRIDE_PAGE_HEADER_BYTES,
+            )?;
+            hasher.update(b"multiblock-page\0");
+            hasher.update(
+                header
+                    .get(PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES)
+                    .ok_or_else(|| {
+                        "EC_FIXED_STRIDE_FORMAT: page digest bounds mismatch".to_owned()
+                    })?,
+            );
         }
-        let header = read_page_region(
-            &buffer,
-            usize::from(layout.pg_page_header_bytes),
-            FIXED_STRIDE_PAGE_HEADER_BYTES,
-        )?;
-        hasher.update(block.to_le_bytes());
-        hasher.update(
-            header
-                .get(PAGE_DIGEST_OFFSET..PAGE_DIGEST_OFFSET + PAGE_DIGEST_BYTES)
-                .ok_or_else(|| "EC_FIXED_STRIDE_FORMAT: page digest bounds mismatch".to_owned())?,
-        );
     }
     Ok(hasher.finalize().into())
 }
@@ -438,6 +458,7 @@ fn write_packed_node(
     ordinal: u64,
     slot_index: u16,
     encoded_node: &[u8],
+    unpublished_tail_floor: u64,
 ) -> Result<(), String> {
     let layout = &metadata.layout;
     let address = layout.address_admitted(ordinal)?;
@@ -460,6 +481,17 @@ fn write_packed_node(
             return Err(
                 "EC_FIXED_STRIDE_FORMAT: packed append is not the next or retry slot".to_owned(),
             );
+        }
+        if envelope.slot_count > slot_index.saturating_add(1) {
+            let first_truncated_ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                "EC_FIXED_STRIDE_FORMAT: packed truncated ordinal overflow".to_owned()
+            })?;
+            if first_truncated_ordinal < unpublished_tail_floor {
+                return Err(
+                    "EC_FIXED_STRIDE_FORMAT: packed retry would truncate a published slot"
+                        .to_owned(),
+                );
+            }
         }
         bytes.to_vec()
     };
@@ -784,6 +816,13 @@ mod tests {
     }
 
     fn assert_heapam_sees_empty(name: &str, relation: RelationHandle) {
+        assert_eq!(
+            Spi::get_one::<String>("SHOW data_checksums")
+                .unwrap()
+                .as_deref(),
+            Some("on"),
+            "fast fixed-stride verification requires PostgreSQL page checksums"
+        );
         let blocks = main_fork_block_count_handle(relation);
         for block in 0..blocks {
             let buffer = LockedBufferGuard::read_main_handle(
@@ -829,6 +868,32 @@ mod tests {
         for ordinal in 0..count {
             let node = sample_node(&metadata.layout, ordinal);
             write_node(handle, &metadata, &node, 0).expect("node write should succeed");
+        }
+        if metadata.layout.is_packed() && count >= 3 {
+            let first = sample_node(&metadata.layout, 0);
+            let first_encoded = first.encode(&metadata.layout).unwrap();
+            let page_guard = write_packed_node(handle, &metadata, 0, 0, &first_encoded, 2)
+                .expect_err("page-level retry guard must protect published later slots");
+            assert!(page_guard.contains("truncate a published slot"));
+
+            let committed_prefix = count - 1;
+            let clean_digest = committed_page_digest(handle, &metadata, committed_prefix).unwrap();
+            let mut unreachable_tail = sample_node(&metadata.layout, committed_prefix);
+            unreachable_tail.exact_vector[0] = 0.75;
+            write_node(handle, &metadata, &unreachable_tail, committed_prefix)
+                .expect("unreachable tail retry should succeed");
+            assert_eq!(
+                committed_page_digest(handle, &metadata, committed_prefix).unwrap(),
+                clean_digest,
+                "Ready digest must bind only the committed packed prefix"
+            );
+            write_node(
+                handle,
+                &metadata,
+                &sample_node(&metadata.layout, committed_prefix),
+                committed_prefix,
+            )
+            .expect("tail fixture should restore its canonical node");
         }
         let retry = sample_node(&metadata.layout, count - 1);
         write_node(handle, &metadata, &retry, 0).expect("tail retry should be idempotent");

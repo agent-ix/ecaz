@@ -8,7 +8,7 @@
 #[cfg(feature = "pg_test")]
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ptr::{self, NonNull};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::rc::Rc;
@@ -325,12 +325,9 @@ where
     })?;
     let mut records = HashMap::with_capacity(vec_ids.len());
     let mut fixed_directory_entries = Vec::with_capacity(vec_ids.len());
+    let mut fixed_seen = HashSet::with_capacity(vec_ids.len());
     for vec_id in vec_ids {
-        if records.contains_key(vec_id)
-            || fixed_directory_entries
-                .iter()
-                .any(|entry: &FixedStrideDirectoryEntry| entry.vec_id == *vec_id)
-        {
+        if records.contains_key(vec_id) || !fixed_seen.insert(*vec_id) {
             continue;
         }
         let stored_id = i64::from_le_bytes(vec_id.to_le_bytes());
@@ -429,6 +426,18 @@ where
                 },
             );
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::FixedStrideLogicalBlocksTouched,
+                telemetry.logical_blocks_touched as usize,
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::FixedStrideLogicalBytesTouched,
+                usize::try_from(telemetry.logical_bytes_touched).unwrap_or(usize::MAX),
+            );
+        }
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         let _ = telemetry;
     }
     Ok(records)
@@ -2594,23 +2603,25 @@ impl RetainedGenerationScan {
         if let Some(retry_snapshot) = retry_snapshot {
             self.retry_snapshot = Some(retry_snapshot);
         }
-        for record in records.values() {
-            if let Some(vector) = &record.exact_vector {
-                self.fixed_exact_vectors
-                    .insert(record.node.vec_id, vector.clone());
+        // Exact vectors are batch-scoped scratch, not a scan-lifetime cache.
+        // Move (rather than clone) the current batch out of LookupGraphNode so
+        // a long retained scan cannot accumulate one 6 KiB vector per node.
+        self.fixed_exact_vectors.clear();
+        let mut resolved_nodes = HashMap::with_capacity(records.len());
+        for (vec_id, record) in records {
+            if let Some(vector) = record.exact_vector {
+                self.fixed_exact_vectors.insert(vec_id, vector);
             }
+            resolved_nodes.insert(vec_id, record.node);
         }
         vec_ids
             .iter()
             .map(|vec_id| {
-                records
-                    .get(vec_id)
-                    .map(|record| record.node.clone())
-                    .ok_or_else(|| {
-                        DistannExpandError::OwnedRecordMissing(format!(
-                            "retained physical generation lacks owned vec_id {vec_id:#018x}"
-                        ))
-                    })
+                resolved_nodes.get(vec_id).cloned().ok_or_else(|| {
+                    DistannExpandError::OwnedRecordMissing(format!(
+                        "retained physical generation lacks owned vec_id {vec_id:#018x}"
+                    ))
+                })
             })
             .collect()
     }

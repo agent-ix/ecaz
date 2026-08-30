@@ -7344,6 +7344,11 @@ fn test_distann_stage_type_io_runs_as_restricted_control_owner() {
 
 #[pg_test]
 fn test_distann_fixed_stride_stage_seal_receipt_and_topology() {
+    assert_eq!(
+        Spi::get_one::<String>("SHOW data_checksums").unwrap().as_deref(),
+        Some("on"),
+        "fixed-stride fast-path fixture requires PostgreSQL page checksums"
+    );
     let mut fixture =
         create_distann_physical_generation_fixture("ec_distann_fixed_stride_seal", 0x3d);
     configure_fixed_stride_generation_fixture(&mut fixture);
