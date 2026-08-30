@@ -2674,6 +2674,19 @@ fn nfr_021_row_matches_variant(
     if row.values.get("arm").is_some_and(|arm| arm != "physical") {
         return false;
     }
+    // Separate registrations may intentionally benchmark the same named
+    // search variant in control and candidate fixtures (for example, when
+    // only the on-disk layout changes). Result context labels those rows with
+    // their registered role, so do not merge the two storage surfaces into a
+    // single cross-scale growth calculation. Rows from steps that carry no
+    // registration retain the historical variant-only fallback.
+    if row
+        .values
+        .get("nfr_021_role")
+        .is_some_and(|role| role != registration.role.label())
+    {
+        return false;
+    }
     match &registration.variant {
         None => true,
         Some(variant) => row
@@ -8819,6 +8832,43 @@ psql header noise\n\
                 .map(String::as_str),
             Some("conforming")
         );
+    }
+
+    #[test]
+    fn distann_nfr_021_same_variant_does_not_mix_decision_roles() {
+        let registration = DistannNfr021ManifestRegistration {
+            variant: Some("production".into()),
+            id: "control".into(),
+            role: DistannDecisionRole::Control,
+            admissibility: DistannNfr021Admissibility::Conforming,
+            rationale: "current-layout control".into(),
+        };
+        let row = |role: Option<&str>| ResultRow {
+            suite: "role-scoping".into(),
+            step: "arm".into(),
+            kind: "distann-local-multinode".into(),
+            metric: "physical_benchmark_storage_node".into(),
+            artifact: "summary.log".into(),
+            values: BTreeMap::from_iter(
+                [
+                    Some(("arm".into(), "physical".into())),
+                    Some(("variant".into(), "production".into())),
+                    role.map(|value| ("nfr_021_role".into(), value.into())),
+                ]
+                .into_iter()
+                .flatten(),
+            ),
+        };
+
+        assert!(nfr_021_row_matches_variant(
+            &row(Some("control")),
+            &registration
+        ));
+        assert!(!nfr_021_row_matches_variant(
+            &row(Some("candidate")),
+            &registration
+        ));
+        assert!(nfr_021_row_matches_variant(&row(None), &registration));
     }
 
     #[test]
