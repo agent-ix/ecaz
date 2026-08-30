@@ -5,13 +5,50 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 1
+seq: 2
 ---
 
 # Task 231 prepared-transaction lock-lifetime correction
 
-Status: review-open. Code checkpoint:
-`fc4a4292681715d899a80d7df251955b5de6f711`. GitHub ticket: issue #97.
+Status: review-open for a narrow seq-02 follow-up. Code checkpoint:
+`66b53998a955b583ca43c0e967806aa29e0a4404`. The original lock-lifetime fix
+at `fc4a4292681715d899a80d7df251955b5de6f711` is review-closed DONE in
+`feedback/2026-08-30-01-reviewer.md`. GitHub ticket: issue #97.
+
+## Seq-02 follow-up after the DONE verdict
+
+The DONE verdict carried a prepared-transaction fixture as worthwhile and
+asked the field rerun to watch for a tuple-lock version of the same invisible
+cycle. Both are now load-bearing before the rerun:
+
+- `test_distann_fixed_stride_prepared_lock_release` performs the exact lock
+  lifetime sequence that the original fixtures omitted. Writer A appends to
+  the raw node store and enters `PREPARE TRANSACTION`. While A remains
+  unresolved, writer B must append to the same raw relation and commit under a
+  10-second statement timeout. A is then rolled back; the test proves its raw
+  ordinal 1 is an unreachable gap and B's ordinal 2 is the sole current MVCC
+  directory row. The old transaction-scoped lock times out this test; the
+  accepted early-unlock code passes.
+- The coordinator already excludes the inserted `vec_id` and deduplicates
+  scan/planned candidates with a `HashSet`. The physical DML path now validates
+  the resulting `forward_ids` again and fails closed unless every backlink
+  target is distinct from the new row and every other target. Therefore the
+  remote owner append locks only the new directory key, and each independently
+  prepared backlink transaction locks one different pre-existing directory
+  key. A same-top-level-insert tuple-lock self-cycle is no longer merely
+  inferred unreachable; its disjointness premise is enforced immediately
+  before dispatch.
+
+The focused PG18 set is now `5 passed; 0 failed`, and PG18 library clippy with
+warnings denied passes. The first test invocation was compile-rejected before
+execution solely because its PostgreSQL-visible name exceeded 63 bytes; the
+name was shortened and the authoritative green rerun is recorded in
+`artifacts/manifest.md`.
+
+Please review only checkpoint `66b53998a` relative to the accepted
+`fc4a42926`: the prepared-writer fixture and the forward-target uniqueness
+guard. The fresh Packet 005 precheck/matrix remains paused until this new code
+checkpoint is review-closed.
 
 Packet 005's first decision attempt exposed a distributed self-deadlock in the
 Packet 004 mutation-lock contract. The 10k control arm completed, but the first

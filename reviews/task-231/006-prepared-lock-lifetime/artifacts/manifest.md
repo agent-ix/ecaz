@@ -42,3 +42,27 @@
 - It records the exact granted prepared-transaction lock and blocked backlink
   lock on the same raw node-store relation. The incomplete fixture was stopped
   and removed after capture; the final decision matrix has not resumed.
+
+## Seq-02 prepared-transaction regression
+
+- Timestamp: `2026-08-30T02:47:57-07:00`.
+- Head SHA: `66b53998a955b583ca43c0e967806aa29e0a4404`.
+- `prepared-lock-seq02-pg18.log` command: `cargo pgrx test pg18
+  test_distann_fixed_stride`, captured through `script -q -e -c`.
+- SHA-256: `0b531cc74dc95d995bb2c1bc46caead0172c481aac00a4f1d866c15cec438ddd`.
+- Result: `5 passed; 0 failed`; exit code 0. The fifth fixture performs an
+  owner-local raw append, issues `PREPARE TRANSACTION`, then requires a second
+  owner-local mutation against the same node store to commit under a 10-second
+  timeout before resolving the prepared writer. It rolls the prepared writer
+  back and verifies its ordinal 1 is absent from the MVCC directory while the
+  second writer is the sole current row at physical ordinal 2.
+- The first invocation was compile-rejected before any test executed because
+  the new PostgreSQL-visible test identifier exceeded 63 bytes. Only the test
+  name was shortened; the authoritative rerun above replaced that local log.
+- `prepared-lock-seq02-clippy-pg18.log` command: `cargo clippy --lib
+  --no-default-features --features pg18 -- -D warnings -A
+  clippy::collapsible-if -A clippy::unnecessary-unwrap`, captured through
+  `script -q -e -c`.
+- SHA-256: `c9de2dced8610114fcf04058db196bef9c90818c9d6e5163e7ffdddf6572e257`.
+- Result: PASS; exit code 0, with the packet's already-recorded repository-wide
+  lint exceptions only.
