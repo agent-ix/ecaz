@@ -1,0 +1,12 @@
+CREATE EXTENSION
+            ecaz_build_git_sha            | ecaz_build_profile 
+------------------------------------------+--------------------
+ 66b53998a955b583ca43c0e967806aa29e0a4404 | release
+(1 row)
+
+ data_checksums 
+----------------
+ on
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

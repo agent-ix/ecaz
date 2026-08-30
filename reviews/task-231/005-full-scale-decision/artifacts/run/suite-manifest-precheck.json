@@ -1,0 +1,919 @@
+{
+  "suite": "task231-fixed-stride-10k-50k-100k",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json",
+  "config_sha256": "48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211",
+  "dry_run": false,
+  "generated_at_unix_ms": 1788085342546,
+  "runner_git_commit": "47051a848dc4dd639643db53d7b8a1d96874f111",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SHOW data_checksums; SELECT version(); SELECT '[suite-result] task231_host_precheck data_checksums=' || current_setting('data_checksums') || ' data_checksums_numeric=' || CASE current_setting('data_checksums') WHEN 'on' THEN '1' ELSE '0' END || ' server_version_num=' || current_setting('server_version_num') || ' shared_buffers=' || current_setting('shared_buffers') || ' extension_build_profile=' || ecaz_build_profile() || ' extension_git_sha=' || ecaz_build_git_sha();",
+        "--log-output",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/precheck-host.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task231",
+        "packet005",
+        "setup",
+        "precheck",
+        "intel-local"
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/precheck-host.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1788085342575,
+      "finished_at_unix_ms": 1788085342595,
+      "duration_ms": 18,
+      "exit_code": 0
+    },
+    {
+      "name": "task231-warm-10k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "10k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-10k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-10k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in warm 10k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/control-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/control-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-10k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "10k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-10k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-10k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in warm 10k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/fixed-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-a/fixed-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-10k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "10k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-10k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-10k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in warm 10k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/fixed-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/fixed-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-10k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "10k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-10k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-10k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in warm 10k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/control-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/10k/pair-b/control-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-50k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "50k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-50k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-50k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in warm 50k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/control-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/control-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-50k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "50k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-50k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-50k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in warm 50k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/fixed-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-a/fixed-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-50k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "50k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-50k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-50k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in warm 50k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/fixed-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/fixed-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-50k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "50k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-50k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-50k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in warm 50k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/control-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/50k/pair-b/control-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-100k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-100k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-100k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in warm 100k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/control-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/control-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-100k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-100k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-100k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in warm 100k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/fixed-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-a/fixed-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-100k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-100k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-100k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in warm 100k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/fixed-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/fixed-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-warm-100k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-warm-100k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-warm-100k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in warm 100k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/control-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/warm/100k/pair-b/control-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-10k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "10k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-10k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-10k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in controlled-cold 10k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-a/control-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-10k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "10k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-10k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-10k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in controlled-cold 10k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-a/fixed-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-10k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "10k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-10k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-10k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in controlled-cold 10k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-b/fixed-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-10k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "10k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-10k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-10k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in controlled-cold 10k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/10k/pair-b/control-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-50k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "50k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-50k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-50k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in controlled-cold 50k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-a/control-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-50k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "50k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-50k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-50k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in controlled-cold 50k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-a/fixed-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-50k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "50k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-50k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-50k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in controlled-cold 50k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-b/fixed-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-50k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "50k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-50k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-50k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in controlled-cold 50k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/50k/pair-b/control-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-100k-a-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "100k",
+        "pair_a",
+        "control",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-100k-a-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-100k-a-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, first in controlled-cold 100k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-a/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-a/control-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-100k-a-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "100k",
+        "pair_a",
+        "fixed_stride",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-100k-a-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-100k-a-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, second in controlled-cold 100k pair A."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-a/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-a/fixed-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-100k-b-fixed-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "100k",
+        "pair_b",
+        "fixed_stride",
+        "first",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-100k-b-fixed-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-100k-b-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate, first in controlled-cold 100k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-b/fixed-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-b/fixed-first/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-cold-100k-b-control-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "controlled_cold",
+        "100k",
+        "pair_b",
+        "control",
+        "second",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-cold-100k-b-control-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-cold-100k-b-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control, second in controlled-cold 100k pair B."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-b/control-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/controlled-cold/100k/pair-b/control-second/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-wide-100k-control-first",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "wide_beam",
+        "control",
+        "first",
+        "transfer",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-wide-100k-control-first"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-wide-100k-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh current-heap control for the preregistered BW16/H25 transfer pair."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/control-first/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/control-first/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/control-first/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task231-wide-100k-fixed-second",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task231",
+        "packet005",
+        "warm",
+        "100k",
+        "wide_beam",
+        "fixed_stride",
+        "second",
+        "transfer",
+        "nfr022",
+        "metrics_mode=full_metrics",
+        "run_dir=/home/peter/.ecaz/clusters/task231-wide-100k-fixed-second"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production",
+          "id": "task231-wide-100k-fixed",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh fixed-stride candidate for the preregistered BW16/H25 transfer pair."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/fixed-second/distann-multinode-summary.log",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/fixed-second/physical-head-membership.json",
+        "reviews/task-231/005-full-scale-decision/artifacts/run/wide-beam/100k/fixed-second/physical-graph-diagnostic.json"
+      ],
+      "status": "skipped"
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "host-data-checksums-on",
+      "step": "precheck-host",
+      "metric": "task231_host_precheck",
+      "filters": {
+        "data_checksums": "on"
+      },
+      "field": "data_checksums_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "data_checksums_numeric 1 Eq 1 -> true"
+    }
+  ]
+}

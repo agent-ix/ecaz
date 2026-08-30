@@ -148,3 +148,51 @@
   lock when the owner-local mutation context ends, before remote prepare. The
   full matrix will restart from a fresh precheck and fresh fixtures only after
   Packet 006 review closes that correction.
+
+## Accepted-SHA rebuild and fresh precheck
+
+- Timestamp: `2026-08-30T03:22:37-07:00`.
+- Accepted measurement extension SHA:
+  `66b53998a955b583ca43c0e967806aa29e0a4404`; Packet 006 seq-02 review is
+  closed DONE in
+  `reviews/task-231/006-prepared-lock-lifetime/feedback/2026-08-30-02-reviewer.md`.
+- The extension was built from the detached task-owned worktree
+  `/home/peter/dev/ecaz/.worktrees/task231-run-build` at that exact SHA. Both
+  installs used `cargo pgrx install --release --no-default-features --features
+  'pg18 distann-head-attribution-benchmark'`: the multinode install used
+  `--pg-config /home/peter/.ecaz/toolchains/pg18-ssl/bin/pg_config`, and the
+  scratch-precheck install used
+  `--pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config`.
+- `run/cargo-pgrx-install-release-accepted.log` SHA-256:
+  `e63f9ba84d885d09052a44190ce6ba1860607f57a304638c23870143eac143bd`;
+  `run/cargo-pgrx-install-release-accepted-precheck-host.log` SHA-256:
+  `0a73ae19197e6f52243dc42244e3a048de5f270dd5bf40e15f969cbb6ba705df`.
+  Both installs completed successfully.
+- After restarting PG18, `run/precheck-runtime-identity.log` (SHA-256
+  `ec7bc36914956009a9b611b7707b2eda787bbb38c0f64d9b02c92a28d4754118`)
+  directly reports the exact accepted SHA, profile `release`, and checksums
+  `on`.
+- Fresh suite precheck command: `/home/peter/.cargo-target/debug/ecaz bench
+  suite run --config
+  crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json --only
+  precheck-host --manifest-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest-precheck.json
+  --results-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/results-precheck.jsonl
+  --log-file
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-precheck.log`.
+- The frozen config SHA-256 remains
+  `48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211`.
+  `run/suite-manifest-precheck.json` SHA-256:
+  `191d33ded2853fa13b2508616897c4071d0d72ad13b3f1709fa5367c76df4683`;
+  `run/results-precheck.jsonl` SHA-256:
+  `d6c3b883fd10e564ae072f9c04c972645a0a01d16eac7544b4409b7d4efa25f2`;
+  `run/suite-precheck.log` SHA-256:
+  `3283998e1309dc211f3801dfad4fe0c56a1bbf72971428917daa7ca784c15d7f`;
+  `run/precheck-host.log` SHA-256:
+  `7eceeb5984c4ed24af963603f53b2328d24978329a8670ead435505ba5915f86`.
+- Key result: the fresh precheck succeeded with PostgreSQL 18.3, data
+  checksums `on`, shared buffers `128MB`, extension profile `release`, and
+  extension SHA exactly `66b53998a955b583ca43c0e967806aa29e0a4404`. All
+  26 measurement steps were selection-skipped; no control or candidate result
+  from attempt 001 is reused.
