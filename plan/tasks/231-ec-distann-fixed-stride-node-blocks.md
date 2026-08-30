@@ -4,9 +4,9 @@ Status: **implementation complete through lifecycle/DML — Packet 003 reader
 and Packet 004 raw-tail allocator are review-closed DONE; Packet 005
 preregistration is review-closed DONE, but decision attempt 001 is invalid
 after exposing a prepared-transaction raw-lock self-deadlock; Packet 006's lock
-fix is review-closed DONE at seq-01, with a prepared-writer regression and
-tuple-target guard at `66b53998a` review-open as seq-02 before a fresh
-full-matrix restart; Packets 001/002 remain open for final reconciliation**
+fix plus prepared-writer regression and tuple-target guard at `66b53998a` are
+review-closed DONE through seq-02; a fresh full-matrix restart at that accepted
+extension SHA is authorized; Packets 001/002 remain open for reconciliation**
 (2026-08-30). Priority: P1 graph-storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate

@@ -45,7 +45,7 @@
   `resident_buffers_after` rather than falling through as a generic drill.
 - Suite audit at the same source checkpoint remains `audit passed: 27 steps`.
 
-## Decision-run build and host precheck
+## Decision-run build and host precheck (attempt 001 archive)
 
 - Timestamp: `2026-08-30T01:50:48-07:00`.
 - Head SHA: `1f88b553e140628e5d70f72632599f15705b1f25`.
@@ -69,7 +69,10 @@
   `1d1771e09081166bc5a3dd380154c3fce4b57751b26c40896c1ee486769f950f`;
   exit code 0. The single dead-code warning is pre-existing and does not
   affect the release extension backend used by measured fixtures.
-- `run/precheck-runtime-identity.log` is the post-restart direct identity
+- The original `artifacts/run/` directory was moved without content changes to
+  `artifacts/attempt-001/` after the attempt was declared invalid, before the
+  corrected run reused the suite config's fixed artifact path.
+- `attempt-001/precheck-runtime-identity.log` is the post-restart direct identity
   check. SHA-256:
   `1c902bc5448d9e8ae14775e5eaa98bb7760968888c0484a9588f97ddf2ddd704`.
   Key result: exact SHA `1f88b553e140628e5d70f72632599f15705b1f25`,
@@ -82,11 +85,11 @@
   reviews/task-231/005-full-scale-decision/artifacts/run/results-precheck.jsonl
   --log-file
   reviews/task-231/005-full-scale-decision/artifacts/run/suite-precheck.log`.
-- `run/suite-precheck.log` SHA-256:
+- `attempt-001/suite-precheck.log` SHA-256:
   `3283998e1309dc211f3801dfad4fe0c56a1bbf72971428917daa7ca784c15d7f`;
-  `run/suite-manifest-precheck.json` SHA-256:
+  `attempt-001/suite-manifest-precheck.json` SHA-256:
   `b5dd097905cc48a6a97a08cc0485b5956c26006b5fe57172098357a0fa8e13f4`;
-  `run/results-precheck.jsonl` SHA-256:
+  `attempt-001/results-precheck.jsonl` SHA-256:
   `bcc1fd93cc804bf3a3ea1d4e26035ed1207425d5e3613021e35edf5945f5e566`.
 - Key result: one selected step completed, zero failed, zero missing or stale
   artifacts. PostgreSQL 18.3 reported checksums `on`, shared buffers `128MB`,
@@ -114,14 +117,14 @@
   runner cleaned the completed control fixture. The interrupted fixed fixture
   was stopped with `pg_ctl -m fast` and removed after its diagnostic was copied
   packet-locally; neither cluster is review evidence.
-- `run/suite-manifest.json` SHA-256:
+- `attempt-001/suite-manifest.json` SHA-256:
   `62b7181aaf1435d27ee944d5112e5af632a6fdb49fc4fce5f16eb71a16805774`.
   It correctly records only the host precheck and
   `task231-warm-10k-a-control-first` as succeeded; the fixed arm and all later
-  steps remain pending. `run/suite-run.log` SHA-256:
+  steps remain pending. `attempt-001/suite-run.log` SHA-256:
   `b60b12bd6677d60ea4619f671fedaaa78283c8d5dc72d83900e7d410d9bc92cc`.
 - The completed control summary is
-  `run/warm/10k/pair-a/control-first/distann-multinode-summary.log`, SHA-256
+  `attempt-001/warm/10k/pair-a/control-first/distann-multinode-summary.log`, SHA-256
   `24c52a1e11d35f79532c2a930ee9ac6be3fff95c8c7778fec6d4ee84940be738`.
   Key lines: distinct recall `0.9990`, warm concurrency-1 mean latency
   `7.56 ms`, physical generation bytes `242860032`, and cluster raw node-store
@@ -131,10 +134,10 @@
 - The fixed arm passed build, checksum, topology, serving, recall, latency,
   graph diagnostics, and the exact raw-store size relation before stalling in
   routed DML. Its partial log is
-  `run/warm/10k/pair-a/fixed-second/distann-local-multinode.log`, SHA-256
+  `attempt-001/warm/10k/pair-a/fixed-second/distann-local-multinode.log`, SHA-256
   `6355c22373d787b9e61b58c31bcf9ec965d71a3ac50225c5286dcdeff1e2dfed`.
   Those partial measurements are invalid and are not used for an A/B claim.
-- `run/fixed-stride-10k-a-stall-diagnostic.md` SHA-256:
+- `attempt-001/fixed-stride-10k-a-stall-diagnostic.md` SHA-256:
   `86cdeb31b4cbdb374fd723e06749dea9babdd6ccaabbf9b5fc9404088acba417`.
   It proves a prepared remote transaction held the fixed node store's
   self-conflicting `ShareRowExclusiveLock` while a later backlink transaction
