@@ -2,8 +2,9 @@
 
 Status: **implementation complete through lifecycle/DML — Packet 003 reader
 and Packet 004 raw-tail allocator are review-closed DONE; Packet 005
-full-scale preregistration seq-04 is review-open and no measurement has run;
-Packets 001/002 remain open for final design/handoff reconciliation**
+full-scale preregistration is review-closed DONE at seq-04 and the frozen
+27-step decision run is authorized but not yet started; Packets 001/002 remain
+open for final design/handoff reconciliation**
 (2026-08-30). Priority: P1 graph-storage/retrieval latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
