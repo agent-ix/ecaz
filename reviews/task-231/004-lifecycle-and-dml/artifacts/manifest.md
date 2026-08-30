@@ -48,3 +48,24 @@
 - Result: PASS; command exit code 0.
 - Exceptions: the two allowed lints are pre-existing repository-wide
   exceptions used by Packet 003; no Task 231 warning is suppressed.
+
+## `fixed-stride-review-seq01-pg18.log`
+
+- Timestamp: `2026-08-30T00:16:51-07:00`.
+- Head SHA: `471bfe372`.
+- Command: `cargo pgrx test pg18 test_distann_fixed_stride` (captured with
+  `script -q -e -c` so the command's exit status is preserved).
+- SHA-256: `4510ac26d44b868f295db10b207d5e833ff96f98351948541c82015b1795ccf1`.
+- Result: `4 passed; 0 failed`; command exit code 0.
+- Isolation: each lifecycle fixture owns its one-index generation. The
+  concurrency fixture adds two loopback Repeatable Read sessions against that
+  isolated index, establishes both snapshots before mutation, and verifies
+  distinct committed ordinals 1 and 2.
+- Key covered results: physical-tail allocation is independent of MVCC
+  directory visibility; the raw relation lock is acquired once per mutation
+  context; an aborted ordinal is left unreachable and never reused; lifecycle
+  reclaim and seal/topology coverage remain green.
+
+The earlier `fixed-stride-dml-pg18.log` describes the superseded dense/reused
+tail behavior at `08075a341`. The seq-01 review receipt above is authoritative
+for Packet 004's final monotonic, gap-preserving allocation contract.

@@ -2,13 +2,13 @@
 agent: Codex
 role: coder
 model: GPT-5
-date: 2026-08-29
-seq: 1
+date: 2026-08-30
+seq: 2
 ---
 
 # Task 231 fixed-stride lifecycle and DML checkpoint
 
-Status: review-open. Code checkpoint: `08075a341274f9f76df018f503af912d6d95b0e5`.
+Status: review-open. Code checkpoint: `471bfe372`.
 GitHub ticket: issue #97.
 
 This checkpoint completes Packet 004's fixed-stride lifecycle and Task 167
@@ -23,19 +23,22 @@ or hot/cold branches.
   rewrite a Published base node.
 - Inserts append one complete raw node, then publish its `(vec_id,
   node_ordinal, row_tid, record_version, is_current)` directory row in the
-  caller's PostgreSQL transaction. Raw node WAL can survive an abort, while
-  the MVCC directory publication cannot; the next writer reuses and overwrites
-  that unreachable tail ordinal.
+  caller's PostgreSQL transaction. Allocation comes from the raw relation's
+  physically written tail while holding its mutation lock, not from an MVCC
+  directory maximum. Raw node WAL can survive an abort while the directory
+  publication cannot, so the next writer advances past the unreachable raw
+  extent and leaves a deliberate ordinal gap; raw ordinals are never reused.
 - Replacements, tombstones, and backlink amendments append complete overlay
   nodes. The old raw node and historical directory row remain intact; only the
   old directory row's `is_current` flag and the new directory publication move
   transactionally. Tombstones preserve the exact vector, row locator, search
   code, and adjacency rather than mutating a Published base node in place.
-- Overlay allocation holds `ShareRowExclusiveLock` on the raw relation through
-  transaction end. It remains compatible with serving `AccessShareLock`
-  readers and prevents two owner-local writers from selecting the same tail
-  ordinal. The allocator scans every historical directory row, not only the
-  current partial-unique surface.
+- The mutation context acquires `ShareRowExclusiveLock` on the raw relation
+  exactly once and retains it through transaction end. It remains compatible
+  with serving `AccessShareLock` readers and serializes physical-tail
+  allocation without an MVCC directory scan. Packed tails are fully decoded
+  before their next slot is admitted; multi-block tails must end on an exact
+  extent boundary.
 - Mutation reads use the fully verified decoder before deriving a replacement,
   tombstone, or backlink, including directory/node identity and row-locator
   agreement. A backlink preserves both a prior tombstone and the raw node's
@@ -46,17 +49,24 @@ or hot/cold branches.
 
 ## Focused PG18 evidence
 
-- `test_distann_fixed_stride_dml_append_overlay_and_rollback`: PASS, 1/1. It
+- `test_distann_fixed_stride_dml_append_overlay_and_rollback`: PASS. It
   covers base ordinal 0, insert ordinal 1, stable-identity replacement ordinal
   2, tombstone ordinal 3 and idempotent retry, an injected post-raw-write abort,
-  reuse of the unreachable ordinal 4 tail, and two backlink overlays allocated
-  as ordinals 5 and 6 inside one transaction. It verifies exact vectors,
+  the unreachable ordinal 4 gap, retry at ordinal 5, and two backlink overlays
+  allocated as ordinals 6 and 7 inside one transaction. It verifies exact vectors,
   locators, tombstone preservation, adjacency, historical rows, and MVCC
   rollback.
-- `test_distann_fixed_stride_retire_reclaim_rollback`: PASS, 1/1. It proves the
+- `test_distann_fixed_stride_repeatable_read_ordinal_allocation`: PASS. Two
+  loopback sessions both establish Repeatable Read snapshots before writing;
+  the second blocks behind the first transaction and then appends ordinal 2,
+  proving snapshot age cannot cause ordinal collision.
+- `test_distann_fixed_stride_retire_reclaim_rollback`: PASS. It proves the
   raw store survives retirement and failed reclaim, then disappears with the
   other generation relations on successful idempotent reclaim.
-- PG18 library clippy with warnings denied: PASS.
+- `test_distann_fixed_stride_stage_seal_receipt_and_topology`: PASS. Together,
+  the combined focused run is `4 passed; 0 failed` at `471bfe372`.
+- PG18 library clippy with warnings denied: PASS at the original checkpoint;
+  the seq-02 change is covered by the focused PG18 build and tests above.
 
 The packet-local commands, timestamps, hashes, integrity prerequisite, and key
 result lines are recorded in [`artifacts/manifest.md`](artifacts/manifest.md).
@@ -66,9 +76,9 @@ restart/reopen observation, and the PROMOTE-or-STOP decision.
 
 ## Reviewer focus
 
-Please review the raw-WAL-before-MVCC-publication ordering, snapshot visibility
-after the transaction-scoped ordinal lock, abort-tail reuse, preservation of
-the fixed node's exact vector through amendments, and lock ordering when one
-coordinator transaction visits multiple owners. Packet 005 must not start its
-decision run until any Packet 003 seq-06 and Packet 004 findings that affect
-the measured path are closed.
+Please re-review the four seq-01 findings. The allocator no longer consults an
+MVCC snapshot, performs no directory scan, and locks once per mutation context;
+the combined PG18 receipt exercises the new concurrent Repeatable Read case.
+Packet 005 will measure raw-store bytes before/after its DML workload. Its
+decision run remains blocked until Packet 004 and Packet 005 preregistration
+are review-closed.
