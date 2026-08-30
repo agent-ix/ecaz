@@ -155,7 +155,9 @@ finalist-stability and hideable-RTT premise.
 The operator-selected storage sequence remains mandatory and unstacked:
 
 1. Task 229 — covering scalar payload sidecar;
-2. Task 230 — hot exact-vector/scalar plus cold arbitrary-payload row tiers;
+2. Task 230 — hot exact-vector/scalar plus cold arbitrary-payload row tiers —
+   review-closed STOP; mechanism/storage confirmed, but it loses to the warm
+   row-heap control under the frozen conjunctive gate;
 3. Task 231 — fixed-stride dense-ordinal graph/vector node extents;
 4. Task 232 — packed per-attnum columnar immutable row tier; and
 5. Task 233 — fixed-stride graph/vector plus non-vector packed payload hybrid.
@@ -524,7 +526,7 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-13 | Query-routed coordinator colocated with likely result owner | deferred topology decision |
 | ARCH-14 | Per-query coordinator selection under one logical index | deferred lifecycle/routing decision |
 | ARCH-15 | Workload-aware payload replication | deferred storage/lifecycle decision |
-| ARCH-16 | Vertically split hot exact-vector/scalar tier and cold arbitrary-payload tier | active Task 230 — mandatory prototype; one authoritative tier per attribute |
+| ARCH-16 | Vertically split hot exact-vector/scalar tier and cold arbitrary-payload tier | **review-closed STOP, no candidate (Task 230):** tier laziness works and hot storage is the predicted 1.3337× raw-vector bytes; hot/cold is position-insensitive at 9.47/9.47 ms but loses to the warm row-heap control at 8.67 ms under the frozen two-pair gate. Tasks 231/232 inherit stability plus PLAIN-page arithmetic, not a general “hot/cold is slower” claim |
 | ARCH-17 | Dense-ordinal fixed-stride graph/vector node extents | active Task 231 — mandatory prototype; PostgreSQL relation/WAL backed |
 | ARCH-18 | Fixed-stride graph/vector plus packed non-vector payload hybrid | active Task 233 — mandatory integration prototype after 232; one shared ordinal and no duplicate exact vector |
 
