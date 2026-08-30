@@ -41,6 +41,25 @@ struct FixedStrideDmlContext {
     published_ordinal_floor: u64,
 }
 
+impl Drop for FixedStrideDmlContext {
+    fn drop(&mut self) {
+        // Raw extents are non-MVCC and the physical tail is the allocation
+        // authority. Release the writer lock when this owner-local mutation
+        // context has finished all of its appends, before a remote write can
+        // be PREPAREd. Retaining this self-conflicting lock in a prepared
+        // transaction deadlocks a later backlink RPC to the same owner. A
+        // concurrent writer that enters afterwards observes the physically
+        // advanced tail; if this transaction later aborts, its raw extents
+        // remain deliberate unreachable gaps.
+        unsafe {
+            pg_sys::UnlockRelationOid(
+                (*self.relation.as_ptr()).rd_id,
+                pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            );
+        }
+    }
+}
+
 impl FixedStrideDmlContext {
     fn open(
         identity: Option<(pg_sys::Oid, FixedStrideMetadataV1, u64)>,
@@ -52,25 +71,24 @@ impl FixedStrideDmlContext {
             .ok_or_else(|| {
                 "EC_GENERATION_MISSING: fixed-stride DML node store is absent".to_owned()
             })?;
-        let handle = NonNull::new(relation.as_ptr()).ok_or_else(|| {
-            "EC_GENERATION_MISSING: fixed-stride DML node store opened null".to_owned()
-        })?;
-        // Acquire exactly once per owner-local DML context and deliberately
-        // retain the lock through transaction end. ShareRowExclusive remains
-        // compatible with serving AccessShare readers while serializing the
-        // raw-store tail calculation and append across all isolation levels.
+        // Acquire exactly once per owner-local DML context. ShareRowExclusive
+        // remains compatible with serving AccessShare readers while
+        // serializing every physical-tail calculation and append performed by
+        // this context. `Drop` releases it after the context's last raw write,
+        // before a remote transaction can be PREPAREd.
         unsafe {
             pg_sys::LockRelationOid(
                 (*relation.as_ptr()).rd_id,
                 pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             );
         }
-        fixed_stride_store::read_metadata(handle, &metadata)?;
-        Ok(Some(Self {
+        let context = Self {
             relation,
             metadata,
             published_ordinal_floor,
-        }))
+        };
+        fixed_stride_store::read_metadata(context.handle(), &context.metadata)?;
+        Ok(Some(context))
     }
 
     fn handle(&self) -> crate::storage::relation::RelationHandle {

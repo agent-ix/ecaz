@@ -9574,6 +9574,7 @@ fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
     }
 
     let (appended_tx, appended_rx) = std::sync::mpsc::channel::<()>();
+    let (allow_first_commit_tx, allow_first_commit_rx) = std::sync::mpsc::channel::<()>();
     let first_function = insert_function.clone();
     let first_fingerprint = fingerprint.clone();
     let first_writer = std::thread::spawn(move || -> Result<i64, String> {
@@ -9588,7 +9589,9 @@ fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
         appended_tx
             .send(())
             .map_err(|error| format!("first append signal failed: {error}"))?;
-        std::thread::sleep(std::time::Duration::from_millis(250));
+        allow_first_commit_rx
+            .recv()
+            .map_err(|error| format!("first commit release failed: {error}"))?;
         first
             .batch_execute("COMMIT")
             .map_err(|error| format!("first repeatable-read commit failed: {error}"))?;
@@ -9598,6 +9601,7 @@ fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
         .recv()
         .expect("first writer should hold the mutation lock after appending");
 
+    let (second_appended_tx, second_appended_rx) = std::sync::mpsc::channel::<()>();
     let second_writer = std::thread::spawn(move || -> Result<i64, String> {
         let vec_id = second
             .query_one(
@@ -9607,11 +9611,20 @@ fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
             .map_err(|error| format!("second repeatable-read insert failed: {error}"))?
             .try_get::<_, i64>(0)
             .map_err(|error| format!("second repeatable-read vec_id failed: {error}"))?;
+        second_appended_tx
+            .send(())
+            .map_err(|error| format!("second append signal failed: {error}"))?;
         second
             .batch_execute("COMMIT")
             .map_err(|error| format!("second repeatable-read commit failed: {error}"))?;
         Ok(vec_id)
     });
+    let second_appended_before_first_commit = second_appended_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .is_ok();
+    allow_first_commit_tx
+        .send(())
+        .expect("first writer should be released to commit");
     let first_vec_id = first_writer
         .join()
         .expect("first writer thread should not panic")
@@ -9620,6 +9633,10 @@ fn test_distann_fixed_stride_repeatable_read_ordinal_allocation() {
         .join()
         .expect("second writer thread should not panic")
         .expect("second repeatable-read writer should commit");
+    assert!(
+        second_appended_before_first_commit,
+        "the raw-tail lock must be released after the first owner-local context, before its transaction commits"
+    );
     assert_ne!(first_vec_id, second_vec_id);
     let allocation = setup
         .query_one(
