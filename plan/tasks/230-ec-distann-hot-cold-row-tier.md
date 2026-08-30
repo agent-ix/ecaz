@@ -24,8 +24,9 @@ the derived 8192/6144 = 1.3333); and **hot/cold is position-insensitive at
 it beats a cool control and loses to a warm one. Tasks 231/232 inherit that
 result, not "hot/cold is slower". Two of six §6 directional predictions were
 falsified and reported as such, including cold-only coming back *better* than
-predicted. **Carried:** propagate the STOP to GitHub issue #96 (now the
-authoritative tracker) and to the roadmap's ARCH-16 row.**
+predicted. **Closeout propagated:** GitHub issue #96 is closed with this STOP
+record, and the roadmap's ARCH-16 row records the same disposition and inherited
+finding.**
 
 Prior review status: **implementation complete; Packet 004 full-scale decision is STOP, no
 candidate — disposition CORRECT but seq-03 reviewed NOT DONE on its stated
