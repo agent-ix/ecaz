@@ -6716,6 +6716,52 @@ impl PhysicalGenerationScan {
         Ok((generation, Arc::clone(&self.descriptor)))
     }
 
+    /// Return the immutable raw-store admission state needed by one published
+    /// generation mutation. The Ready count is the floor below which DML may
+    /// never rewrite a base node; later overlay ordinals are derived from the
+    /// graph directory while holding the node-store mutation lock.
+    pub(crate) fn fixed_stride_dml_identity(
+        &self,
+    ) -> Result<Option<(pg_sys::Oid, FixedStrideMetadataV1, u64)>, String> {
+        let Some(metadata) = self.fixed_stride_metadata.as_ref() else {
+            if self.node_store.is_some() {
+                return Err(
+                    "EC_GENERATION_MISSING: node store exists without fixed-stride metadata"
+                        .to_owned(),
+                );
+            }
+            return Ok(None);
+        };
+        let generation = self
+            .generation
+            .as_ref()
+            .ok_or_else(|| "EC_GENERATION_MISSING: fixed-stride generation is absent".to_owned())?;
+        let node_store_relid = generation.node_store_relid.ok_or_else(|| {
+            "EC_GENERATION_MISSING: fixed-stride generation has no node store".to_owned()
+        })?;
+        let receipt_bytes = generation.ready_receipt.as_ref().ok_or_else(|| {
+            "EC_READY_RECEIPT: Published fixed-stride generation has no Ready receipt".to_owned()
+        })?;
+        let receipt = super::manifest_v2::DistannReadyReceipt::decode(receipt_bytes)?;
+        let fixed = receipt.fixed_stride.as_ref().ok_or_else(|| {
+            "EC_READY_RECEIPT: fixed-stride generation receipt omits raw-store evidence".to_owned()
+        })?;
+        if fixed.node_store_relid != node_store_relid.to_u32()
+            || fixed.layout_descriptor_digest != metadata.layout.digest()?
+            || fixed.committed_node_count != receipt.owned_record_count
+        {
+            return Err(
+                "EC_READY_RECEIPT: fixed-stride DML identity differs from Ready evidence"
+                    .to_owned(),
+            );
+        }
+        Ok(Some((
+            node_store_relid,
+            metadata.clone(),
+            fixed.committed_node_count,
+        )))
+    }
+
     pub(crate) fn row_schema_attributes(&self) -> Vec<u16> {
         self.descriptor
             .row_schema

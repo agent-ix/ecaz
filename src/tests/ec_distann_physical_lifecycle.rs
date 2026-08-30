@@ -7628,6 +7628,7 @@ fn create_covered_distann_participant_lifecycle_fixture(
         true,
         false,
         false,
+        false,
         &[],
     )
 }
@@ -7642,6 +7643,7 @@ fn create_readable_covered_distann_participant_lifecycle_fixture(
         1,
         true,
         true,
+        false,
         false,
         &[],
     )
@@ -7658,6 +7660,7 @@ fn create_hot_cold_distann_participant_lifecycle_fixture(
         false,
         false,
         true,
+        false,
         &[],
     )
 }
@@ -7673,6 +7676,7 @@ fn create_hot_cold_null_distann_participant_lifecycle_fixture(
         false,
         false,
         true,
+        false,
         &[1, 3],
     )
 }
@@ -7689,6 +7693,23 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
         false,
         false,
         false,
+        false,
+        &[],
+    )
+}
+
+fn create_fixed_stride_distann_participant_lifecycle_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannParticipantLifecycleFixture {
+    create_distann_participant_lifecycle_fixture_configured(
+        stem,
+        build_marker,
+        1,
+        false,
+        false,
+        false,
+        true,
         &[],
     )
 }
@@ -7700,10 +7721,19 @@ fn create_distann_participant_lifecycle_fixture_configured(
     covered: bool,
     readable_row_tier_schema: bool,
     hot_cold: bool,
+    fixed_stride: bool,
     null_positions: &[usize],
 ) -> DistannParticipantLifecycleFixture {
-    assert!(!(covered && hot_cold), "sidecar and hot/cold are exclusive");
-    let generation = if hot_cold {
+    assert!(
+        usize::from(covered) + usize::from(hot_cold) + usize::from(fixed_stride) <= 1,
+        "sidecar, hot/cold, and fixed-stride fixtures are exclusive"
+    );
+    let generation = if fixed_stride {
+        assert_eq!(row_count, 1, "fixed-stride lifecycle fixture is single-row");
+        let mut generation = create_distann_physical_generation_fixture(stem, build_marker);
+        configure_fixed_stride_generation_fixture(&mut generation);
+        generation
+    } else if hot_cold {
         assert_eq!(row_count, 1, "hot/cold lifecycle fixture is single-row");
         let mut generation = create_distann_physical_generation_fixture(stem, build_marker);
         configure_hot_cold_generation_fixture(&mut generation, &[]);
@@ -8623,6 +8653,76 @@ fn test_distann_hot_cold_retire_reclaim_rollback() {
 }
 
 #[pg_test]
+fn test_distann_fixed_stride_retire_reclaim_rollback() {
+    let fixture = create_fixed_stride_distann_participant_lifecycle_fixture(
+        "ec_distann_fixed_stride_retire",
+        0x6b,
+    );
+    let generation_relations = [
+        fixture.relations.0,
+        fixture.relations.1,
+        fixture.relations.2,
+        distann_node_store_relation_oid(&fixture.generation),
+    ];
+
+    assert_eq!(publish_distann_participant(&fixture), fixture.fingerprint);
+    mark_distann_participant_retired(&fixture);
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "retirement must retain the raw node store while readers may drain"
+        );
+    }
+
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &fixture.retire_decision_bytes,
+            &fixture.retire_decision_digest,
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: fixed-stride reclaim transaction rollback");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    for relation in generation_relations {
+        assert_ne!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "rollback must restore the raw node store with the other generation relations"
+        );
+    }
+
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    for relation in generation_relations {
+        assert_eq!(
+            unsafe { pg_sys::get_rel_relkind(relation) },
+            0,
+            "reclaim must drop the raw node store with the other generation relations"
+        );
+    }
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 '{}'::regclass, '{}'::uuid
+             )",
+            fixture.generation.index_name, fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Reclaimed")
+    );
+}
+
+#[pg_test]
 fn test_distann_cover_sidecar_retire_reclaim_rollback() {
     let fixture =
         create_covered_distann_participant_lifecycle_fixture("ec_distann_cover_participant", 0x6a);
@@ -8793,6 +8893,51 @@ fn apply_distann_owner_insert(
         )
         .expect("covered owner insert should succeed");
     }
+}
+
+fn read_current_fixed_stride_node(
+    fixture: &DistannParticipantLifecycleFixture,
+    vec_id: u64,
+) -> crate::am::ec_distann::FixedStrideNodeV1ForTest {
+    let graph_name = canonical_index_locator(fixture.relations.1);
+    let ordinal = Spi::get_one::<i64>(&format!(
+        "SELECT node_ordinal FROM {graph_name} WHERE vec_id = {} AND is_current",
+        i64::from_le_bytes(vec_id.to_le_bytes())
+    ))
+    .unwrap()
+    .expect("fixed-stride current directory row should exist");
+    let ordinal = u64::try_from(ordinal).expect("fixed-stride test ordinal should be nonnegative");
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .expect("fixed-stride test descriptor should decode");
+    let metadata = crate::am::ec_distann::FixedStrideMetadataV1ForTest {
+        generation_tag: crate::am::ec_distann::fixed_stride_generation_tag_for_test(
+            &descriptor.digest().unwrap(),
+            fixture.generation.logical_index_uuid.as_bytes(),
+            fixture.generation.build_id.as_bytes(),
+        ),
+        layout: descriptor
+            .fixed_stride_layout
+            .clone()
+            .expect("fixed-stride test descriptor should carry its layout"),
+    };
+    let relation = crate::storage::relation_guard::RelationGuard::try_open(
+        distann_node_store_relation_oid(&fixture.generation),
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )
+    .expect("fixed-stride test node store should open");
+    let handle = std::ptr::NonNull::new(relation.as_ptr()).unwrap();
+    crate::am::ec_distann::read_fixed_stride_metadata_for_test(handle, &metadata).unwrap();
+    let mut node = crate::am::ec_distann::FixedStrideNodeV1ForTest::empty();
+    crate::am::ec_distann::read_fixed_stride_node_verified_for_test(
+        handle,
+        &metadata,
+        ordinal,
+        vec_id,
+        &mut node,
+    )
+    .expect("fixed-stride current node should verify");
+    node
 }
 
 #[pg_test]
@@ -9113,6 +9258,187 @@ fn test_distann_cover_sidecar_dml_atomicity() {
         Some(0),
         "fault rollback must remove the row tier, sidecar, and graph append"
     );
+}
+
+#[pg_test]
+fn test_distann_fixed_stride_dml_append_overlay_and_rollback() {
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("fixed-stride DML fixture should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("fixed-stride DML fixture should identify its sole immutable owner");
+    let fixture = create_fixed_stride_distann_participant_lifecycle_fixture(
+        "ec_distann_fixed_stride_dml",
+        0x7e,
+    );
+    publish_distann_participant(&fixture);
+    let row_name = canonical_index_locator(fixture.relations.0);
+    let graph_name = canonical_index_locator(fixture.relations.1);
+    let counts = || {
+        Spi::get_three::<i64, i64, i64>(&format!(
+            "SELECT (SELECT count(*) FROM {row_name}),
+                    (SELECT count(*) FROM {graph_name}),
+                    (SELECT max(node_ordinal) FROM {graph_name})"
+        ))
+        .unwrap()
+    };
+    assert_eq!(counts(), (Some(1), Some(1), Some(0)));
+
+    let identity = distann_test_v4_uuid(0x8e);
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let inserted_vector = vec![0.0, 1.0, 0.0, 0.0];
+    apply_distann_owner_insert(
+        &fixture,
+        identity,
+        "fixed inserted payload",
+        inserted_vector.clone(),
+        false,
+    );
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(2), Some(2), Some(1)));
+    let inserted = read_current_fixed_stride_node(&fixture, vec_id);
+    assert_eq!(inserted.node_ordinal, 1);
+    assert_eq!(inserted.exact_vector, inserted_vector);
+    assert!(!inserted.tombstoned);
+
+    let replacement_vector = vec![0.0, 0.0, 1.0, 0.0];
+    let replacement_snapshot =
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
+            .expect("fixed-stride replacement should use a fresh statement snapshot");
+    apply_distann_owner_insert(
+        &fixture,
+        identity,
+        "fixed replacement payload",
+        replacement_vector.clone(),
+        true,
+    );
+    drop(replacement_snapshot);
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(3), Some(2)));
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT count(*) = 2
+                    AND count(*) FILTER (WHERE is_current) = 1
+                    AND count(DISTINCT node_ordinal) = 2
+                    AND count(DISTINCT row_tid) = 2
+               FROM {graph_name}
+              WHERE vec_id = {}",
+            i64::from_le_bytes(vec_id.to_le_bytes())
+        ))
+        .unwrap(),
+        Some(true),
+        "replacement must retain the base/old overlay and publish one new ordinal"
+    );
+    let replacement = read_current_fixed_stride_node(&fixture, vec_id);
+    assert_eq!(replacement.node_ordinal, 2);
+    assert_eq!(replacement.exact_vector, replacement_vector);
+    assert_ne!(replacement.row_tid, inserted.row_tid);
+
+    assert!(unsafe {
+        crate::am::ec_distann::tombstone_owner_record_for_test(
+            fixture.generation.index_oid,
+            vec_id,
+            Some(fixture.fingerprint.clone().try_into().unwrap()),
+        )
+        .expect("fixed-stride tombstone overlay should succeed")
+    });
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(3), Some(4), Some(3)));
+    let tombstoned = read_current_fixed_stride_node(&fixture, vec_id);
+    assert_eq!(tombstoned.node_ordinal, 3);
+    assert!(tombstoned.tombstoned);
+    assert_eq!(tombstoned.row_tid, replacement.row_tid);
+    assert_eq!(tombstoned.exact_vector, replacement_vector);
+    assert!(!unsafe {
+        crate::am::ec_distann::tombstone_owner_record_for_test(
+            fixture.generation.index_oid,
+            vec_id,
+            Some(fixture.fingerprint.clone().try_into().unwrap()),
+        )
+        .expect("fixed-stride tombstone retry should be idempotent")
+    });
+
+    let failed_identity = distann_test_v4_uuid(0x9e);
+    let failed_vec_id = crate::am::ec_distann::vec_id_from_source_identity(&failed_identity);
+    let failed_vector = vec![0.0, 0.0, 0.0, 1.0];
+    let rollback = expect_pg_error_rolled_back(|| {
+        Spi::run("SET LOCAL ec_distann.debug_fail_insert = true").unwrap();
+        apply_distann_owner_insert(
+            &fixture,
+            failed_identity,
+            "fixed rolled back payload",
+            failed_vector.clone(),
+            false,
+        );
+    });
+    assert!(rollback.contains("EC_FAULT_INJECTED"), "{rollback}");
+    assert_eq!(counts(), (Some(3), Some(4), Some(3)));
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {graph_name} WHERE vec_id = {}",
+            i64::from_le_bytes(failed_vec_id.to_le_bytes())
+        ))
+        .unwrap(),
+        Some(0),
+        "rollback must leave no visible directory entry for the raw orphan tail"
+    );
+
+    apply_distann_owner_insert(
+        &fixture,
+        failed_identity,
+        "fixed retry payload",
+        failed_vector.clone(),
+        false,
+    );
+    unsafe { pg_sys::CommandCounterIncrement() };
+    assert_eq!(counts(), (Some(4), Some(5), Some(4)));
+    let retried = read_current_fixed_stride_node(&fixture, failed_vec_id);
+    assert_eq!(retried.node_ordinal, 4);
+    assert_eq!(retried.exact_vector, failed_vector);
+
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.generation.descriptor)
+            .unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let new_code = binding.encode(&retried.exact_vector);
+    let replacement_code = binding.encode(&replacement_vector);
+    unsafe {
+        crate::am::ec_distann::apply_owner_backlink_for_test(
+            fixture.generation.index_oid,
+            fixture.fingerprint.clone().try_into().unwrap(),
+            vec_id,
+            replacement_vector.clone(),
+            failed_vec_id,
+            retried.exact_vector.clone(),
+            &new_code,
+        )
+        .expect("fixed-stride backlink should publish an overlay node");
+        crate::am::ec_distann::apply_owner_backlink_for_test(
+            fixture.generation.index_oid,
+            fixture.fingerprint.clone().try_into().unwrap(),
+            failed_vec_id,
+            retried.exact_vector.clone(),
+            vec_id,
+            replacement_vector.clone(),
+            &replacement_code,
+        )
+        .expect("second fixed-stride backlink in one transaction should allocate the next ordinal");
+        pg_sys::CommandCounterIncrement();
+    }
+    assert_eq!(counts(), (Some(4), Some(7), Some(6)));
+    let amended = read_current_fixed_stride_node(&fixture, vec_id);
+    assert_eq!(amended.node_ordinal, 5);
+    assert!(amended.tombstoned, "backlink overlay must preserve tombstone");
+    assert_eq!(amended.exact_vector, replacement_vector);
+    assert_eq!(amended.neighbor_count, 1);
+    assert_eq!(amended.neighbor_vec_ids[0], failed_vec_id);
+    let reverse_amended = read_current_fixed_stride_node(&fixture, failed_vec_id);
+    assert_eq!(reverse_amended.node_ordinal, 6);
+    assert_eq!(reverse_amended.exact_vector, failed_vector);
+    assert_eq!(reverse_amended.neighbor_count, 1);
+    assert_eq!(reverse_amended.neighbor_vec_ids[0], vec_id);
 }
 
 #[pg_test]

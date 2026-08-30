@@ -9,6 +9,7 @@
 //! transaction.  An error therefore aborts every physical write together.
 
 use std::collections::{HashMap, HashSet};
+use std::ptr::NonNull;
 
 use pgrx::{pg_sys, Spi};
 
@@ -24,13 +25,72 @@ use crate::am::ec_distann::options;
 use crate::am::ec_distann::stage_counters::{self, DistannInsertWork};
 use crate::am::ec_distann::tuple::DistannNodeTuple;
 use crate::storage::page::ItemPointer;
-use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard, RelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
+use super::fixed_stride::{FixedStrideMetadataV1, FixedStrideNodeV1};
+use super::fixed_stride_store;
 use super::quantizer::DistannCodecBinding;
 use super::routine::indexed_ecvector_attnum;
 use super::scan::DistannScanHit;
+
+struct FixedStrideDmlContext {
+    relation: RelationGuard,
+    metadata: FixedStrideMetadataV1,
+    published_ordinal_floor: u64,
+}
+
+impl FixedStrideDmlContext {
+    fn open(
+        identity: Option<(pg_sys::Oid, FixedStrideMetadataV1, u64)>,
+    ) -> Result<Option<Self>, String> {
+        let Some((relid, metadata, published_ordinal_floor)) = identity else {
+            return Ok(None);
+        };
+        let relation = RelationGuard::try_open(relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            .ok_or_else(|| {
+                "EC_GENERATION_MISSING: fixed-stride DML node store is absent".to_owned()
+            })?;
+        let handle = NonNull::new(relation.as_ptr()).ok_or_else(|| {
+            "EC_GENERATION_MISSING: fixed-stride DML node store opened null".to_owned()
+        })?;
+        fixed_stride_store::read_metadata(handle, &metadata)?;
+        Ok(Some(Self {
+            relation,
+            metadata,
+            published_ordinal_floor,
+        }))
+    }
+
+    fn handle(&self) -> crate::storage::relation::RelationHandle {
+        NonNull::new(self.relation.as_ptr())
+            .expect("admitted fixed-stride DML relation must remain non-null")
+    }
+
+    /// Serialize overlay-ordinal allocation and retain the lock until xact
+    /// end. ShareRowExclusive is compatible with serving AccessShare readers
+    /// while ensuring two owner-local writers cannot publish one ordinal.
+    unsafe fn lock_mutations(&self) {
+        pg_sys::LockRelationOid(
+            (*self.relation.as_ptr()).rd_id,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+        );
+    }
+}
+
+fn distann_node_from_fixed_stride(node: &FixedStrideNodeV1) -> DistannNodeTuple {
+    DistannNodeTuple {
+        tombstoned: node.tombstoned,
+        vec_id: node.vec_id,
+        heap_tid: node.row_tid,
+        cold_tid: None,
+        neighbor_count: node.neighbor_count,
+        search_code: node.search_code.clone(),
+        neighbor_vec_ids: node.neighbor_vec_ids.clone(),
+        neighbor_codes: node.neighbor_codes.clone(),
+    }
+}
 
 /// Execute the physical owner path for one AM insert.  The caller is inside
 /// PostgreSQL's INSERT/UPDATE transaction; this function never commits or
@@ -147,6 +207,7 @@ unsafe fn insert_from_prepared_slot(
         "EC_NODE_DESCRIPTOR: physical insert owner is outside the active roster".to_owned()
     })?;
     let (generation, descriptor) = scan.local_write_identity()?;
+    let fixed_stride = FixedStrideDmlContext::open(scan.fixed_stride_dml_identity()?)?;
     let source_attnum = indexed_ecvector_attnum(index_relation)?;
     let row_vector_attnum = tier_physical_attnum(
         &descriptor,
@@ -325,6 +386,7 @@ unsafe fn insert_from_prepared_slot(
                 let Some(candidate) = read_current_candidate(
                     &graph_name,
                     &row_relation,
+                    fixed_stride.as_ref(),
                     hit,
                     descriptor.graph_degree,
                     code_len,
@@ -398,6 +460,7 @@ unsafe fn insert_from_prepared_slot(
             let Some(candidate) = read_current_candidate(
                 &graph_name,
                 &row_relation,
+                fixed_stride.as_ref(),
                 hit,
                 descriptor.graph_degree,
                 code_len,
@@ -490,6 +553,7 @@ unsafe fn insert_from_prepared_slot(
             if candidate.graph_tid != ItemPointer::INVALID {
                 amend_backlink(
                     &graph_name,
+                    fixed_stride.as_ref(),
                     candidate,
                     vec_id,
                     &vector,
@@ -614,11 +678,21 @@ unsafe fn insert_from_prepared_slot(
         neighbor_vec_ids,
         neighbor_codes,
     };
-    let graph_record = node.encode_physical_version(
-        descriptor.graph_record_version,
-        descriptor.graph_degree,
-        code_len,
-    )?;
+    let fixed_stride_ordinal = fixed_stride
+        .as_ref()
+        .map(|fixed_stride| unsafe {
+            append_fixed_stride_node(fixed_stride, &graph_name, &node, &vector)
+        })
+        .transpose()?;
+    let graph_record = if fixed_stride_ordinal.is_none() {
+        Some(node.encode_physical_version(
+            descriptor.graph_record_version,
+            descriptor.graph_degree,
+            code_len,
+        )?)
+    } else {
+        None
+    };
 
     // Same vec_id means the stable identity survived an UPDATE.  Retain the
     // old graph tuple and redirect the partial unique directory atomically.
@@ -632,13 +706,26 @@ unsafe fn insert_from_prepared_slot(
             Ok::<(), String>(())
         })?;
     }
-    insert_graph_record(
-        &graph_name,
-        vec_id,
-        &graph_record,
-        row_tid,
-        previous_version.unwrap_or(-1).saturating_add(1),
-    )?;
+    let record_version = previous_version.unwrap_or(-1).saturating_add(1);
+    if let Some(node_ordinal) = fixed_stride_ordinal {
+        insert_fixed_stride_directory_record(
+            &graph_name,
+            vec_id,
+            node_ordinal,
+            row_tid,
+            record_version,
+        )?;
+    } else {
+        insert_graph_record(
+            &graph_name,
+            vec_id,
+            graph_record
+                .as_deref()
+                .expect("legacy graph append must encode a graph record"),
+            row_tid,
+            record_version,
+        )?;
+    }
     stage_counters::record_insert_work(DistannInsertWork::GraphRecordsAppended, 1);
     if options::debug_fail_insert() {
         return Err(
@@ -694,6 +781,7 @@ unsafe fn insert_from_prepared_slot(
             }
             amend_backlink(
                 &graph_name,
+                fixed_stride.as_ref(),
                 candidate,
                 vec_id,
                 &vector,
@@ -919,74 +1007,39 @@ pub(crate) unsafe fn tombstone_owner_record(
         None => PhysicalGenerationScan::open(index_oid)?,
     };
     let (generation, descriptor) = scan.local_write_identity()?;
+    let fixed_stride = FixedStrideDmlContext::open(scan.fixed_stride_dml_identity()?)?;
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
-    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
-    let row = Spi::connect_mut(|client| {
-        client
-            .select(
-                &format!(
-                    "SELECT graph_record, ctid FROM {graph_name} \
-                     WHERE vec_id = $1 AND is_current FOR UPDATE"
-                ),
-                None,
-                &[signed_id.into()],
-            )
-            .map_err(|error| format!("EC_DELETE_ROUTE: owner tombstone lookup failed: {error}"))?
-            .map(|row| {
-                let record = row["graph_record"]
-                    .value::<Vec<u8>>()
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| "graph_record is NULL".to_owned())?;
-                let graph_tid = row["ctid"]
-                    .value::<pg_sys::ItemPointerData>()
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| "ctid is NULL".to_owned())?;
-                Ok::<_, String>((record, graph_tid))
-            })
-            .next()
-            .transpose()
-    })?;
-    let Some((record, graph_tid)) = row else {
+    let current = current_graph_node_for_update(
+        &graph_name,
+        vec_id,
+        descriptor.graph_degree,
+        code_len,
+        descriptor.graph_record_version,
+        fixed_stride.as_ref(),
+    )
+    .map_err(|error| format!("EC_DELETE_ROUTE: {error}"))?;
+    let Some(current) = current else {
         return Err(format!(
             "EC_RECORD_MISSING: physical owner has no current vec_id {vec_id:#018x}"
         ));
     };
-    let mut node = DistannNodeTuple::decode_physical_version(
-        &record,
-        descriptor.graph_record_version,
-        descriptor.graph_degree,
-        code_len,
-    )?;
+    let mut node = current.node.clone();
     if node.tombstoned {
         return Ok(false);
     }
     node.tombstoned = true;
-    let encoded = node.encode_physical_version(
-        descriptor.graph_record_version,
+    persist_graph_node_amendment(
+        &graph_name,
+        &node,
+        &current,
         descriptor.graph_degree,
         code_len,
-    )?;
-    let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
-    let updated = Spi::connect_mut(|client| {
-        client
-            .update(
-                &format!(
-                    "UPDATE {graph_name} SET graph_record = $1 \
-                     WHERE ctid = '({block},{offset})'::tid AND is_current"
-                ),
-                None,
-                &[encoded.into()],
-            )
-            .map_err(|error| format!("EC_DELETE_ROUTE: owner tombstone update failed: {error}"))
-            .map(|table| table.len())
-    })?;
-    if updated != 1 {
-        return Err(format!(
-            "EC_DELETE_ROUTE: owner tombstone affected {updated} rows, expected one"
-        ));
-    }
+        descriptor.graph_record_version,
+        fixed_stride.as_ref(),
+    )
+    .map_err(|error| format!("EC_DELETE_ROUTE: {error}"))?;
     Ok(true)
 }
 
@@ -1545,6 +1598,13 @@ struct Candidate {
     graph_tid: ItemPointer,
 }
 
+struct CurrentGraphNode {
+    node: DistannNodeTuple,
+    exact_vector: Option<Vec<f32>>,
+    graph_tid: ItemPointer,
+    record_version: i64,
+}
+
 const PLANNED_FORWARD_MAGIC: &[u8; 4] = b"EPI1";
 
 /// Serialize the coordinator's selected forward plan for a participant
@@ -1668,6 +1728,7 @@ unsafe fn source_slot_is_updated(slot: *mut pg_sys::TupleTableSlot) -> bool {
 fn read_current_candidate(
     graph_name: &str,
     row_relation: &HeapRelationGuard,
+    fixed_stride: Option<&FixedStrideDmlContext>,
     hit: DistannScanHit,
     graph_degree: u16,
     code_len: usize,
@@ -1676,28 +1737,90 @@ fn read_current_candidate(
     snapshot: pg_sys::Snapshot,
 ) -> Result<Option<Candidate>, String> {
     let signed_id = i64::from_le_bytes(hit.vec_id.to_le_bytes());
-    let row = Spi::connect(|client| {
-        client.select(
-            &format!("SELECT graph_record, row_tid, ctid FROM {graph_name} WHERE vec_id = $1 AND is_current"),
-            None,
-            &[signed_id.into()],
-        ).map_err(|error| format!("EC_INSERT_SEARCH: graph candidate lookup failed: {error}"))?
-        .map(|row| {
-            let record = row["graph_record"].value::<Vec<u8>>().map_err(|error| error.to_string())?.ok_or_else(|| "graph_record is NULL".to_owned())?;
-            let row_tid = row["row_tid"].value::<pg_sys::ItemPointerData>().map_err(|error| error.to_string())?.ok_or_else(|| "row_tid is NULL".to_owned())?;
-            let graph_tid = row["ctid"].value::<pg_sys::ItemPointerData>().map_err(|error| error.to_string())?.ok_or_else(|| "ctid is NULL".to_owned())?;
-            Ok::<_, String>((record, row_tid, graph_tid))
-        }).next().transpose()
-    })?;
-    let Some((record, row_tid, graph_tid)) = row else {
-        return Ok(None);
+    let (node, row_tid, graph_tid) = if let Some(fixed_stride) = fixed_stride {
+        let row = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT node_ordinal, row_tid, ctid FROM {graph_name} \
+                         WHERE vec_id = $1 AND is_current"
+                    ),
+                    None,
+                    &[signed_id.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_INSERT_SEARCH: fixed-stride candidate lookup failed: {error}")
+                })?
+                .map(|row| {
+                    let ordinal = row["node_ordinal"]
+                        .value::<i64>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "node_ordinal is NULL".to_owned())?;
+                    let ordinal = u64::try_from(ordinal).map_err(|_| {
+                        "EC_INSERT_SEARCH: fixed-stride node ordinal is negative".to_owned()
+                    })?;
+                    let row_tid = row["row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "row_tid is NULL".to_owned())?;
+                    let graph_tid = row["ctid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "ctid is NULL".to_owned())?;
+                    Ok::<_, String>((ordinal, row_tid, graph_tid))
+                })
+                .next()
+                .transpose()
+        })?;
+        let Some((ordinal, row_tid, graph_tid)) = row else {
+            return Ok(None);
+        };
+        let mut fixed = FixedStrideNodeV1::empty();
+        fixed_stride_store::read_node_verified(
+            fixed_stride.handle(),
+            &fixed_stride.metadata,
+            ordinal,
+            hit.vec_id,
+            &mut fixed,
+        )?;
+        let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
+        if fixed.row_tid
+            != (ItemPointer {
+                block_number: row_block,
+                offset_number: row_offset,
+            })
+        {
+            return Err(
+                "EC_INSERT_SEARCH: fixed-stride candidate row locator differs from directory"
+                    .to_owned(),
+            );
+        }
+        (distann_node_from_fixed_stride(&fixed), row_tid, graph_tid)
+    } else {
+        let row = Spi::connect(|client| {
+            client.select(
+                &format!("SELECT graph_record, row_tid, ctid FROM {graph_name} WHERE vec_id = $1 AND is_current"),
+                None,
+                &[signed_id.into()],
+            ).map_err(|error| format!("EC_INSERT_SEARCH: graph candidate lookup failed: {error}"))?
+            .map(|row| {
+                let record = row["graph_record"].value::<Vec<u8>>().map_err(|error| error.to_string())?.ok_or_else(|| "graph_record is NULL".to_owned())?;
+                let row_tid = row["row_tid"].value::<pg_sys::ItemPointerData>().map_err(|error| error.to_string())?.ok_or_else(|| "row_tid is NULL".to_owned())?;
+                let graph_tid = row["ctid"].value::<pg_sys::ItemPointerData>().map_err(|error| error.to_string())?.ok_or_else(|| "ctid is NULL".to_owned())?;
+                Ok::<_, String>((record, row_tid, graph_tid))
+            }).next().transpose()
+        })?;
+        let Some((record, row_tid, graph_tid)) = row else {
+            return Ok(None);
+        };
+        let node = DistannNodeTuple::decode_physical_version(
+            &record,
+            graph_record_version,
+            graph_degree,
+            code_len,
+        )?;
+        (node, row_tid, graph_tid)
     };
-    let node = DistannNodeTuple::decode_physical_version(
-        &record,
-        graph_record_version,
-        graph_degree,
-        code_len,
-    )?;
     let vector_slot =
         TupleTableSlotGuard::single_for_heap_guard(row_relation).ok_or_else(|| {
             "EC_GENERATION_MISSING: row-tier vector slot could not be allocated".to_owned()
@@ -1976,6 +2099,165 @@ fn insert_graph_record(
     Ok(())
 }
 
+fn next_fixed_stride_ordinal(
+    graph_name: &str,
+    published_ordinal_floor: u64,
+) -> Result<u64, String> {
+    let maximum = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT max(node_ordinal) AS max_ordinal FROM {graph_name}"),
+                None,
+                &[],
+            )
+            .map_err(|error| {
+                format!("EC_INSERT_PUBLISH: fixed-stride ordinal lookup failed: {error}")
+            })?
+            .map(|row| {
+                row["max_ordinal"]
+                    .value::<i64>()
+                    .map_err(|error| error.to_string())
+            })
+            .next()
+            .transpose()
+            .map(|value| value.flatten())
+    })?;
+    let next = match maximum {
+        Some(maximum) => u64::try_from(maximum)
+            .map_err(|_| "EC_INSERT_PUBLISH: fixed-stride ordinal is negative".to_owned())?
+            .checked_add(1)
+            .ok_or_else(|| "EC_INSERT_PUBLISH: fixed-stride ordinal overflow".to_owned())?,
+        None => 0,
+    };
+    if next < published_ordinal_floor {
+        return Err(format!(
+            "EC_INSERT_PUBLISH: next fixed-stride ordinal {next} precedes Ready floor {published_ordinal_floor}"
+        ));
+    }
+    Ok(next)
+}
+
+unsafe fn append_fixed_stride_node(
+    fixed_stride: &FixedStrideDmlContext,
+    graph_name: &str,
+    node: &DistannNodeTuple,
+    exact_vector: &[f32],
+) -> Result<u64, String> {
+    if node.cold_tid.is_some() {
+        return Err(
+            "EC_INSERT_PUBLISH: fixed-stride node cannot carry a cold-tier locator".to_owned(),
+        );
+    }
+    fixed_stride.lock_mutations();
+    let ordinal = next_fixed_stride_ordinal(graph_name, fixed_stride.published_ordinal_floor)?;
+    let fixed_node = FixedStrideNodeV1 {
+        tombstoned: node.tombstoned,
+        node_ordinal: ordinal,
+        vec_id: node.vec_id,
+        row_tid: node.heap_tid,
+        neighbor_count: node.neighbor_count,
+        exact_vector: exact_vector.to_vec(),
+        search_code: node.search_code.clone(),
+        neighbor_vec_ids: node.neighbor_vec_ids.clone(),
+        neighbor_codes: node.neighbor_codes.clone(),
+    };
+    // `ordinal` is the first unpublished directory ordinal. If an earlier
+    // transaction aborted after raw WAL but before directory publication,
+    // write_node is allowed to rewind that unreachable tail and overwrite it;
+    // every ordinal below this floor is immutable Published state.
+    fixed_stride_store::write_node(
+        fixed_stride.handle(),
+        &fixed_stride.metadata,
+        &fixed_node,
+        ordinal,
+    )?;
+    Ok(ordinal)
+}
+
+fn insert_fixed_stride_directory_record(
+    graph_name: &str,
+    vec_id: u64,
+    node_ordinal: u64,
+    row_tid: ItemPointer,
+    version: i64,
+) -> Result<(), String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let signed_ordinal = i64::try_from(node_ordinal)
+        .map_err(|_| "EC_INSERT_PUBLISH: fixed-stride ordinal exceeds bigint".to_owned())?;
+    let mut row_tid_data = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut row_tid_data,
+        row_tid.block_number,
+        row_tid.offset_number,
+    );
+    let inserted = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {graph_name} \
+                     (vec_id, node_ordinal, row_tid, record_version, is_current) \
+                     VALUES ($1, $2, $3::tid, $4, true)"
+                ),
+                None,
+                &[
+                    signed_id.into(),
+                    signed_ordinal.into(),
+                    row_tid_data.into(),
+                    version.into(),
+                ],
+            )
+            .map_err(|error| {
+                format!("EC_INSERT_PUBLISH: fixed-stride directory append failed: {error}")
+            })
+            .map(|table| table.len())
+    })?;
+    if inserted != 1 {
+        return Err(format!(
+            "EC_INSERT_PUBLISH: fixed-stride directory append affected {inserted} rows"
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn publish_fixed_stride_overlay(
+    fixed_stride: &FixedStrideDmlContext,
+    graph_name: &str,
+    node: &DistannNodeTuple,
+    exact_vector: &[f32],
+    previous_graph_tid: ItemPointer,
+    previous_record_version: i64,
+) -> Result<(), String> {
+    let node_ordinal = append_fixed_stride_node(fixed_stride, graph_name, node, exact_vector)?;
+    let retired = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {graph_name} SET is_current = false \
+                     WHERE ctid = '({},{})'::tid AND is_current",
+                    previous_graph_tid.block_number, previous_graph_tid.offset_number
+                ),
+                None,
+                &[],
+            )
+            .map_err(|error| {
+                format!("EC_INSERT_PUBLISH: fixed-stride prior-version retire failed: {error}")
+            })
+            .map(|rows| rows.len())
+    })?;
+    if retired != 1 {
+        return Err(format!(
+            "EC_INSERT_PUBLISH: fixed-stride prior-version retire affected {retired} rows"
+        ));
+    }
+    insert_fixed_stride_directory_record(
+        graph_name,
+        node.vec_id,
+        node_ordinal,
+        node.heap_tid,
+        previous_record_version.saturating_add(1),
+    )
+}
+
 fn append_payload_sidecar(
     sidecar_relation: &HeapRelationGuard,
     row_tid: ItemPointer,
@@ -2017,8 +2299,54 @@ fn append_payload_sidecar(
     Ok(())
 }
 
+unsafe fn persist_graph_node_amendment(
+    graph_name: &str,
+    node: &DistannNodeTuple,
+    current: &CurrentGraphNode,
+    graph_degree: u16,
+    code_len: usize,
+    graph_record_version: u16,
+    fixed_stride: Option<&FixedStrideDmlContext>,
+) -> Result<(), String> {
+    if let Some(fixed_stride) = fixed_stride {
+        let exact_vector = current.exact_vector.as_deref().ok_or_else(|| {
+            "EC_INSERT_BACKLINK: fixed-stride amendment lost its exact vector".to_owned()
+        })?;
+        return publish_fixed_stride_overlay(
+            fixed_stride,
+            graph_name,
+            node,
+            exact_vector,
+            current.graph_tid,
+            current.record_version,
+        );
+    }
+    let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
+    let updated = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {graph_name} SET graph_record = $1 \
+                     WHERE ctid = '({},{})'::tid AND is_current",
+                    current.graph_tid.block_number, current.graph_tid.offset_number
+                ),
+                None,
+                &[record.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if updated != 1 {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
+        ));
+    }
+    Ok(())
+}
+
 unsafe fn amend_backlink(
     graph_name: &str,
+    fixed_stride: Option<&FixedStrideDmlContext>,
     candidate: &Candidate,
     new_vec_id: u64,
     new_source_vector: &[f32],
@@ -2035,19 +2363,21 @@ unsafe fn amend_backlink(
     // A concurrent backlink amendment or tombstone may have replaced the
     // tuple since the scan planned this candidate; updating from the stale
     // candidate would lose the other writer or resurrect a tombstone.
-    let (current_record, graph_tid) =
-        current_graph_record_for_update(graph_name, candidate.vec_id)?.ok_or_else(|| {
-            format!(
-                "EC_INSERT_BACKLINK: current target vec_id {:#018x} is missing",
-                candidate.vec_id
-            )
-        })?;
-    let mut node = DistannNodeTuple::decode_physical_version(
-        &current_record,
-        graph_record_version,
+    let current = current_graph_node_for_update(
+        graph_name,
+        candidate.vec_id,
         graph_degree,
         code_len,
-    )?;
+        graph_record_version,
+        fixed_stride,
+    )?
+    .ok_or_else(|| {
+        format!(
+            "EC_INSERT_BACKLINK: current target vec_id {:#018x} is missing",
+            candidate.vec_id
+        )
+    })?;
+    let mut node = current.node.clone();
     // FOR UPDATE may wait for a concurrent backlink transaction and then
     // return its newer graph version. Refresh the snapshot before fetching
     // the row-tier vectors referenced by that version; the original insert
@@ -2073,24 +2403,15 @@ unsafe fn amend_backlink(
             .neighbor_count
             .checked_add(1)
             .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
-        let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
-        let block = graph_tid.block_number;
-        let offset = graph_tid.offset_number;
-        let updated = Spi::connect_mut(|client| {
-            client
-                .update(
-                    &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
-                    None,
-                    &[record.into()],
-                )
-                .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
-                .map(|table| table.len())
-        })?;
-        if updated != 1 {
-            return Err(format!(
-                "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
-            ));
-        }
+        persist_graph_node_amendment(
+            graph_name,
+            &node,
+            &current,
+            graph_degree,
+            code_len,
+            graph_record_version,
+            fixed_stride,
+        )?;
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
         return Ok(());
     }
@@ -2164,39 +2485,106 @@ unsafe fn amend_backlink(
         }
         node.neighbor_codes[slot * code_len..(slot + 1) * code_len].copy_from_slice(code);
     }
-    let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
-    let block = graph_tid.block_number;
-    let offset = graph_tid.offset_number;
-    let updated = Spi::connect_mut(|client| {
-        client
-            .update(
-                &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
-                None,
-                &[record.into()],
-            )
-            .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
-            .map(|table| table.len())
-    })?;
-    if updated != 1 {
-        return Err(format!(
-            "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
-        ));
-    }
+    persist_graph_node_amendment(
+        graph_name,
+        &node,
+        &current,
+        graph_degree,
+        code_len,
+        graph_record_version,
+        fixed_stride,
+    )?;
     stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
     Ok(())
 }
 
-fn current_graph_record_for_update(
+fn current_graph_node_for_update(
     graph_name: &str,
     vec_id: u64,
-) -> Result<Option<(Vec<u8>, ItemPointer)>, String> {
+    graph_degree: u16,
+    code_len: usize,
+    graph_record_version: u16,
+    fixed_stride: Option<&FixedStrideDmlContext>,
+) -> Result<Option<CurrentGraphNode>, String> {
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    if let Some(fixed_stride) = fixed_stride {
+        let row = Spi::connect_mut(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT node_ordinal, row_tid, record_version, ctid FROM {graph_name} \
+                         WHERE vec_id = $1 AND is_current FOR UPDATE"
+                    ),
+                    None,
+                    &[signed_id.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_INSERT_BACKLINK: fixed-stride target lock failed: {error}")
+                })?
+                .map(|row| {
+                    let ordinal = row["node_ordinal"]
+                        .value::<i64>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "node_ordinal is NULL".to_owned())?;
+                    let ordinal = u64::try_from(ordinal).map_err(|_| {
+                        "EC_INSERT_BACKLINK: fixed-stride ordinal is negative".to_owned()
+                    })?;
+                    let row_tid = row["row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "row_tid is NULL".to_owned())?;
+                    let version = row["record_version"]
+                        .value::<i64>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "record_version is NULL".to_owned())?;
+                    let graph_tid = row["ctid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "ctid is NULL".to_owned())?;
+                    Ok::<_, String>((ordinal, row_tid, version, graph_tid))
+                })
+                .next()
+                .transpose()
+        })?;
+        let Some((ordinal, row_tid, record_version, graph_tid)) = row else {
+            return Ok(None);
+        };
+        let mut fixed = FixedStrideNodeV1::empty();
+        fixed_stride_store::read_node_verified(
+            fixed_stride.handle(),
+            &fixed_stride.metadata,
+            ordinal,
+            vec_id,
+            &mut fixed,
+        )?;
+        let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
+        if fixed.row_tid
+            != (ItemPointer {
+                block_number: row_block,
+                offset_number: row_offset,
+            })
+        {
+            return Err(
+                "EC_INSERT_BACKLINK: fixed-stride row locator differs from directory".to_owned(),
+            );
+        }
+        let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
+        return Ok(Some(CurrentGraphNode {
+            node: distann_node_from_fixed_stride(&fixed),
+            exact_vector: Some(fixed.exact_vector),
+            graph_tid: ItemPointer {
+                block_number: block,
+                offset_number: offset,
+            },
+            record_version,
+        }));
+    }
     Spi::connect_mut(|client| {
         client
             .select(
                 &format!(
-                    "SELECT graph_record, ctid FROM {graph_name} \
-                      WHERE vec_id = $1 AND is_current FOR UPDATE"
+                    "SELECT graph_record, record_version, ctid FROM {graph_name} \
+                 WHERE vec_id = $1 AND is_current FOR UPDATE"
                 ),
                 None,
                 &[signed_id.into()],
@@ -2207,18 +2595,29 @@ fn current_graph_record_for_update(
                     .value::<Vec<u8>>()
                     .map_err(|error| error.to_string())?
                     .ok_or_else(|| "graph_record is NULL".to_owned())?;
+                let record_version = row["record_version"]
+                    .value::<i64>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "record_version is NULL".to_owned())?;
                 let graph_tid = row["ctid"]
                     .value::<pg_sys::ItemPointerData>()
                     .map_err(|error| error.to_string())?
                     .ok_or_else(|| "ctid is NULL".to_owned())?;
                 let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
-                Ok::<_, String>((
-                    record,
-                    ItemPointer {
+                Ok::<_, String>(CurrentGraphNode {
+                    node: DistannNodeTuple::decode_physical_version(
+                        &record,
+                        graph_record_version,
+                        graph_degree,
+                        code_len,
+                    )?,
+                    exact_vector: None,
+                    graph_tid: ItemPointer {
                         block_number: block,
                         offset_number: offset,
                     },
-                ))
+                    record_version,
+                })
             })
             .next()
             .transpose()
@@ -2231,6 +2630,7 @@ fn current_graph_record_for_update(
 /// target has spare degree, otherwise preserve the existing graph exactly.
 unsafe fn append_backlink_if_room(
     graph_name: &str,
+    fixed_stride: Option<&FixedStrideDmlContext>,
     target_vec_id: u64,
     new_vec_id: u64,
     new_code: &[u8],
@@ -2238,16 +2638,18 @@ unsafe fn append_backlink_if_room(
     code_len: usize,
     graph_record_version: u16,
 ) -> Result<(), String> {
-    let (current_record, graph_tid) = current_graph_record_for_update(graph_name, target_vec_id)?
-        .ok_or_else(|| {
-        format!("EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing")
-    })?;
-    let mut node = DistannNodeTuple::decode_physical_version(
-        &current_record,
-        graph_record_version,
+    let current = current_graph_node_for_update(
+        graph_name,
+        target_vec_id,
         graph_degree,
         code_len,
-    )?;
+        graph_record_version,
+        fixed_stride,
+    )?
+    .ok_or_else(|| {
+        format!("EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing")
+    })?;
+    let mut node = current.node.clone();
     let count = usize::from(node.neighbor_count);
     if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
@@ -2266,24 +2668,15 @@ unsafe fn append_backlink_if_room(
         .neighbor_count
         .checked_add(1)
         .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
-    let record = node.encode_physical_version(graph_record_version, graph_degree, code_len)?;
-    let block = graph_tid.block_number;
-    let offset = graph_tid.offset_number;
-    let updated = Spi::connect_mut(|client| {
-        client
-            .update(
-                &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
-                None,
-                &[record.into()],
-            )
-            .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
-            .map(|table| table.len())
-    })?;
-    if updated != 1 {
-        return Err(format!(
-            "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
-        ));
-    }
+    persist_graph_node_amendment(
+        graph_name,
+        &node,
+        &current,
+        graph_degree,
+        code_len,
+        graph_record_version,
+        fixed_stride,
+    )?;
     stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
     Ok(())
 }
@@ -2365,6 +2758,7 @@ pub(crate) unsafe fn apply_owner_backlink(
     let scan =
         PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, epoch_fingerprint)?;
     let (generation, descriptor) = scan.local_write_identity()?;
+    let fixed_stride = FixedStrideDmlContext::open(scan.fixed_stride_dml_identity()?)?;
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     if target_source_vector.len() != usize::from(descriptor.dimensions)
         || target_source_vector.iter().any(|value| !value.is_finite())
@@ -2397,43 +2791,34 @@ pub(crate) unsafe fn apply_owner_backlink(
     }
     let latest_snapshot = RegisteredSnapshotGuard::latest()
         .ok_or_else(|| "EC_BUILD_STATE: backlink could not acquire a latest snapshot".to_owned())?;
-    let signed_id = i64::from_le_bytes(target_vec_id.to_le_bytes());
-    let row = Spi::connect(|client| {
-        client
-            .select(
-                &format!(
-                    "SELECT graph_record, ctid FROM {graph_name} \
-                     WHERE vec_id = $1 AND is_current"
-                ),
-                None,
-                &[signed_id.into()],
-            )
-            .map_err(|error| format!("EC_INSERT_BACKLINK: target lookup failed: {error}"))?
-            .map(|row| {
-                let record = row["graph_record"]
-                    .value::<Vec<u8>>()
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| "graph_record is NULL".to_owned())?;
-                let graph_tid = row["ctid"]
-                    .value::<pg_sys::ItemPointerData>()
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| "ctid is NULL".to_owned())?;
-                Ok::<_, String>((record, graph_tid))
-            })
-            .next()
-            .transpose()
-    })?;
-    let Some((record, graph_tid)) = row else {
+    let planning_candidate = read_current_candidate(
+        &graph_name,
+        &row_relation,
+        fixed_stride.as_ref(),
+        DistannScanHit {
+            vec_id: target_vec_id,
+            heap_tid: ItemPointer::INVALID,
+            owner_heap_tid: ItemPointer::INVALID,
+            exact_dist: 0.0,
+        },
+        descriptor.graph_degree,
+        code_len,
+        row_vector_attnum,
+        descriptor.graph_record_version,
+        snapshot,
+    )?;
+    let Some(planning_candidate) = planning_candidate else {
         return Err(format!(
             "EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing"
         ));
     };
-    let node = DistannNodeTuple::decode_physical_version(
-        &record,
-        descriptor.graph_record_version,
-        descriptor.graph_degree,
-        code_len,
-    )?;
+    if planning_candidate.source_vector != target_source_vector {
+        return Err(format!(
+            "EC_EPOCH_MISMATCH: backlink target {target_vec_id:#018x} changed during dispatch"
+        ));
+    }
+    let node = planning_candidate.node;
+    let graph_tid = planning_candidate.graph_tid;
     let (_, _, _, routed_descriptor, routes) = scan.traversal_replica_source();
     let local_owner = routes
         .iter()
@@ -2478,6 +2863,7 @@ pub(crate) unsafe fn apply_owner_backlink(
     if missing_local_neighbor {
         return append_backlink_if_room(
             &graph_name,
+            fixed_stride.as_ref(),
             target_vec_id,
             new_vec_id,
             &new_code,
@@ -2487,17 +2873,14 @@ pub(crate) unsafe fn apply_owner_backlink(
         );
     }
     drop(scan);
-    let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
     amend_backlink(
         &graph_name,
+        fixed_stride.as_ref(),
         &Candidate {
             vec_id: target_vec_id,
             source_vector: target_source_vector,
             node,
-            graph_tid: ItemPointer {
-                block_number: graph_block,
-                offset_number: graph_offset,
-            },
+            graph_tid,
         },
         new_vec_id,
         &new_source_vector,

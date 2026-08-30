@@ -68,7 +68,8 @@ pub(crate) use self::payload_sidecar::resolve_payload_cover as resolve_payload_c
 mod physical_dml;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::physical_dml::{
-    insert_from_owner_payload_for_test, tombstone_owner_record as tombstone_owner_record_for_test,
+    apply_owner_backlink as apply_owner_backlink_for_test, insert_from_owner_payload_for_test,
+    tombstone_owner_record as tombstone_owner_record_for_test,
 };
 pub(crate) mod placement;
 pub(crate) mod quantizer;
@@ -105,6 +106,17 @@ pub(crate) fn quote_ident(identifier: &str) -> String {
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
 pub use self::fixed_stride::DistannFixedStrideLayoutDescriptorV1;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::fixed_stride::{
+    fixed_stride_generation_tag as fixed_stride_generation_tag_for_test,
+    FixedStrideMetadataV1 as FixedStrideMetadataV1ForTest,
+    FixedStrideNodeV1 as FixedStrideNodeV1ForTest,
+};
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::fixed_stride_store::{
+    read_metadata as read_fixed_stride_metadata_for_test,
+    read_node_verified as read_fixed_stride_node_verified_for_test,
+};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
 pub use self::generation_descriptor::{
