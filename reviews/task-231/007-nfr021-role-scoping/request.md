@@ -5,13 +5,14 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 2
+seq: 3
 ---
 
 # Task 231 NFR-021 role-scoping correction
 
-Status: review-open. Code checkpoint: `795af9616a304f2bf276d57c2c151270198f9bd4`.
-GitHub ticket: issue #97.
+Status: review-closed DONE at
+`feedback/2026-08-30-01-reviewer.md`. Code checkpoint:
+`795af9616a304f2bf276d57c2c151270198f9bd4`. GitHub ticket: issue #97.
 
 The accepted-SHA Task 231 decision suite completed all 27 configured steps, but
 the final derived NFR-021 assertion exited nonzero. Every derived row reported
@@ -44,7 +45,6 @@ the command exited zero. Candidate/control maximum normalized growth is now
 `0.998937`/`1.095044` against the `2.0` bound; every registration is conforming
 and decision-eligible.
 
-Please verify the role filter closes the cross-arm evidence contamination
-without breaking the documented one-declaration cross-scale fallback, and
-that the unchanged-fixture re-extraction is sufficient for Packet 005's final
-decision evidence.
+Review disposition: DONE. The reviewer independently verified all 26
+pre-correction and post-correction derived registrations, the unchanged 2.0
+bound, the fixture reuse boundary, and the historical fallback.

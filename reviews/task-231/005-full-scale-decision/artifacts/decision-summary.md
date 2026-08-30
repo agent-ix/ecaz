@@ -6,7 +6,10 @@
   `48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211`.
 - Matrix: 27/27 steps succeeded; PostgreSQL 18.3, release extension,
   checksums on, 128 MiB shared buffers, isolated one-index-per-table fixtures.
-- Decision: **STOP — do not promote fixed-stride node blocks.**
+- Decision: **STOP — do not promote fixed-stride node blocks on this local
+  PostgreSQL 18 lane with 128 MiB shared buffers.** A host whose shared buffers
+  can hold the index is a different experiment; this matrix sits at the OS
+  page-cache boundary at 50k and 100k.
 
 ## Frozen warm decision matrix
 
@@ -27,6 +30,15 @@ One 100k pair passed and one failed. The frozen rule explicitly defines that
 outcome as STOP; pairs are not averaged and no secondary result can reverse it.
 All recall results cleared the per-scale floor and the fixed-minus-control
 neutrality tolerance.
+
+The split is dominated by fixture position, not a sign-changing layout effect.
+At first position, control/fixed measured 8.60/8.11 ms; at second position they
+measured 9.79/9.50 ms. Fixed is marginally faster at both matched positions,
+but by only 0.49 ms first and 0.29 ms second. Order-averaged latency is 9.195 ms
+control versus 8.805 ms fixed, a 0.390 ms / 4.2% candidate improvement—below
+both frozen PROMOTE bounds. The conservative both-pairs rule requires a layout
+effect large enough to survive the roughly 1.4 ms first-to-second position
+effect in both directions; this one does not.
 
 ## Secondary evidence
 
@@ -49,13 +61,21 @@ neutrality tolerance.
 - The 64-statement warm DML drill produced zero raw-store growth for every
   control. Fixed growth was 14,647,296 bytes at 10k, 14,909,440 at 50k, and
   15,171,584 at 100k (228,864 / 232,960 / 237,056 bytes per statement).
+  Dividing by the 16,384-byte extent gives 894 / 910 / 926 extents total, or
+  13.97 / 14.22 / 14.47 extents per statement. Under the preregistered model
+  where each of 32 deletes appends one tombstone extent, the 32 replacements
+  account for 26.94 / 27.44 / 27.94 extents apiece: one replacement node plus
+  roughly 26 backlink amendments, consistent with the `1 + R` model at degree
+  32 and exposing the candidate's write amplification.
   Every DML gate passed, but concurrency was deliberately skipped, so the
   implementation remains single-writer evidence only.
 - Corrected NFR-021 derived evidence is conforming and decision-eligible for
   both roles. Maximum normalized per-owner growth is 1.095044 for control and
   0.998937 for candidate, below the 2.0 bound; non-owned records, orphans,
   unsharded derived bytes, and coordinator-resident unsharded bytes are all
-  zero, and head capacity is constant.
+  zero, and head capacity is constant. The candidate's lower ratio is the
+  expected small benefit of constant bytes per record; the control's
+  variable-length graph representation drifts more across scales.
 
 ## Runner and attempt boundaries
 

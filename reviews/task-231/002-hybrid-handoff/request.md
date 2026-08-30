@@ -5,10 +5,16 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 03
+seq: 04
 ---
 
 # Task 231 → Task 233 hybrid handoff contract
+
+Status: reconciled to Task 231's measured STOP. The opt-in prototype and format
+fixtures remain available exactly as planned, but fixed-stride is not promoted
+on its isolated result. Task 233 still owns the first combined
+graph-layout × payload-layout factorial and must treat Task 231 as an optional
+factor, not as a production default.
 
 This packet requests review of the downstream handoff at checkpoint
 `4b7256f61`. It is planning-only.
@@ -32,6 +38,6 @@ and must resolve these integration questions explicitly:
 - a same-run four-arm graph-layout × payload-layout factorial, not a comparison
   assembled from Tasks 231 and 232's separate runs.
 
-Task 231 will not pre-compose, predict, or optimize that interaction. Please
-review whether this leaves Task 233 enough durable surface while preserving the
-isolated attribution of both constituent experiments.
+Task 231 did not pre-compose, predict, or optimize that interaction. Packet
+005's review-backed STOP preserves the isolated attribution, while the retained
+selector and fixtures leave Task 233 the durable surface named above.

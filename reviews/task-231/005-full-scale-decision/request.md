@@ -5,13 +5,14 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 5
+seq: 6
 ---
 
 # Task 231 full-scale decision
 
-Status: review-open; final coder disposition **STOP — do not promote
-fixed-stride node blocks**. Accepted measurement extension SHA:
+Status: review-open for seq-05 write-up corrections; reviewer confirms the
+frozen-rule **STOP — do not promote fixed-stride node blocks on this 128 MiB
+shared-buffer lane** is correct. Accepted measurement extension SHA:
 `66b53998a955b583ca43c0e967806aa29e0a4404`. GitHub ticket: issue #97.
 
 This request applies the already review-closed decision contract to the
@@ -46,6 +47,25 @@ own open review. Re-extracting the unchanged manifest reused all 27 fixture
 steps and exited zero: candidate/control maximum normalized growth is
 0.998937/1.095044 against the 2.0 bound, with all distribution fields clean.
 No measured fixture or accepted extension SHA changed.
+
+The apparent sign change across 100k pairs is a position effect. First-position
+control/fixed was 8.60/8.11 ms and second-position control/fixed was 9.79/9.50
+ms, so fixed was marginally faster at both positions. Order-averaged latency
+was 9.195 ms control versus 8.805 ms fixed, only 0.390 ms / 4.2% faster and
+still under both frozen PROMOTE bounds. The conservative both-pairs rule asks
+the layout effect to exceed the roughly 1.4 ms order effect in both directions;
+it did not.
+
+The fixed DML growth corresponds to 894 / 910 / 926 whole extents at
+10k/50k/100k, or 13.97 / 14.22 / 14.47 extents per statement. Charging one
+tombstone extent to each of 32 deletes leaves 26.94 / 27.44 / 27.94 extents
+per replacement: one new node plus roughly 26 backlink amendments, confirming
+the preregistered `1 + R` write-amplification model at degree 32. Concurrency
+remains intentionally untested and the implementation evidence single-writer.
+
+This lane used 128 MiB shared buffers, below the 50k/100k working sets, so the
+comparison sits at the OS-cache boundary. An index-resident shared-buffer host
+is a different experiment and is not covered by this STOP.
 
 ## Frozen decision rule
 
@@ -164,5 +184,8 @@ twice the measured nonzero lane spread.
 Packet-local receipts and hashes are in `artifacts/manifest.md`. Please verify
 the frozen-rule STOP disposition, the result transcription, the explicit
 single-writer limitation, the startup-collision exclusion, and Packet 007's
-role-scoped NFR-021 re-extraction. Packet 004's allocator rereview and Packet
-006's lock-lifetime correction are already review-closed DONE.
+role-scoped NFR-021 re-extraction. Seq-05's status, order-controlled reading,
+overlay attribution, and shared-buffer condition are now carried in the task
+header, README row, request, and decision summary. Packets 001/002 are
+reconciled to the STOP and Task 233 handoff. Packet 004's allocator rereview,
+Packet 006's lock-lifetime correction, and Packet 007 are review-closed DONE.

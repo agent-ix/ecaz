@@ -232,9 +232,11 @@
 - `decision-summary.md` is the human-readable transcription of the final
   latency, recall, storage, DML, residency, conformance, and disposition rows.
   SHA-256:
-  `12bc3ca8bbffe77f94dcdf1dac74be871dde9c725f35597a76ac2d769cc4c50a`.
+  `e07600bced645d586a4eaef34311aaeae5f9caeb39d2790d88049a287391f28e`.
   The frozen 100k primary pairs were 8.60/9.50 ms control/fixed (fail) and
   9.79/8.11 ms control/fixed (pass), producing STOP.
+  It also reports the order-controlled 9.195/8.805 ms control/fixed means, the
+  894/910/926-extent DML attribution, and the 128 MiB shared-buffer boundary.
 - The per-arm `run/**/distann-multinode-summary.log` receipts are the compact
   source logs named by `results.jsonl`; each records its fixture command,
   release/SHA preflight, topology, recall, latency, storage, DML, and cleanup

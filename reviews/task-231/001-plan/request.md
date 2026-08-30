@@ -5,10 +5,17 @@ agent: Codex
 role: coder
 model: gpt-5
 date: 2026-08-29
-seq: 04
+seq: 05
 ---
 
 # Task 231 fixed-stride graph/vector block design freeze
+
+Status: reconciled by the downstream implementation and decision. Packets 003,
+004, 006, and 007 are review-closed DONE. Packet 005's frozen-rule STOP is
+confirmed correct at seq-05: the fixed-stride layout remains opt-in only for
+Task 233's factorial and is not promoted. The format and ownership contract
+below remains the implemented prototype contract; its performance hypothesis
+was answered negatively on the 128 MiB shared-buffer lane.
 
 This packet requests review of the implementation design at checkpoint
 `4b7256f61`. Task 230 is review-closed STOP and neither Task 229 nor Task 230
@@ -200,6 +207,7 @@ A/B, reporting recall, latency/tails, storage, build/DML, block/byte/buffer-hit
 telemetry, and conformance. Warm and controlled-residency decisions remain
 separate.
 
-Please review the arithmetic, raw relation ownership, directory publication,
-digest/admission boundary, and whether this isolates the intended whole-node
-read without smuggling in Task 232.
+Final reconciliation: later packets reviewed the arithmetic, raw relation
+ownership, directory publication, digest/admission boundary, lifecycle, DML,
+and reader implementation. Packet 005 confirmed the predicted fixed-stride
+storage formula at every measured node but closed the isolated experiment STOP.
