@@ -7,7 +7,8 @@
   fixed-stride candidate; one index/table surface per suite step.
 - Rerank/search mode: production RaBitQ neighbor scoring with exact-vector
   materialization, BW4/H100 primary and BW16/H25 transfer pair.
-- Measurement state: frozen host precheck passed; no A/B arm has run yet.
+- Measurement state: final 27/27-step A/B complete; coder disposition STOP,
+  pending outside review.
 - Suite config:
   `crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json`, SHA-256
   `48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211`.
@@ -196,3 +197,80 @@
   extension SHA exactly `66b53998a955b583ca43c0e967806aa29e0a4404`. All
   26 measurement steps were selection-skipped; no control or candidate result
   from attempt 001 is reused.
+
+## Final accepted-SHA decision run
+
+- Timestamp: completed `2026-08-30`; final role-scoped re-extraction completed
+  after runner checkpoint `795af9616a304f2bf276d57c2c151270198f9bd4`.
+- Measurement extension SHA:
+  `66b53998a955b583ca43c0e967806aa29e0a4404`, release profile on every
+  fixture node. The runner correction changed only derived evidence selection;
+  it did not rebuild the extension, rerun a fixture, or change the frozen
+  suite config.
+- Command: `/home/peter/.cargo-target/debug/ecaz bench suite run --config
+  crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json --resume-from
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest.json
+  --manifest-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest.json
+  --results-output
+  reviews/task-231/005-full-scale-decision/artifacts/run/results.jsonl
+  --log-file
+  reviews/task-231/005-full-scale-decision/artifacts/run/suite-run.log`.
+- Isolation: every arm used a fresh one-index-per-table three-owner fixture
+  under `/home/peter/.ecaz/clusters/`. All task-owned run directories were
+  removed after durable artifact capture.
+- `run/suite-manifest.json` SHA-256:
+  `9eff2da3afb2ddd3031f4a392eb359398f5f54bcb250f1b2afd27e94fb451c1c`;
+  key result: all 27 steps have status `succeeded`.
+- `run/results.jsonl` SHA-256:
+  `94f0fb9928c9e16ad8f613987d7bd15c4be65aa9869fa6f8dbea1f9a57b78029`;
+  14,303 structured rows and the canonical source for every final number.
+- `run/suite-run.log` SHA-256:
+  `0d51932121514900716e6c833dca51c4ca1e0071187cad628461c1d11107c60c`;
+  key result: all 27 succeeded steps were reused, results were regenerated,
+  task-owned clusters were removed, and the command exited zero.
+- `decision-summary.md` is the human-readable transcription of the final
+  latency, recall, storage, DML, residency, conformance, and disposition rows.
+  SHA-256:
+  `12bc3ca8bbffe77f94dcdf1dac74be871dde9c725f35597a76ac2d769cc4c50a`.
+  The frozen 100k primary pairs were 8.60/9.50 ms control/fixed (fail) and
+  9.79/8.11 ms control/fixed (pass), producing STOP.
+- The per-arm `run/**/distann-multinode-summary.log` receipts are the compact
+  source logs named by `results.jsonl`; each records its fixture command,
+  release/SHA preflight, topology, recall, latency, storage, DML, and cleanup
+  gates. `summary-receipts.sha256` records all 26 paths and hashes. All
+  fixtures are isolated; none uses a shared-table surface.
+
+## Derived NFR-021 correction boundary
+
+- The first complete fixture execution reached all 27 succeeded steps, then
+  exited nonzero only in derived aggregation. `run/results-pre-role-scope.jsonl`
+  SHA-256:
+  `3f9c87ec156aa473b7cb7d5e2f84c2c087d3112f90fe2e40ba3a92862b5a277f`;
+  `run/suite-manifest-pre-role-scope.json` SHA-256:
+  `6f1fe48cf9928778745f4558e6909321a3788ea258b609274d7a7ae40db1e45a`;
+  `run/suite-run-pre-role-scope.log` SHA-256:
+  `c644108a7b33faddd108047ba040cac08a737ae806e1df8633d63741ad995b25`.
+- The false row combined same-variant control and candidate storage and
+  reported normalized growth `2.171204` for both roles despite zero non-owned
+  records, orphans, unsharded bytes, and coordinator bytes. Packet 007 code
+  checkpoint `795af9616a304f2bf276d57c2c151270198f9bd4` scopes labeled evidence
+  by `nfr_021_role` and retains the unlabeled historical fallback.
+- Corrected derived rows are conforming and decision-eligible. Candidate
+  maximum normalized growth is `0.998937`; control is `1.095044`; both are
+  below `2.0`, all distribution defect counts are zero, and head capacity is
+  constant.
+
+## Excluded startup-collision attempt
+
+- A stale task-owned process held the first node port when the initial 100k
+  pair-A fixed fixture started. The attempt was diagnosed, stopped, and
+  excluded; the fixture was then run fresh.
+- `run/suite-manifest-startup-collision.json` SHA-256:
+  `97a455941b53b15792d3f997b2618a7dc2f803fc359ad93fd8e21777444217d2`;
+  `run/suite-run-startup-collision.log` SHA-256:
+  `04c4d7960e5f70534190c9fa4371a4f4f5b5c414053f00c75b58cc779252e704`;
+  `run/startup-collision-100k-a-fixed-second.md` SHA-256:
+  `58e81137bc718eeaab78cbb03516d160e65df118743bc94c0709f8cbe85ff3cb`.
+- No latency, recall, storage, or conformance row from this attempt contributes
+  to the final decision.

@@ -1,0 +1,47 @@
+[suite:task231-fixed-stride-10k-50k-100k] wrote reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest.json
+[suite:task231-fixed-stride-10k-50k-100k] precheck-host already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-10k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-10k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-10k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-10k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-50k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-50k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-50k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-50k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-100k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-100k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-100k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-warm-100k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-10k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-10k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-10k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-10k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-50k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-50k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-50k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-50k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-100k-a-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-100k-a-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-100k-b-fixed-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-cold-100k-b-control-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-wide-100k-control-first already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] task231-wide-100k-fixed-second already succeeded in resume manifest
+[suite:task231-fixed-stride-10k-50k-100k] wrote reviews/task-231/005-full-scale-decision/artifacts/run/results.jsonl
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-100k-a-control-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-100k-a-fixed-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-100k-b-control-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-100k-b-fixed-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-10k-a-control-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-10k-a-fixed-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-10k-b-control-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-10k-b-fixed-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-50k-a-control-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-50k-a-fixed-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-50k-b-control-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-cold-50k-b-fixed-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-warm-100k-a-fixed-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-warm-100k-b-control-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-warm-100k-b-fixed-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-wide-100k-control-first after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] removed run_dir /home/peter/.ecaz/clusters/task231-wide-100k-fixed-second after durable artifact capture
+[suite:task231-fixed-stride-10k-50k-100k] wrote reviews/task-231/005-full-scale-decision/artifacts/run/suite-manifest.json

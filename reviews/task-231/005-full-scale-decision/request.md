@@ -5,20 +5,47 @@ agent: Codex
 role: coder
 model: GPT-5
 date: 2026-08-30
-seq: 4
+seq: 5
 ---
 
-# Task 231 full-scale decision preregistration
+# Task 231 full-scale decision
 
-Status: review-open; **no measurement step has run**. Instrumentation/config
-checkpoint: `f432f0575b23471d792789df57e723e702c8cf25` (building on
-`be7264b5a`, `9bb9e0f1b`, and `bf4b78ed2`). GitHub ticket: issue #97.
+Status: review-open; final coder disposition **STOP — do not promote
+fixed-stride node blocks**. Accepted measurement extension SHA:
+`66b53998a955b583ca43c0e967806aa29e0a4404`. GitHub ticket: issue #97.
 
-This request freezes the decision contract and asks for review of the runner
-instrumentation before the 10k/50k/100k A/B starts. The checked-in
+This request applies the already review-closed decision contract to the
+completed 10k/50k/100k A/B. The checked-in
 `crates/ecaz-cli/suites/task231-fixed-stride-10k-50k-100k.json` has SHA-256
 `48dbcbf38383d99418e99b6f246149c5fb7b552b696444ed6cd8e9379da1d211`
-and audits as 27 steps.
+and completed all 27 steps successfully. The compact result table and
+secondary evidence are in `artifacts/decision-summary.md`; canonical structured
+evidence is in `artifacts/run/results.jsonl` and `suite-manifest.json`.
+
+## Final result
+
+At the frozen primary 100k BW4/H100 gate, pair A measured 8.60 ms control
+versus 9.50 ms fixed: fixed was 0.90 ms / 10.5% slower and failed. Pair B
+measured 9.79 ms control versus 8.11 ms fixed: fixed was 1.68 ms / 17.2%
+faster and passed. The frozen rule says one pass plus one failure is STOP;
+pairs are not averaged. The report-only 100k BW16/H25 pair favored fixed by
+0.73 ms / 8.8%, but its position confound and preregistered secondary status
+mean it cannot reverse the verdict.
+
+Recall was neutral and above every floor. Storage confirmed the predicted
+two-block-per-record cost with zero deviations across 39 candidate per-node
+rows. All 36 cold-residency rows reached zero resident generation buffers.
+Warm DML gates passed, with zero control node-store growth and positive,
+extent-integral fixed growth. Concurrency was intentionally skipped, so the
+implementation evidence remains single-writer only.
+
+The fixture matrix initially exited nonzero after all 27 steps succeeded
+because the runner's derived NFR-021 aggregation mixed control and candidate
+rows sharing variant `production`. Packet 007 fixes the role scope and has its
+own open review. Re-extracting the unchanged manifest reused all 27 fixture
+steps and exited zero: candidate/control maximum normalized growth is
+0.998937/1.095044 against the 2.0 bound, with all distribution fields clean.
+No measured fixture or accepted extension SHA changed.
 
 ## Frozen decision rule
 
@@ -132,14 +159,10 @@ twice the measured nonzero lane spread.
   checks whether the layout conclusion transfers when each round requests
   more nodes.
 
-## Validation and requested review
+## Validation and requested final review
 
-Packet-local receipts and hashes are in `artifacts/manifest.md`. The suite
-audit passes 27/27 configured steps; the focused CLI tests pass 2/2.
-
-Please verify that seq-03's cold-residency finding is closed by direct
-`pg_buffercache` before/after measurement and the enforced approximately-zero
-postcondition. The exhaustive review of the remaining instrumentation is
-accepted as complete. The decision run will not start until this
-preregistration is review-closed; Packet 004's allocator rereview is closed
-DONE at seq-02.
+Packet-local receipts and hashes are in `artifacts/manifest.md`. Please verify
+the frozen-rule STOP disposition, the result transcription, the explicit
+single-writer limitation, the startup-collision exclusion, and Packet 007's
+role-scoped NFR-021 re-extraction. Packet 004's allocator rereview and Packet
+006's lock-lifetime correction are already review-closed DONE.
