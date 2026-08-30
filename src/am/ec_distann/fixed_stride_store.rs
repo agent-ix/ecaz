@@ -30,6 +30,8 @@ const PAGE_DIGEST_BYTES: usize = 32;
 pub(crate) struct FixedStrideReadTelemetry {
     pub(crate) logical_blocks_touched: u32,
     pub(crate) logical_bytes_touched: u64,
+    pub(crate) shared_buffer_hits: u64,
+    pub(crate) shared_buffer_reads: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,11 +46,40 @@ pub(crate) fn read_nodes(
     requests: &[FixedStrideReadRequest],
     out: &mut Vec<FixedStrideNodeV1>,
 ) -> Result<FixedStrideReadTelemetry, String> {
+    // PostgreSQL maintains this accounting per backend. Sampling it around
+    // the bounded raw-relation operation attributes shared-buffer behavior to
+    // fixed-stride reads without waiting for asynchronous pg_stat flushes.
+    // This function stays on one PostgreSQL backend and never crosses an
+    // await or thread boundary.
+    let before = unsafe { pg_sys::pgBufferUsage };
+    let mut telemetry = read_nodes_inner(relation, metadata, requests, out)?;
+    let after = unsafe { pg_sys::pgBufferUsage };
+    telemetry.shared_buffer_hits = after
+        .shared_blks_hit
+        .saturating_sub(before.shared_blks_hit)
+        .try_into()
+        .unwrap_or(0);
+    telemetry.shared_buffer_reads = after
+        .shared_blks_read
+        .saturating_sub(before.shared_blks_read)
+        .try_into()
+        .unwrap_or(0);
+    Ok(telemetry)
+}
+
+fn read_nodes_inner(
+    relation: RelationHandle,
+    metadata: &FixedStrideMetadataV1,
+    requests: &[FixedStrideReadRequest],
+    out: &mut Vec<FixedStrideNodeV1>,
+) -> Result<FixedStrideReadTelemetry, String> {
     out.clear();
     if requests.is_empty() {
         return Ok(FixedStrideReadTelemetry {
             logical_blocks_touched: 0,
             logical_bytes_touched: 0,
+            shared_buffer_hits: 0,
+            shared_buffer_reads: 0,
         });
     }
     let full_verification = super::options::debug_fixed_stride_full_verification();
@@ -81,6 +112,8 @@ pub(crate) fn read_nodes(
         return Ok(FixedStrideReadTelemetry {
             logical_blocks_touched: blocks,
             logical_bytes_touched: bytes,
+            shared_buffer_hits: 0,
+            shared_buffer_reads: 0,
         });
     }
 
@@ -149,6 +182,8 @@ pub(crate) fn read_nodes(
     Ok(FixedStrideReadTelemetry {
         logical_blocks_touched: blocks_touched,
         logical_bytes_touched: u64::from(blocks_touched) * u64::from(layout.block_size),
+        shared_buffer_hits: 0,
+        shared_buffer_reads: 0,
     })
 }
 
@@ -324,6 +359,8 @@ fn read_node_with_verification(
         Ok(FixedStrideReadTelemetry {
             logical_blocks_touched: 1,
             logical_bytes_touched: u64::from(layout.block_size),
+            shared_buffer_hits: 0,
+            shared_buffer_reads: 0,
         })
     } else {
         for segment in 0..layout.extent_blocks {
@@ -355,6 +392,8 @@ fn read_node_with_verification(
         Ok(FixedStrideReadTelemetry {
             logical_blocks_touched: layout.extent_blocks,
             logical_bytes_touched: u64::from(layout.block_size) * u64::from(layout.extent_blocks),
+            shared_buffer_hits: 0,
+            shared_buffer_reads: 0,
         })
     }
 }
@@ -930,6 +969,11 @@ mod tests {
             } else {
                 metadata.layout.extent_blocks * count as u32
             }
+        );
+        assert_eq!(
+            batch_telemetry.shared_buffer_hits + batch_telemetry.shared_buffer_reads,
+            u64::from(batch_telemetry.logical_blocks_touched),
+            "PostgreSQL BufferUsage must account for every fixed-stride block read"
         );
         let mut decoded = FixedStrideNodeV1::empty();
         assert!(read_node(handle, &metadata, 0, u64::MAX, &mut decoded).is_err());

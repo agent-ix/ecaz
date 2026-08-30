@@ -2397,7 +2397,7 @@ fn diagnose_physical_generation(
     })
 }
 
-/// The 22-column physical topology row shared by the by-build-id and
+/// The 23-column physical topology row shared by the by-build-id and
 /// by-fingerprint inspection endpoints.
 type DistannTopologyRow = (
     i32,
@@ -2422,9 +2422,10 @@ type DistannTopologyRow = (
     Option<i64>,
     Option<i64>,
     Option<i64>,
+    Option<i64>,
 );
 
-/// Diagnose one already-resolved physical generation and emit its 22-column
+/// Diagnose one already-resolved physical generation and emit its 23-column
 /// topology row. Decodes and identity-checks the descriptor, locks the physical
 /// relations against concurrent reclaim, recomputes the counts/digests from
 /// storage, and reads the exact relation sizes.
@@ -2619,6 +2620,10 @@ fn build_topology_row(
             .cold_tier_bytes
             .map(|bytes| to_i64(bytes, "cold_tier_bytes"))
             .transpose()?,
+        sizes
+            .node_store_bytes
+            .map(|bytes| to_i64(bytes, "node_store_bytes"))
+            .transpose()?,
     ))
 }
 
@@ -2660,6 +2665,7 @@ fn ec_distann_generation_topology(
         name!(cold_tier_row_count, Option<i64>),
         name!(cold_tier_orphan_row_count, Option<i64>),
         name!(cold_tier_bytes, Option<i64>),
+        name!(node_store_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
@@ -2736,6 +2742,7 @@ fn ec_distann_epoch_topology(
         name!(cold_tier_row_count, Option<i64>),
         name!(cold_tier_orphan_row_count, Option<i64>),
         name!(cold_tier_bytes, Option<i64>),
+        name!(node_store_bytes, Option<i64>),
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {

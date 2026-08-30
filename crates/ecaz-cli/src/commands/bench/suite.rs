@@ -605,6 +605,22 @@ enum DistannTask230IoQueryShape {
     SelectAll,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DistannTask231ResidencyProfile {
+    Warm,
+    ControlledSharedBufferCold,
+}
+
+impl DistannTask231ResidencyProfile {
+    fn cli_label(self) -> &'static str {
+        match self {
+            Self::Warm => "warm",
+            Self::ControlledSharedBufferCold => "controlled-shared-buffer-cold",
+        }
+    }
+}
+
 impl DistannTask230IoQueryShape {
     fn cli_label(self) -> &'static str {
         match self {
@@ -712,6 +728,12 @@ struct DistannLocalMultinodeStep {
     /// Task 230 vertically partitioned authoritative row-tier format.
     #[serde(default)]
     hot_cold_row_tier: bool,
+    /// Task 231 directly addressed fixed-stride graph/vector node relation.
+    #[serde(default)]
+    fixed_stride_node_storage: bool,
+    /// Task 231 warm or suite-controlled shared-buffer-cold protocol.
+    #[serde(default)]
+    task231_residency_profile: Option<DistannTask231ResidencyProfile>,
     /// Optional additional hot scalar physical attnums for Task 230.
     #[serde(default)]
     hot_payload_attnums: Option<String>,
@@ -5327,6 +5349,23 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.task231_residency_profile.is_some() && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} task231_residency_profile requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.task231_residency_profile
+                    == Some(DistannTask231ResidencyProfile::ControlledSharedBufferCold)
+                    && (step.benchmark_iterations.unwrap_or(5) != 1
+                        || step.benchmark_warmup_iterations.unwrap_or(0) != 0
+                        || !step.benchmark_concurrency_sweep.is_empty())
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} controlled shared-buffer-cold profile requires benchmark_iterations=1, zero warmups, and no concurrency sweep",
+                        step.name
+                    )
+                }
                 if step.task230_io_query_shape.is_some() && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} task230_io_query_shape requires physical_benchmark",
@@ -6529,6 +6568,15 @@ fn expand_distann_local_multinode(
     if step.hot_cold_row_tier {
         args.push("--hot-cold-row-tier".into());
     }
+    if step.fixed_stride_node_storage {
+        args.push("--fixed-stride-node-storage".into());
+    }
+    push_opt_arg(
+        &mut args,
+        "--task231-residency-profile",
+        step.task231_residency_profile
+            .map(DistannTask231ResidencyProfile::cli_label),
+    );
     push_opt_arg(
         &mut args,
         "--hot-payload-attnums",
@@ -8478,6 +8526,37 @@ psql header noise\n\
             .expect_err("hot payload without layout must fail")
             .to_string()
             .contains("hot_payload_attnums requires hot_cold_row_tier"));
+    }
+
+    #[test]
+    fn task231_distann_local_multinode_expands_fixed_stride_node_storage() {
+        let raw = r#"{
+          "name": "task231-fixed-stride",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k",
+            "fixed_stride_node_storage": true,
+            "task231_residency_profile": "controlled_shared_buffer_cold",
+            "benchmark_iterations": 1,
+            "benchmark_warmup_iterations": 0
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--fixed-stride-node-storage".into()));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--task231-residency-profile",
+                    "controlled-shared-buffer-cold",
+                ]
+        }));
     }
 
     #[test]

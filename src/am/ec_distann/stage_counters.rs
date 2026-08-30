@@ -256,13 +256,16 @@ pub(crate) enum DistannMaterializationWork {
     ExactVectorBytes,
     FixedStrideLogicalBlocksTouched,
     FixedStrideLogicalBytesTouched,
+    GraphDirectoryProbes,
+    FixedStrideSharedBufferHits,
+    FixedStrideSharedBufferReads,
 }
 
 impl DistannMaterializationWork {
     // Keep DISTANN_WORK_ROWS in
     // crates/ecaz-cli/src/commands/dev/distann_multicluster.rs synchronized:
     // the CLI contract is this server count plus client_result_rows.
-    pub(crate) const ALL: [Self; 63] = [
+    pub(crate) const ALL: [Self; 66] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -326,6 +329,9 @@ impl DistannMaterializationWork {
         Self::ExactVectorBytes,
         Self::FixedStrideLogicalBlocksTouched,
         Self::FixedStrideLogicalBytesTouched,
+        Self::GraphDirectoryProbes,
+        Self::FixedStrideSharedBufferHits,
+        Self::FixedStrideSharedBufferReads,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -399,6 +405,9 @@ impl DistannMaterializationWork {
             Self::ExactVectorBytes => "exact_vector_bytes",
             Self::FixedStrideLogicalBlocksTouched => "fixed_stride_logical_blocks_touched",
             Self::FixedStrideLogicalBytesTouched => "fixed_stride_logical_bytes_touched",
+            Self::GraphDirectoryProbes => "graph_directory_probes",
+            Self::FixedStrideSharedBufferHits => "fixed_stride_shared_buffer_hits",
+            Self::FixedStrideSharedBufferReads => "fixed_stride_shared_buffer_reads",
         }
     }
 
@@ -467,6 +476,9 @@ impl DistannMaterializationWork {
             Self::ExactVectorBytes => 60,
             Self::FixedStrideLogicalBlocksTouched => 61,
             Self::FixedStrideLogicalBytesTouched => 62,
+            Self::GraphDirectoryProbes => 63,
+            Self::FixedStrideSharedBufferHits => 64,
+            Self::FixedStrideSharedBufferReads => 65,
         }
     }
 }

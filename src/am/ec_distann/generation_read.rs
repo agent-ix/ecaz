@@ -374,6 +374,11 @@ where
         }
         records.insert(record.node.vec_id, record);
     }
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::record_work(
+        super::stage_counters::DistannMaterializationWork::GraphDirectoryProbes,
+        fixed_seen.len(),
+    );
     if let Some((node_store, metadata)) = fixed_stride {
         let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
             DistannExpandError::GenerationMissing("fixed-stride node store opened null".to_owned())
@@ -435,6 +440,14 @@ where
             super::stage_counters::record_work(
                 super::stage_counters::DistannMaterializationWork::FixedStrideLogicalBytesTouched,
                 usize::try_from(telemetry.logical_bytes_touched).unwrap_or(usize::MAX),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::FixedStrideSharedBufferHits,
+                usize::try_from(telemetry.shared_buffer_hits).unwrap_or(usize::MAX),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::FixedStrideSharedBufferReads,
+                usize::try_from(telemetry.shared_buffer_reads).unwrap_or(usize::MAX),
             );
         }
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
@@ -1915,6 +1928,7 @@ impl RetainedGenerationScan {
             )
         })?;
         let mut rows = Vec::with_capacity(limit);
+        let mut fixed_entries = Vec::with_capacity(limit);
         while rows.len() < limit {
             unsafe { pg_sys::ExecClearTuple(graph_slot.as_ptr()) };
             let found = unsafe {
@@ -1929,6 +1943,15 @@ impl RetainedGenerationScan {
             }
             let stored_id =
                 unsafe { pg_sys::DatumGetInt64(graph_slot_attr(&graph_slot, 1, "vec_id")?) };
+            if self.fixed_stride_metadata.is_some() {
+                let entry = fixed_stride_directory_from_slot(&graph_slot)?;
+                self.validate_ownership(&[entry.vec_id])?;
+                fixed_entries.push(entry);
+                if fixed_entries.len() >= limit {
+                    break;
+                }
+                continue;
+            }
             let record =
                 unsafe {
                     crate::am::common::detoast::DetoastedVarlena::packed_from_datum(
@@ -1964,6 +1987,46 @@ impl RetainedGenerationScan {
                     .map(|neighbor| i64::from_le_bytes(neighbor.to_le_bytes()))
                     .collect(),
             ));
+        }
+        if let Some(metadata) = self.fixed_stride_metadata.as_ref() {
+            let node_store = self.node_store.as_ref().ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "fixed-stride graph diagnostic lost its node store".to_owned(),
+                )
+            })?;
+            let handle = NonNull::new(node_store.as_ptr()).ok_or_else(|| {
+                DistannExpandError::GenerationMissing(
+                    "fixed-stride graph diagnostic opened a null node store".to_owned(),
+                )
+            })?;
+            let requests = fixed_entries
+                .iter()
+                .map(|entry| fixed_stride_store::FixedStrideReadRequest {
+                    node_ordinal: entry.node_ordinal,
+                    vec_id: entry.vec_id,
+                })
+                .collect::<Vec<_>>();
+            let mut nodes = Vec::with_capacity(requests.len());
+            fixed_stride_store::read_nodes(handle, metadata, &requests, &mut nodes)
+                .map_err(DistannExpandError::GenerationMissing)?;
+            for (entry, node) in fixed_entries.into_iter().zip(nodes) {
+                if node.row_tid != entry.row_tid {
+                    return Err(DistannExpandError::GenerationMissing(
+                        "fixed-stride graph diagnostic row locator differs from directory"
+                            .to_owned(),
+                    ));
+                }
+                let neighbor_count = usize::from(node.neighbor_count);
+                rows.push((
+                    owner_ordinal,
+                    i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                    node.tombstoned,
+                    node.neighbor_vec_ids[..neighbor_count]
+                        .iter()
+                        .map(|neighbor| i64::from_le_bytes(neighbor.to_le_bytes()))
+                        .collect(),
+                ));
+            }
         }
         Ok(rows)
     }
@@ -8437,6 +8500,12 @@ impl GenerationExpander<'_> {
             }
             return Ok(vector.to_vec());
         }
+        if self.fixed_stride_metadata.is_some() {
+            return Err(DistannExpandError::GenerationMissing(format!(
+                "fixed-stride batch omitted exact vector for vec_id {:#018x}",
+                node.vec_id
+            )));
+        }
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(
             &mut tid,
@@ -8521,6 +8590,12 @@ impl GenerationExpander<'_> {
             return Ok(-crate::am::ec_diskann::source_inner_product_deterministic(
                 self.query, vector,
             ));
+        }
+        if self.fixed_stride_metadata.is_some() {
+            return Err(DistannExpandError::GenerationMissing(format!(
+                "fixed-stride batch omitted exact vector for vec_id {:#018x}",
+                node.vec_id
+            )));
         }
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(

@@ -90,6 +90,15 @@ pub struct LocalMultinodePg18Args {
     /// authoritative source row into compact hot and cold heaps.
     #[arg(long, default_value_t = false)]
     pub hot_cold_row_tier: bool,
+    /// Task 231 opt-in generation format that stores the complete graph node
+    /// and exact vector in a directly addressed fixed-stride raw relation.
+    #[arg(long, default_value_t = false)]
+    pub fixed_stride_node_storage: bool,
+    /// Task 231 benchmark cache protocol. The controlled profile evicts the
+    /// benchmark relations from shared buffers immediately before each timed
+    /// latency arm; warm remains the production default.
+    #[arg(long, value_enum, default_value_t = Task231ResidencyProfileArg::Warm)]
+    pub task231_residency_profile: Task231ResidencyProfileArg,
     /// Task 230 optional additional hot scalar physical attnums. The standard
     /// id-only decision fixture uses `1`; vector and source identity are
     /// mandatory implicit hot attributes and must not be named here.
@@ -435,6 +444,22 @@ pub enum Task230IoQueryShapeArg {
     ColdOnly,
     Mixed,
     SelectAll,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum Task231ResidencyProfileArg {
+    #[default]
+    Warm,
+    ControlledSharedBufferCold,
+}
+
+impl Task231ResidencyProfileArg {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Warm => "warm",
+            Self::ControlledSharedBufferCold => "controlled_shared_buffer_cold",
+        }
+    }
 }
 
 impl Task230IoQueryShapeArg {
@@ -787,6 +812,20 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
+    }
+    if args.task231_residency_profile != Task231ResidencyProfileArg::Warm
+        && !args.physical_benchmark
+    {
+        bail!("--task231-residency-profile requires --physical-benchmark");
+    }
+    if args.task231_residency_profile == Task231ResidencyProfileArg::ControlledSharedBufferCold
+        && (args.benchmark_warmup_iterations != 0
+            || args.benchmark_iterations != 1
+            || !args.benchmark_concurrency_sweep.is_empty())
+    {
+        bail!(
+            "controlled shared-buffer-cold measurement requires exactly one benchmark iteration, zero warmups, and no concurrency sweep"
+        );
     }
     if args.hot_cold_row_tier && args.covering_payload_attnums.is_some() {
         bail!("--hot-cold-row-tier and --covering-payload-attnums are mutually exclusive");
@@ -1436,6 +1475,23 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             args.distann_stage_counters,
             &extension_preflight.features,
         )?;
+        if args.fixed_stride_node_storage {
+            for node in &nodes {
+                let data_checksums =
+                    capture_psql(&psql, &socket_dir, node.port, "SHOW data_checksums").await?;
+                if data_checksums.trim() != "on" {
+                    bail!(
+                        "Task 231 fixed-stride benchmark requires data_checksums=on on node {}, got {:?}",
+                        node.node_id,
+                        data_checksums.trim()
+                    );
+                }
+                crate::ecaz_println!(
+                    "[distann-multicluster] task231_integrity_preflight node={} data_checksums=on pass=true",
+                    node.node_id
+                );
+            }
+        }
 
         match mode {
             FixtureMode::Physical => {
@@ -2352,6 +2408,11 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         String::new()
     };
+    let node_storage_layout = if args.fixed_stride_node_storage {
+        ", node_storage_layout = 'fixed_stride'"
+    } else {
+        ""
+    };
     Ok(format!(
         "{prefix}
          {load}
@@ -2368,7 +2429,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
                    graph_degree = {}, head_index_cap = {},
                    build_shards = {},
                    head_construction = '{}',
-                   neighbor_code_format = 'rabitq'{}{}{});",
+                   neighbor_code_format = 'rabitq'{}{}{}{});",
         args.graph_degree,
         args.head_index_cap,
         args.build_shards,
@@ -2376,6 +2437,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         head_sizing,
         payload_cover,
         row_tier_layout,
+        node_storage_layout,
     ))
 }
 
@@ -2399,6 +2461,7 @@ struct PhysicalTopologyRow {
     cold_rows: i64,
     cold_orphan_rows: i64,
     cold_bytes: i64,
+    node_store_bytes: i64,
 }
 
 async fn physical_topology(
@@ -2417,12 +2480,13 @@ async fn physical_topology(
                 coalesce(payload_sidecar_index_bytes, -1),
                 coalesce(cold_tier_row_count, -1),
                 coalesce(cold_tier_orphan_row_count, -1),
-                coalesce(cold_tier_bytes, -1))
+                coalesce(cold_tier_bytes, -1),
+                coalesce(node_store_bytes, -1))
            FROM {selector_sql}"
     );
     let raw = capture_psql(psql, socket_dir, node.port, &sql).await?;
     let fields = raw.trim().split('|').collect::<Vec<_>>();
-    if fields.len() != 18 {
+    if fields.len() != 19 {
         bail!(
             "physical topology node {} returned malformed row {:?}",
             node.node_id,
@@ -2453,6 +2517,7 @@ async fn physical_topology(
         cold_rows: number(15, "cold_tier_row_count")?,
         cold_orphan_rows: number(16, "cold_tier_orphan_row_count")?,
         cold_bytes: number(17, "cold_tier_bytes")?,
+        node_store_bytes: number(18, "node_store_bytes")?,
     })
 }
 
@@ -2463,6 +2528,7 @@ fn validate_physical_topology(
     source_count: i64,
     expect_sidecar: bool,
     expect_hot_cold: bool,
+    expect_fixed_stride: bool,
 ) -> Result<()> {
     if topology.is_empty()
         || topology.iter().any(|row| {
@@ -2486,6 +2552,11 @@ fn validate_physical_topology(
                     row.cold_rows != row.records || row.cold_orphan_rows != 0 || row.cold_bytes <= 0
                 } else {
                     row.cold_rows != -1 || row.cold_orphan_rows != -1 || row.cold_bytes != -1
+                }
+                || if expect_fixed_stride {
+                    row.node_store_bytes <= 0
+                } else {
+                    row.node_store_bytes != -1
                 }
         })
         || topology.iter().map(|row| row.records).sum::<i64>() != source_count
@@ -7413,6 +7484,93 @@ async fn fetch_monolithic_graph_diagnostic_nodes(
     Ok(graph)
 }
 
+async fn task231_control_shared_buffer_residency(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    scale: &str,
+    arm: &str,
+    variant: &str,
+) -> Result<Vec<String>> {
+    let mut lines = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        // The unlogged churn relation is 2.5x shared_buffers, uses EXTERNAL
+        // storage to keep its 1472-byte payload inline and uncompressed, and
+        // is dropped only after a full sequential read. Dropping invalidates
+        // the churn buffers after it has displaced the benchmark relations.
+        let output = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            "SET client_min_messages = warning;
+             DROP TABLE IF EXISTS public.ecaz_task231_buffer_churn;
+             CREATE UNLOGGED TABLE public.ecaz_task231_buffer_churn (
+                 id bigint NOT NULL,
+                 payload text NOT NULL
+             );
+             ALTER TABLE public.ecaz_task231_buffer_churn
+                 ALTER COLUMN payload SET STORAGE EXTERNAL;
+             INSERT INTO public.ecaz_task231_buffer_churn
+             SELECT i, repeat(md5(i::text), 46)
+               FROM generate_series(
+                   1,
+                   ceil(pg_size_bytes(current_setting('shared_buffers'))::numeric
+                        * 2.5 / 1500)::bigint
+               ) AS i;
+             ANALYZE public.ecaz_task231_buffer_churn;
+             SELECT count(*)::bigint || '|' ||
+                    pg_relation_size('public.ecaz_task231_buffer_churn')::bigint || '|' ||
+                    pg_size_bytes(current_setting('shared_buffers'))::bigint || '|' ||
+                    coalesce(sum(id + octet_length(payload)), 0)::numeric
+               FROM public.ecaz_task231_buffer_churn;
+             DROP TABLE public.ecaz_task231_buffer_churn;",
+        )
+        .await
+        .wrap_err_with(|| {
+            format!(
+                "controlling Task 231 shared-buffer residency on node {}",
+                node.node_id
+            )
+        })?;
+        let record = output
+            .lines()
+            .map(str::trim)
+            .find(|line| line.split('|').count() == 4)
+            .ok_or_else(|| eyre!("Task 231 buffer churn returned no measurement row"))?;
+        let mut fields = record.split('|');
+        let rows = fields.next().unwrap_or_default();
+        let relation_bytes = fields.next().unwrap_or_default();
+        let shared_buffers_bytes = fields.next().unwrap_or_default();
+        let scan_guard = fields.next().unwrap_or_default();
+        for (name, value) in [
+            ("rows", rows),
+            ("relation_bytes", relation_bytes),
+            ("shared_buffers_bytes", shared_buffers_bytes),
+            ("scan_guard", scan_guard),
+        ] {
+            value.parse::<u128>().wrap_err_with(|| {
+                format!("Task 231 buffer churn returned invalid {name}={value:?}")
+            })?;
+        }
+        let relation_bytes = relation_bytes.parse::<u128>()?;
+        let shared_buffers_bytes = shared_buffers_bytes.parse::<u128>()?;
+        if relation_bytes < shared_buffers_bytes.saturating_mul(2) {
+            bail!(
+                "Task 231 churn relation on node {} was too small: {} bytes versus {} shared-buffer bytes",
+                node.node_id,
+                relation_bytes,
+                shared_buffers_bytes
+            );
+        }
+        lines.push(format!(
+            "physical_benchmark_residency_control scale={scale} arm={arm} variant={variant} node={} profile=controlled_shared_buffer_cold rows={rows} relation_bytes={relation_bytes} shared_buffers_bytes={shared_buffers_bytes} scan_guard={scan_guard} relation_to_shared_buffers_ratio={:.6} pass=true",
+            node.node_id,
+            relation_bytes as f64 / shared_buffers_bytes as f64,
+        ));
+    }
+    Ok(lines)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -8874,6 +9032,16 @@ async fn run_physical_benchmarks(
             ));
         }
 
+        if args.task231_residency_profile == Task231ResidencyProfileArg::ControlledSharedBufferCold
+        {
+            lines.extend(
+                task231_control_shared_buffer_residency(
+                    psql, socket_dir, nodes, scale, arm, variant,
+                )
+                .await?,
+            );
+        }
+        let residency_profile = args.task231_residency_profile.label();
         let latency_log = log_dir.join(format!("{arm}-{variant}-latency.log"));
         let mut latency_args = common.clone();
         latency_args.extend([
@@ -8895,7 +9063,7 @@ async fn run_physical_benchmarks(
             "1".into(),
             "--force-index".into(),
             "--cache-state".into(),
-            "warm".into(),
+            residency_profile.into(),
             "--log-output".into(),
             latency_log.display().to_string(),
             "--session-guc".into(),
@@ -9084,7 +9252,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} expanded_locator={expanded_locator} payload_projection={payload_projection} covering_sidecar={covering_sidecar} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache={residency_profile} warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -9176,13 +9344,13 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 63 server-side work metrics
+            // The extension exposes 66 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            const DISTANN_WORK_ROWS: usize = 64;
+            const DISTANN_WORK_ROWS: usize = 67;
             if work_rows.len() != DISTANN_WORK_ROWS * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
@@ -9625,7 +9793,16 @@ async fn run_physical_benchmarks(
         // unmeasurable.
         let owner_graph_side_bytes = published
             .iter()
-            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .map(|row| {
+                row.graph_bytes
+                    + row.node_store_bytes.max(0)
+                    + row.directory_bytes
+                    + row.control_bytes
+            })
+            .sum::<i64>();
+        let owner_node_store_bytes = published
+            .iter()
+            .map(|row| row.node_store_bytes.max(0))
             .sum::<i64>();
         let owner_hot_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
         let owner_cold_tier_bytes = published
@@ -9645,13 +9822,19 @@ async fn run_physical_benchmarks(
         let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes + owner_sidecar_bytes;
         let max_owner_graph_side_bytes = published
             .iter()
-            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .map(|row| {
+                row.graph_bytes
+                    + row.node_store_bytes.max(0)
+                    + row.directory_bytes
+                    + row.control_bytes
+            })
             .max()
             .unwrap_or(0);
         let physical_generation_bytes = published
             .iter()
             .map(|row| {
                 row.graph_bytes
+                    + row.node_store_bytes.max(0)
                     + row.row_bytes
                     + row.directory_bytes
                     + row.control_bytes
@@ -9750,14 +9933,16 @@ async fn run_physical_benchmarks(
             "physical_benchmark_storage_ratio scale={scale} {shared} arm=physical raw_vector_rows={raw_vector_rows} raw_vector_dim={raw_vector_dim} raw_vector_bytes={raw_vector_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} max_single_node_growth_reference=100k_div_10k",
         ));
         for row in published {
-            let graph_side_bytes = row.graph_bytes + row.directory_bytes + row.control_bytes;
+            let node_store_bytes = row.node_store_bytes.max(0);
+            let graph_side_bytes =
+                row.graph_bytes + node_store_bytes + row.directory_bytes + row.control_bytes;
             let sidecar_heap_bytes = row.sidecar_heap_bytes.max(0);
             let sidecar_index_bytes = row.sidecar_index_bytes.max(0);
             let sidecar_bytes = sidecar_heap_bytes + sidecar_index_bytes;
             let cold_tier_bytes = row.cold_bytes.max(0);
             let row_tier_bytes = row.row_bytes + cold_tier_bytes;
             lines.push(format!(
-                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} hot_tier_rows={} hot_tier_bytes={} cold_tier_rows={} cold_tier_bytes={cold_tier_bytes} row_tier_bytes={row_tier_bytes} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} node_store_bytes={node_store_bytes} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} hot_tier_rows={} hot_tier_bytes={} cold_tier_rows={} cold_tier_bytes={cold_tier_bytes} row_tier_bytes={row_tier_bytes} sidecar_rows={} sidecar_heap_bytes={sidecar_heap_bytes} sidecar_index_bytes={sidecar_index_bytes} sidecar_bytes={sidecar_bytes} total_resident_bytes={} derived_relation_bytes=0",
                 row.node_id,
                 row.graph_bytes,
                 row.directory_bytes,
@@ -9773,7 +9958,7 @@ async fn run_physical_benchmarks(
             "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} crown_resident_bytes={crown_resident_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_hot_tier_bytes={owner_hot_tier_bytes} owner_cold_tier_bytes={owner_cold_tier_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_node_store_bytes={owner_node_store_bytes} owner_hot_tier_bytes={owner_hot_tier_bytes} owner_cold_tier_bytes={owner_cold_tier_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_sidecar_heap_bytes={owner_sidecar_heap_bytes} owner_sidecar_index_bytes={owner_sidecar_index_bytes} owner_sidecar_bytes={owner_sidecar_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
             published.len(),
         ));
         lines.push(format!(
@@ -10611,6 +10796,16 @@ async fn validate_reused_physical_fixture(
             args.hot_cold_row_tier
         );
     }
+    let existing_fixed_stride = options
+        .split(',')
+        .any(|option| option == "node_storage_layout=fixed_stride");
+    if existing_fixed_stride != args.fixed_stride_node_storage {
+        connection_task.abort();
+        bail!(
+            "--reuse-fixture node-storage layout mismatch: requested fixed_stride={}, existing reloptions={reloptions}",
+            args.fixed_stride_node_storage
+        );
+    }
     let expected_hot_payload = args
         .hot_payload_attnums
         .as_deref()
@@ -10696,6 +10891,7 @@ async fn drive_reused_physical_fixture(
         source_count,
         args.covering_payload_attnums.is_some(),
         args.hot_cold_row_tier,
+        args.fixed_stride_node_storage,
     )?;
     crate::ecaz_println!(
         "[distann-multicluster] fixture_decision action=reuse run_dir={} scale={} source_rows={} extension_git_sha={} extension_build_profile={}",
@@ -12647,7 +12843,7 @@ async fn task235_generation_statuses(
             .query_one(
                 "WITH live AS (
                      SELECT state, row_tier_relid, cold_tier_relid,
-                            graph_store_relid, directory_relid
+                            graph_store_relid, node_store_relid, directory_relid
                        FROM ec_distann_generation
                       WHERE index_oid = 'dm_idx'::regclass::oid
                         AND build_id = $1::text::uuid
@@ -12668,6 +12864,7 @@ async fn task235_generation_statuses(
                                  live.row_tier_relid,
                                  live.cold_tier_relid,
                                  live.graph_store_relid,
+                                 live.node_store_relid,
                                  live.directory_relid)
                         ), 0)",
                 &[&build_id],
@@ -13093,7 +13290,8 @@ async fn task235_run_lifecycle_fault_matrix(
 ) -> Result<Vec<String>> {
     let (client, connection_task) = task235_fault_client(socket_dir, &nodes[0], None, 0).await?;
     let mut lines = Vec::new();
-    let live_relation_count = if args.hot_cold_row_tier { 4 } else { 3 };
+    let live_relation_count =
+        3 + i64::from(args.hot_cold_row_tier) + i64::from(args.fixed_stride_node_storage);
 
     let build_cells = [
         (
@@ -13881,7 +14079,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &ready_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}",
+            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={} node_store_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -13898,6 +14096,7 @@ async fn drive_physical_fixture(
             row.cold_rows,
             row.cold_orphan_rows,
             row.cold_bytes,
+            row.node_store_bytes,
         );
         ready.push(row);
     }
@@ -13908,6 +14107,7 @@ async fn drive_physical_fixture(
         source_count,
         args.covering_payload_attnums.is_some(),
         args.hot_cold_row_tier,
+        args.fixed_stride_node_storage,
     )?;
 
     coordinator
@@ -13960,7 +14160,7 @@ async fn drive_physical_fixture(
     for node in owners {
         let row = physical_topology(psql, socket_dir, node, &published_selector).await?;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={}",
+            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={} sidecar_rows={} sidecar_heap_bytes={} sidecar_index_bytes={} cold_rows={} cold_orphans={} cold_bytes={} node_store_bytes={}",
             row.node_id,
             row.state,
             row.records,
@@ -13977,6 +14177,7 @@ async fn drive_physical_fixture(
             row.cold_rows,
             row.cold_orphan_rows,
             row.cold_bytes,
+            row.node_store_bytes,
         );
         published.push(row);
     }
@@ -13987,6 +14188,7 @@ async fn drive_physical_fixture(
         source_count,
         args.covering_payload_attnums.is_some(),
         args.hot_cold_row_tier,
+        args.fixed_stride_node_storage,
     )?;
 
     let query_limit = i64::from(args.top_k.max(1));
@@ -18384,6 +18586,7 @@ mod tests {
             cold_rows: 3,
             cold_orphan_rows: 0,
             cold_bytes: 8_192,
+            node_store_bytes: -1,
         };
         assert!(validate_physical_topology(
             "test",
@@ -18392,6 +18595,7 @@ mod tests {
             3,
             false,
             true,
+            false,
         )
         .is_ok());
         row.cold_rows = -1;
@@ -18404,6 +18608,7 @@ mod tests {
             3,
             false,
             true,
+            false,
         )
         .is_err());
         assert!(validate_physical_topology(
@@ -18413,8 +18618,30 @@ mod tests {
             3,
             false,
             false,
+            false,
         )
         .is_ok());
+        row.node_store_bytes = 16_384;
+        assert!(validate_physical_topology(
+            "test",
+            std::slice::from_ref(&row),
+            "Published",
+            3,
+            false,
+            false,
+            true,
+        )
+        .is_ok());
+        assert!(validate_physical_topology(
+            "test",
+            std::slice::from_ref(&row),
+            "Published",
+            3,
+            false,
+            false,
+            false,
+        )
+        .is_err());
     }
 
     #[test]
