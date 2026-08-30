@@ -505,6 +505,21 @@ unsafe fn insert_from_prepared_slot(
         )?;
         (candidates, remote_vectors, forward_ids)
     };
+    // One top-level distributed insert may leave several remote transactions
+    // prepared while later backlinks are dispatched. Make the tuple-lock
+    // disjointness invariant load-bearing: the owner append targets only the
+    // new vec_id, and every backlink must target one distinct pre-existing
+    // vec_id. Otherwise a later RPC could wait on a directory tuple retained
+    // by an earlier prepared RPC, recreating the coordinator-invisible lock
+    // cycle one level below the raw relation lock.
+    let mut distinct_forward_ids = HashSet::with_capacity(forward_ids.len());
+    for forward_id in &forward_ids {
+        if *forward_id == vec_id || !distinct_forward_ids.insert(*forward_id) {
+            return Err(format!(
+                "EC_INSERT_BACKLINK: forward target {forward_id:#018x} is not distinct from this insert and every other backlink target"
+            ));
+        }
+    }
     let forward = forward_ids
         .iter()
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))

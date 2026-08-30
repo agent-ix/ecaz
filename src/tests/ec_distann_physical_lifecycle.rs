@@ -8919,6 +8919,28 @@ fn ec_distann_test_setup_fixed_stride_repeatable_read_fixture() -> String {
 
 #[cfg(feature = "pg_test")]
 #[pg_extern]
+fn ec_distann_test_setup_fixed_stride_prepared_lock_fixture() -> String {
+    Spi::run("SET LOCAL search_path = tests, public, pg_catalog")
+        .expect("prepared-lock fixture should resolve pg-test extension objects");
+    Spi::run("SET LOCAL ec_distann.roster = '17@local'")
+        .expect("prepared-lock fixture should install its immutable roster");
+    Spi::run("SET LOCAL ec_distann.local_node_id = '17'")
+        .expect("prepared-lock fixture should identify its owner");
+    let fixture = create_fixed_stride_distann_participant_lifecycle_fixture(
+        "ec_distann_fixed_stride_prepared_lock",
+        0x6f,
+    );
+    publish_distann_participant(&fixture);
+    format!(
+        "{}|{}|{}",
+        u32::from(fixture.generation.index_oid),
+        hex::encode(&fixture.fingerprint),
+        u32::from(fixture.relations.1),
+    )
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern]
 fn ec_distann_test_fixed_stride_repeatable_read_insert(
     index_oid: pg_sys::Oid,
     fingerprint_hex: String,
@@ -9510,6 +9532,131 @@ fn test_distann_fixed_stride_dml_append_overlay_and_rollback() {
     assert_eq!(reverse_amended.exact_vector, failed_vector);
     assert_eq!(reverse_amended.neighbor_count, 1);
     assert_eq!(reverse_amended.neighbor_vec_ids[0], vec_id);
+}
+
+#[pg_test]
+fn test_distann_fixed_stride_prepared_lock_release() {
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("prepared-lock setup connection should succeed");
+    let helper_schema = setup
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE p.proname = 'ec_distann_test_setup_fixed_stride_prepared_lock_fixture'",
+            &[],
+        )
+        .expect("prepared-lock helper schema should resolve")
+        .try_get::<_, String>(0)
+        .expect("prepared-lock helper schema should decode");
+    let setup_function = format!(
+        "{helper_schema}.ec_distann_test_setup_fixed_stride_prepared_lock_fixture"
+    );
+    let insert_function =
+        format!("{helper_schema}.ec_distann_test_fixed_stride_repeatable_read_insert");
+    let fixture = setup
+        .query_one(&format!("SELECT {setup_function}()"), &[])
+        .expect("prepared-lock fixture should publish")
+        .try_get::<_, String>(0)
+        .expect("prepared-lock fixture identity should decode");
+    let mut fields = fixture.split('|');
+    let index_oid = fields
+        .next()
+        .expect("fixture index oid")
+        .parse::<u32>()
+        .expect("fixture index oid should parse");
+    let fingerprint = fields.next().expect("fixture fingerprint").to_owned();
+    let graph_oid = fields
+        .next()
+        .expect("fixture graph oid")
+        .parse::<u32>()
+        .expect("fixture graph oid should parse");
+    assert!(fields.next().is_none(), "fixture identity must have three fields");
+    let graph_name = setup
+        .query_one("SELECT $1::oid::regclass::text", &[&graph_oid])
+        .expect("graph relation name should resolve")
+        .try_get::<_, String>(0)
+        .expect("graph relation name should decode");
+
+    let first_marker = 0x91_i32;
+    let second_marker = 0x92_i32;
+    let first_identity = distann_test_v4_uuid(
+        u8::try_from(first_marker).expect("first prepared-lock marker must fit u8"),
+    );
+    let first_vec_id = i64::from_le_bytes(
+        crate::am::ec_distann::vec_id_from_source_identity(&first_identity).to_le_bytes(),
+    );
+    let gid = "ec_distann_test_fixed_stride_prepared_lock";
+    let mut first = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("prepared writer should connect");
+    first
+        .batch_execute(&format!(
+            "BEGIN;
+             SELECT {insert_function}({index_oid}::oid, '{fingerprint}', {first_marker});
+             PREPARE TRANSACTION '{gid}';"
+        ))
+        .expect("first fixed-stride writer should prepare after its raw append");
+
+    let mut second = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("second prepared-lock writer should connect");
+    second
+        .batch_execute("BEGIN; SET LOCAL statement_timeout = '10s'")
+        .expect("second writer should install its regression timeout");
+    let second_result = second.query_one(
+        &format!("SELECT {insert_function}($1::oid, $2::text, $3::integer)"),
+        &[&index_oid, &fingerprint, &second_marker],
+    );
+    let second_vec_id = match second_result {
+        Ok(row) => {
+            second
+                .batch_execute("COMMIT")
+                .expect("second writer should commit before prepared writer resolution");
+            row.try_get::<_, i64>(0)
+                .expect("second prepared-lock vec_id should decode")
+        }
+        Err(error) => {
+            second
+                .batch_execute("ROLLBACK")
+                .expect("timed-out second writer should roll back");
+            setup
+                .batch_execute(&format!("ROLLBACK PREPARED '{gid}'"))
+                .expect("failed prepared-lock regression should clean its prepared writer");
+            panic!(
+                "second owner-local fixed-stride mutation could not pass an unresolved prepared writer: {error}"
+            );
+        }
+    };
+    setup
+        .batch_execute(&format!("ROLLBACK PREPARED '{gid}'"))
+        .expect("prepared writer should roll back after the second writer commits");
+
+    let allocation = setup
+        .query_one(
+            &format!(
+                "SELECT count(*) FILTER (WHERE vec_id = $1)::bigint,
+                        max(node_ordinal) FILTER (WHERE vec_id = $2),
+                        count(*) FILTER (WHERE vec_id = $2 AND is_current)::bigint
+                   FROM {graph_name}"
+            ),
+            &[&first_vec_id, &second_vec_id],
+        )
+        .expect("prepared-lock allocation should remain queryable");
+    assert_eq!(
+        allocation.try_get::<_, i64>(0).unwrap(),
+        0,
+        "rolled-back prepared writer must publish no directory row"
+    );
+    assert_eq!(
+        allocation.try_get::<_, Option<i64>>(1).unwrap(),
+        Some(2),
+        "second writer must allocate after the prepared writer's physical ordinal gap"
+    );
+    assert_eq!(
+        allocation.try_get::<_, i64>(2).unwrap(),
+        1,
+        "second writer must remain the sole visible current row"
+    );
 }
 
 #[pg_test]
