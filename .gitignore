@@ -1,4 +1,3 @@
-/target
 /fuzz/target
 /fuzz/artifacts
 # /fuzz/corpus is intentionally tracked — `make fuzz-corpus-minimize`
@@ -69,3 +68,7 @@ reviews/**/pipeline-*-stage-containment.jsonl
 reviews/**/pipeline-*-leaf-block-rank.jsonl
 reviews/**/pipeline-*-target-block-rank.jsonl
 reviews/**/pipeline-*-target-candidate-rank.jsonl
+
+target/
+*-target/
+target-*/
