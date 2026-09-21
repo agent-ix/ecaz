@@ -4,7 +4,7 @@ Reference basis:
 
 - Paper cross-check from
   `reviews/task-30/581-30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
-  against `/home/peter/dev_bak/papers/2512.17264v1.pdf`.
+  against arXiv:2512.17264v1.
 - Phase 9 and 10 local architecture closeout in:
   - `plan/tasks/task30-phase9-spire-graph-architecture.md`
   - `plan/tasks/task30-phase10-spire-execution-performance.md`

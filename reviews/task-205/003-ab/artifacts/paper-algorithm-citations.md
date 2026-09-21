@@ -2,7 +2,7 @@
 
 Source: `DISTRIBUTEDANN: Efficient Scaling of a Single DISKANN Graph Across
 Thousands of Computers`, arXiv:2509.06046, 8 pages. Local copy read at
-`~/dev_bak/papers/distributedann-2509.06046.pdf`. Text extracted with `pypdf`;
+DistributedANN (arXiv:2509.06046). Text extracted with `pypdf`;
 line breaks and hyphenation are as extracted.
 
 These are transcribed here so the review's citations are checkable from inside

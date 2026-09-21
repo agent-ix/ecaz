@@ -293,7 +293,7 @@ permission to skip the AM.
   (includes reviewer feedback on the original closeout)
 - Reverted Task 86 commits (TQ+ work, preserved in git
   history): `e0ae9fe7d`, `c7e85e8ac`, `16f1e6104`, etc.
-- pgvectorscale reference: `/Users/peter/dev_bak/pgvectorscale/`
+- pgvectorscale reference: `timescale/pgvectorscale`
 
 ## Estimated size
 

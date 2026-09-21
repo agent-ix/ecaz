@@ -1,0 +1,36 @@
+name: Path hygiene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  added-lines:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject newly added workstation paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            diff_range="${BASE_SHA}...HEAD"
+          elif [ -n "$BEFORE_SHA" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+            diff_range="${BEFORE_SHA}..HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            diff_range="HEAD^..HEAD"
+          else
+            empty_tree="$(git hash-object -t tree /dev/null)"
+            diff_range="${empty_tree}..HEAD"
+          fi
+          python3 scripts/check_workstation_paths.py --diff-range "$diff_range"

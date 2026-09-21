@@ -37,8 +37,7 @@ branch + packet path):
 
 The root cause is architectural: a lossy partition-level routing decision
 must be hedged wider as recall targets rise and corpora grow. DistributedANN
-(**arXiv:2509.06046**, the durable citation; convenience local copy
-`~/dev_bak/papers/distributedann-2509.06046.pdf`; same research group as
+(**arXiv:2509.06046**, the durable citation; same research group as
 SPANN/SPIRE, replaced partition-routing in Bing production) inverts the
 design: distribute the storage, keep the index whole. One global Vamana
 graph; records hash-placed; query cost = beam × hops, corpus-independent.

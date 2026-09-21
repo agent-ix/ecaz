@@ -47,14 +47,14 @@ cargo install --path crates/ecaz-cli
 That installs the binary under Cargo's bin directory, usually
 `$HOME/.cargo/bin/ecaz`. Interactive shells may also put that directory on
 `$PATH`; when running from an agent or other sandboxed tool session, prefer the
-absolute installed path (for example `/Users/peter/.cargo/bin/ecaz`) so one
+absolute installed path (for example `${HOME}/.cargo/bin/ecaz`) so one
 approval rule can cover the operator surface consistently.
 
 All commands accept `--database`, `--host`, `--port`, `--user`, `--password`,
 and `--log-file`; each also falls back to the matching libpq environment
 variable (`PGDATABASE`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`) when the
 flag is omitted. `--host` may be either a TCP host name or a Unix socket
-directory such as `/home/peter/.pgrx`.
+directory supplied through `PGRX_HOME` or `PGHOST`.
 `--log-file` mirrors the CLI's stdout/stderr into a packet-local artifact
 file so review runs do not need shell `tee` wrappers. When `--log-file` is
 set, transient progress bars are suppressed so the artifact stays stable.
@@ -67,8 +67,8 @@ generation, load/list/inspect, benchmark, storage, scratch, and SQL checks
 through that binary:
 
 ```sh
-/Users/peter/.cargo/bin/ecaz dev sql --pg 18 --db postgres \
-  --socket-dir /Users/peter/.pgrx --raw \
+${HOME}/.cargo/bin/ecaz dev sql --pg 18 --db postgres \
+  --socket-dir "${PGRX_HOME}" --raw \
   --sql "select version()" \
   --log-output reviews/task-{id}/001-example/artifacts/pg18-status.log
 ```
@@ -82,10 +82,11 @@ libpq options, and approval scope in one place.
 External comparison extensions can use the same setup surface:
 
 ```sh
-/Users/peter/.cargo/bin/ecaz dev install pgvector --pg 18
-/Users/peter/.cargo/bin/ecaz dev install vectorscale \
+${HOME}/.cargo/bin/ecaz dev install pgvector --pg 18 \
+  --repo "${PGVECTOR_REPO}"
+${HOME}/.cargo/bin/ecaz dev install vectorscale \
   --pg 18 \
-  --repo "$HOME/dev_bak/pgvectorscale/pgvectorscale" \
+  --repo "${PGVECTORSCALE_REPO}" \
   --cargo-pgrx /tmp/pgvectorscale-cargo-pgrx-0.16.1/bin/cargo-pgrx
 ```
 

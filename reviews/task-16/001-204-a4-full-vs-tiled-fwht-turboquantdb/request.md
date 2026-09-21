@@ -1,6 +1,7 @@
 # Review Request: A4 Full vs Tiled FWHT — TurboQuantDB Comparison
 
-Basis: `main` working tree, with reference to `~/dev_bak/TurboQuantDB/`
+Basis: `main` working tree, with reference to
+`https://github.com/jyunming/TurboQuantDB`
 
 ## Summary
 

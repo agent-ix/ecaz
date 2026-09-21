@@ -53,7 +53,7 @@ Updated:
 Concrete changes:
 
 1. added a reproducible scratch install wrapper for a local pgvector checkout
-   (`/home/peter/dev_bak/pgvector` by default)
+   (the checkout supplied through `PGVECTOR_REPO` or `--repo`)
 2. the script installs pgvector into the same pg17 pgrx/Postgres tree already
    used by the scratch cluster:
    - `PG_CONFIG=/home/peter/.pgrx/17.9/pgrx-install/bin/pg_config`
@@ -195,4 +195,3 @@ The next useful follow-up is not more size work. It is one of:
    isolated grouped index without the special verified harness
 3. make the product call explicitly: latency-first compressed ANN versus
    higher-recall full-vector ANN
-
