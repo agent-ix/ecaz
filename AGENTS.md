@@ -21,7 +21,6 @@ Canonical task definitions live under `plan/tasks/`, not under `review/` or
       001-short-topic/
         request.md
         artifacts/
-          manifest.md
           ...
         feedback/
           2026-05-17-01-reviewer.md
@@ -81,16 +80,6 @@ Packet directories inside a task bucket must sort in chronological order.
   one-off audit outputs.
 - Do not cite local-only `tmp/` paths, terminal scrollback, or files outside the
   packet as durable review evidence.
-- Measurement packets must include `artifacts/manifest.md` as the packet-local
-  source of truth for artifact metadata.
-- `manifest.md` should record, for each artifact:
-  - head SHA
-  - task bucket and packet path
-  - lane / fixture / storage format / rerank mode where applicable
-  - command used
-  - timestamp
-  - whether the run used isolated one-index-per-table or shared-table surfaces
-  - the key result lines that `request.md` cites
 - `request.md` should summarize the result and point at the packet-local
   artifact files.
 
@@ -102,8 +91,7 @@ emitted. A packet should be tens of files, not hundreds. The following are
 them bloats packets and git history with regenerable or throwaway data:
 
 - **Corpus / query / ground-truth data** (`*.tsv`, `*.tsv.gz` under `reviews/`
-  or `benchmarks/`). Regenerable via `ecaz corpus`. Record the corpus prefix,
-  scale, and SHA in `manifest.md` instead of committing the data. The single
+  or `benchmarks/`). Regenerable via `ecaz corpus`. The single
   largest object in this repo's history is a committed corpus `.tsv` — never
   add more.
 - **SSM / tunnel / polling exhaust**: `tunnel-state/`, `tunnel-*.log`,
@@ -111,14 +99,12 @@ them bloats packets and git history with regenerable or throwaway data:
   `pg-readonly-status.log`. These are session/operational state, not evidence.
 - **Raw SSM RunShellScript output trees** (`**/awsrunShellScript/`
   stdout/stderr dumps, often several MB each). Keep only the cited result
-  lines, copied into a small packet-local log or quoted in `manifest.md`.
+  lines, copied into a small packet-local log.
 - **Poll snapshots**: `ssm-command-invocation.latest.json`,
-  `list-command-invocations*.json`. Keep the single
-  `ssm-command-invocation.final.json` when the manifest cites its command id /
-  status.
+  `list-command-invocations*.json`.
 - **Regenerable caches**: `truth-cache/` recall ground-truth.
 
-What **does** belong in a packet: `manifest.md`, `request.md`, `feedback/*.md`,
+What **does** belong in a packet: `request.md`, `feedback/*.md`,
 the `ecaz bench suite` config, `suite-manifest*.json` + `suite-results*.jsonl`,
 and the specific recall / latency / storage / load / inspect result logs that
 `request.md` cites. If a packet is accumulating hundreds of files, you are
@@ -155,8 +141,6 @@ and outside `target/`. The default is resolved by `default_cluster_root()` in
 - **Never point `--run-dir` inside the repo**, and never at `target/...`.
   `--run-dir target/task188-bw8-100k` is exactly the pattern that filled the
   disk.
-- Any other `--run-dir` target — e.g. staging clusters on a different volume —
-  needs a genuine reason **stated in the packet `manifest.md`**.
 - **Clusters are not review evidence.** Cite the result logs under the packet's
   `artifacts/`, not the cluster directory. Remove the run directory once the
   cited results are captured; a fixture left resident is many GB per arm.
@@ -191,20 +175,14 @@ deferred Task 41 packets only. Do not add new packets there.
 
 Pure benchmark/measurement packets (no code change under review, just
 measurement evidence) live under top-level `benchmarks/<topic>/`, with
-`manifest.md` at the packet root and raw logs under `artifacts/`.
+raw logs under `artifacts/`.
 Code-review packets that happen to include benchmark evidence stay under
-`reviews/task-{id}/{ordinal}-<topic>/` with their own
-`artifacts/manifest.md`, and SHOULD cite the owning `benchmarks/<topic>/`
-packet by path when one exists. See
-`spec/non-functional/NFR-007-benchmark-provenance.md` for the normative
-storage rule.
+`reviews/task-{id}/{ordinal}-<topic>/`, and SHOULD cite the owning
+`benchmarks/<topic>/` packet by path when one exists.
 
 Promoted current benchmark state lives under `benchmarks/current/<lane>/`.
 Those lanes are intentionally mutable indexes for the accepted current result
 on each host class (`m5-local`, `intel-local`, `aws-intel`, `aws-graviton`).
-Do not use a current lane as the only evidence source: its `manifest.md` must
-cite the immutable source packet, head SHA, standard suite config, and raw
-artifacts used for promotion.
 
 ### Task Closeout Requires 10/50/100k Benchmark Evidence
 
@@ -232,9 +210,8 @@ and stored in the owning packet.
   evidence lands. Local development hosts that have `ecaz` built + PG18 running +
   the staged corpora (e.g. the Intel desktop) ARE bench hosts — check for the
   binary and `data/staged-current/` before ever claiming env-blocked.
-- Evidence storage + provenance follow
-  `spec/non-functional/NFR-007-benchmark-provenance.md`; no fabricated numbers,
-  every cited result traces to a `results.jsonl` artifact.
+- No fabricated numbers; every cited result traces to a `results.jsonl`
+  artifact.
 
 ### Benchmark Runner: `ecaz bench suite` Only
 
@@ -255,38 +232,6 @@ into the owning packet.** Do not write new bash sweepers, per-packet
   workflow into a script. Land that extension as its own commit before
   using it in a packet.
 
-### Status Bookkeeping Is Part of the Work, Not a Follow-Up
-
-**A task is not finished until its `Status:` header and its
-`plan/tasks/README.md` row state the real, current outcome.** Landing code,
-running the benchmark, and writing the packet do not finish a task; a stale
-header makes all of that invisible and forces the next agent to re-derive the
-program state from packets and feedback files. That re-derivation has cost
-real hours more than once.
-
-Rules:
-
-- **Update both places in the same turn** as the disposition. The task file
-  `Status:` line and the matching numbered row in `plan/tasks/README.md` are
-  the tracking surface. Never update one and not the other.
-- **The header must reflect the reviewer's verdict, not the coder's intent.**
-  When a packet is ACCEPTed, review-closed, STOPped, superseded, or rejected
-  downstream, the header changes that turn — with the packet path and feedback
-  file cited so the claim is checkable.
-- **State the outcome, not just the phase.** "complete — review-closed ACCEPT",
-  "complete — STOP, no candidate", "superseded by Task N",
-  "implementation complete; packet 00X review-open". A bare "ready" or
-  "in progress" left on finished work is a defect.
-- **Carried follow-ups belong in the header**, itemised. If a task closes with
-  open items, say which, so nobody re-opens the whole task to find them.
-- **Downstream reversals propagate backwards.** If Task B's evidence rejects
-  Task A's recommendation, Task A's header and README row say so, with the
-  reconciliation path. A reader arriving at A must not walk away with a
-  conclusion B already killed.
-- **Commit and push the bookkeeping** with the same rules as review packets:
-  uncommitted status edits are invisible. Before ending a turn, `git status`
-  must show no dangling `plan/tasks/**` edits.
-
 ### GitHub-Tracked Work (Project 19)
 
 As of 2026-08-29, open ec_distann work and all new optimization/research
@@ -298,22 +243,11 @@ namespaced label system (`type:*`, `index:*`, `arch:*`, `quant:*`, `feat:*`,
 Rules for issue-tracked work:
 
 - **The issue is the tracking surface.** Status and disposition updates land
-  on the GitHub issue (comment + board Status), not in `plan/tasks/`. The
-  dual-update rule above applies only to tasks still tracked locally.
+  on the GitHub issue (comment + board Status), not in `plan/tasks/`.
 - **Migrated tasks** (local Tasks 189, 202, 209, 225, 228, 230–233, 237 →
   issues #96–#105) keep their existing `reviews/task-{id}/` packet buckets.
   Work that starts life as an issue uses `reviews/gh-{issue}/` with the same
   packet conventions.
-- **Reference discipline:** in prose, "Task NNN" means the local
-  `plan/tasks/` ledger; `#N` means a GitHub issue or PR. The two number
-  spaces will eventually overlap — never cite a bare number without one of
-  those two forms.
-- The reviewer verdict and outcome rules above apply unchanged: an
-  ACCEPT/STOP/supersede is recorded on the issue the same turn, with the
-  packet path and feedback file cited.
-- `plan/design/ec-distann-recall-latency-roadmap.md` remains the canonical
-  ledger for TRAV/MAT/HEAD/NEG candidate IDs; issues cite candidate IDs from
-  there rather than duplicating them.
 - **Arch-specific kernel work** (quantizer/SIMD changes) carries one subtask
   per ISA (`arch:x86-avx2`, `arch:x86-avx512`, `arch:arm-neon`,
   `arch:arm-sve`) with per-arch bench evidence. Changes that do not touch
@@ -373,8 +307,6 @@ Invoked to implement, continue, or close out a task on the current branch.
   feedback files you have not processed.
 - Also scan legacy `review/` only when working on a deferred Task 41 packet
   that has not been migrated yet.
-- For benchmark/measurement work, scan `benchmarks/<topic>/` for the latest
-  packet manifests in the same lane.
 - If new feedback is present for a topic you own, process it before starting
   new implementation work.
 - Do not close review requests yourself. Leave requests open until an outside
