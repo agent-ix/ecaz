@@ -11,7 +11,6 @@ reviews/
       001-short-topic/
       request.md
       artifacts/
-        manifest.md
         ...
       feedback/
         2026-05-17-01-reviewer.md
@@ -37,12 +36,7 @@ reviews/
   - JSON/JSONL result files
   - screenshots and audit outputs
 
-Measurement packets must include `artifacts/manifest.md` with head SHA, task
-bucket, packet path, command, timestamp, lane/fixture details, and key result
-lines cited by `request.md`.
+## Legacy `review/`
 
-## Migration Notes
-
-`reviews/MIGRATION.md` records the first flat-to-task migration. Legacy
-`review/` remains only as a temporary holding area for deferred Task 41
+Legacy `review/` remains only as a temporary holding area for deferred Task 41
 packets. Do not add new packets to `review/`.
