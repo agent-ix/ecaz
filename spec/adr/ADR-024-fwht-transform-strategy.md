@@ -43,7 +43,7 @@ Configuration A is retired. The decision is between B and C.
 
 ### What TurboQuantDB Does Differently
 
-The upstream TurboQuantDB implementation (`~/dev_bak/TurboQuantDB/`) uses configuration C:
+The upstream `jyunming/TurboQuantDB` implementation uses configuration C:
 
 1. **Pad to `n = next_power_of_two(d)`** — for d=1536, n=2048
 2. **Full FWHT on n dimensions** — complete decorrelation across all coordinates
@@ -156,4 +156,5 @@ No code path should produce configuration A going forward.
 - Review 202: A4 1536 tail-truncation probes — transform-tail truncation identified as dominant loss
 - Review 203: A4 1536 tiled-FWHT quantizer — production tiled FWHT implementation
 - Review 204: A4 full vs tiled FWHT — TurboQuantDB comparison and three-configuration analysis
-- TurboQuantDB source: `~/dev_bak/TurboQuantDB/src/quantizer/prod.rs`, `mse.rs`, `../linalg/hadamard.rs`
+- TurboQuantDB source: `src/quantizer/prod.rs`, `mse.rs`, and
+  `src/linalg/hadamard.rs` in `jyunming/TurboQuantDB`

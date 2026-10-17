@@ -24,7 +24,7 @@ existing packets, task files, spec files, or source.
 
 `DISTRIBUTEDANN: Efficient Scaling of a Single DISKANN Graph Across Thousands of
 Computers`, arXiv:2509.06046v1, 7 Sep 2025. Local copy:
-`~/dev_bak/papers/distributedann-2509.06046.pdf` (8 pages). Sections cited:
+DistributedANN, arXiv:2509.06046 (8 pages). Sections cited:
 §2.2 (index layout modifications, head index), §2.3 (near-data computation,
 Algorithm 1), §2.4 (orchestration service, Algorithm 2), §3 (graph
 construction), §4 (evaluation parameters), §4.1 (scaling), §4.2 (reliability).

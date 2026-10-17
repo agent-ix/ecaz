@@ -12,7 +12,7 @@
   - `sed` / `rg` / `nl` source inspection against local TurboVec and current
     repo sources
 - TurboVec source snapshot:
-  - Local path: `/Users/peter/dev_bak/turbovec`
+  - Source identity: TurboVec repository snapshot
   - SHA: `efe29a184986cbf562a9847c2ac52a2990bfaca2`
   - Status: clean `main`
 

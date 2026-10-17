@@ -4,7 +4,7 @@ Scope: compare TurboVec's TurboQuant implementation to our TurboQuant
 implementation only. This report intentionally does not evaluate other
 quantizers or external leaderboards.
 
-TurboVec source inspected: `/Users/peter/dev_bak/turbovec` at
+TurboVec source inspected at
 `efe29a184986cbf562a9847c2ac52a2990bfaca2`.
 
 Our source inspected: `/Users/peter/dev/tqvector` at
@@ -30,17 +30,17 @@ build lookup tables. The query is not packed into the same database code format.
 
 Relevant source:
 
-- `/Users/peter/dev_bak/turbovec/turbovec/src/lib.rs:96` defines
+- `TurboVec@efe29a1:turbovec/src/lib.rs:96` defines
   `TurboQuantIndex` with `packed_codes`, `scales`, TQ+ shift/scale arrays, and
   lazy blocked-code caches.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/lib.rs:250` through `:283`
+- `TurboVec@efe29a1:turbovec/src/lib.rs:250` through `:283`
   initializes rotation/codebook state and calls `encode::encode`.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/encode.rs:1` through `:27`
+- `TurboVec@efe29a1:turbovec/src/encode.rs:1` through `:27`
   documents normalize, rotate, TQ+ calibrate, quantize, pack, and scale.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/encode.rs:65` through `:133`
+- `TurboVec@efe29a1:turbovec/src/encode.rs:65` through `:133`
   implements normalize, dense rotation, calibration, packed-code allocation,
   and per-row fused quantize/scale/pack.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/encode.rs:245` through `:352`
+- `TurboVec@efe29a1:turbovec/src/encode.rs:245` through `:352`
   explains and implements the per-vector renormalization scalar.
 
 Encoding shape:
@@ -61,16 +61,16 @@ the same calibration, so all vectors live in one calibrated coordinate system.
 
 Relevant source:
 
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1466` through `:1530`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1466` through `:1530`
   implements full query search setup.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1492` through `:1508`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1492` through `:1508`
   rotates all queries with a batched GEMM.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1510` through `:1518`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1510` through `:1518`
   applies inverse TQ+ calibration.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1419` through `:1455`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1419` through `:1455`
   defines `q_calib[d] = q_rot[d] / scale_tq[d]` and bias
   `-sum(q_rot[d] * shift[d])`.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1165` through `:1280`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1165` through `:1280`
   builds per-query `u8` nibble lookup tables with per-subtable mins, one shared
   scale, and a bias.
 
@@ -83,20 +83,20 @@ decompressed into dense float vectors at query time.
 
 Relevant source:
 
-- `/Users/peter/dev_bak/turbovec/turbovec/src/lib.rs:357` through `:475`
+- `TurboVec@efe29a1:turbovec/src/lib.rs:357` through `:475`
   exposes `search` and `search_with_mask`, materializes a blocked-code cache,
   packs optional filters into a slot bitset, and calls `search::search`.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/pack.rs:1` through `:60`
+- `TurboVec@efe29a1:turbovec/src/pack.rs:1` through `:60`
   repacks per-vector bit-plane codes into SIMD-blocked layout.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/pack.rs:62` through `:88`
+- `TurboVec@efe29a1:turbovec/src/pack.rs:62` through `:88`
   uses an x86 FAISS-style 32-vector block layout with split hi/lo nibbles.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/pack.rs:90` through `:114`
+- `TurboVec@efe29a1:turbovec/src/pack.rs:90` through `:114`
   uses a sequential 32-vector block layout on non-x86.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1293` through `:1335`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1293` through `:1335`
   implements block and block-pair filter skips.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1337` through `:1417`
+- `TurboVec@efe29a1:turbovec/src/search.rs:1337` through `:1417`
   shows scalar scoring over all blocks and lanes with fused heap maintenance.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/search.rs:1532` onward dispatches
+- `TurboVec@efe29a1:turbovec/src/search.rs:1532` onward dispatches
   platform-specific scoring and top-k.
 
 There is no routing layer in the inspected implementation:
@@ -118,10 +118,10 @@ candidate generation, graph traversal, page layout, heap rerank, or tuple I/O.
 
 TurboVec file layout source:
 
-- `/Users/peter/dev_bak/turbovec/turbovec/src/io.rs:178` through `:213` writes
+- `TurboVec@efe29a1:turbovec/src/io.rs:178` through `:213` writes
   bit width, dimension, vector count, packed codes, per-vector scales, and TQ+
   calibration.
-- `/Users/peter/dev_bak/turbovec/turbovec/src/io.rs:262` through `:276` reads
+- `TurboVec@efe29a1:turbovec/src/io.rs:262` through `:276` reads
   `packed_bytes = (dim / 8) * bit_width * n_vectors` and `n_vectors` f32
   scales.
 

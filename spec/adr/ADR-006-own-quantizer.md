@@ -24,7 +24,8 @@ The `turbo-quant` crate (v0.1) was the original plan. Investigation revealed thr
 
 ## Decision
 
-**Drop `turbo-quant` crate.** Extract the quantizer core from `~/dev_bak/TurboQuantDB/` and adapt for pgrx.
+**Drop `turbo-quant` crate.** Extract the quantizer core from
+`jyunming/TurboQuantDB` and adapt for pgrx.
 
 ### What to extract
 

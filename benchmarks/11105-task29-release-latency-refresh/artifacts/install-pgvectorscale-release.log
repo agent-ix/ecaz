@@ -118,7 +118,7 @@ Script started on 2026-04-30 16:13:15-07:00 [<not executed on terminal>]
    Compiling ptr_meta_derive v0.1.4
    Compiling bytecheck_derive v0.6.12
    Compiling rkyv_derive v0.7.46
-   Compiling pgvectorscale_derive v0.1.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale/pgvectorscale_derive)
+   Compiling pgvectorscale_derive v0.1.0 ([local-checkout]/pgvectorscale/pgvectorscale_derive)
    Compiling ptr_meta v0.1.4
    Compiling synstructure v0.13.2
    Compiling futures-executor v0.3.32
@@ -157,7 +157,7 @@ Script started on 2026-04-30 16:13:15-07:00 [<not executed on terminal>]
    Compiling pgrx-bindgen v0.16.1
    Compiling pgrx-pg-sys v0.16.1
    Compiling pgrx v0.16.1
-   Compiling vectorscale v0.9.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale)
+   Compiling vectorscale v0.9.0 ([local-checkout]/pgvectorscale)
     Finished `release` profile [optimized] target(s) in 54.98s
 [32m[1m  Installing[0m[39m extension
 [32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale.control[39m
@@ -279,7 +279,7 @@ Script started on 2026-04-30 16:13:15-07:00 [<not executed on terminal>]
    Compiling ptr_meta_derive v0.1.4
    Compiling bytecheck_derive v0.6.12
    Compiling rkyv_derive v0.7.46
-   Compiling pgvectorscale_derive v0.1.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale/pgvectorscale_derive)
+   Compiling pgvectorscale_derive v0.1.0 ([local-checkout]/pgvectorscale/pgvectorscale_derive)
    Compiling futures-executor v0.3.32
    Compiling ptr_meta v0.1.4
    Compiling regex v1.12.3
@@ -319,7 +319,7 @@ Script started on 2026-04-30 16:13:15-07:00 [<not executed on terminal>]
    Compiling pgrx-bindgen v0.16.1
    Compiling pgrx-pg-sys v0.16.1
    Compiling pgrx v0.16.1
-   Compiling vectorscale v0.9.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale)
+   Compiling vectorscale v0.9.0 ([local-checkout]/pgvectorscale)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.88s
 [32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.9.0.sql
 [32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.3.0.sql[39m
