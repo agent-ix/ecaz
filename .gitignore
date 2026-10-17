@@ -32,8 +32,8 @@ reviews/**/artifacts/**/*.so
 #    Note: .gitignore only affects UNtracked files; already-committed copies
 #    must be removed with a separate `git rm` pass.
 
-# Corpus / query / ground-truth data dumps — regenerable via `ecaz corpus`;
-# record the corpus prefix + scale + SHA in manifest.md instead. Scoped to
+# Corpus / query / ground-truth data dumps — regenerable via `ecaz corpus`.
+# Scoped to
 # packet trees so non-packet fixtures (e.g. fixtures/*.tsv) stay tracked.
 reviews/**/*.tsv
 reviews/**/*.tsv.gz
