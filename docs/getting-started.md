@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) stable toolchain
+- [Rust](https://rustup.rs/) 1.100.0 toolchain
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17:
   `cargo install cargo-pgrx@0.17`
 - Native PostgreSQL build dependencies, or PostgreSQL 18 development headers if

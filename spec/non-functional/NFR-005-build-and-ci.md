@@ -11,14 +11,14 @@ traces:
 
 ## Statement
 
-The extension SHALL build on Rust stable with pgrx 0.17+, pass the full CI
+The extension SHALL build on Rust 1.100.0 with pgrx 0.17+, pass the full CI
 pipeline (formatting, lint, unit tests, pgrx integration lanes, license audit)
 on every push and PR, and build for the declared PostgreSQL and architecture
 targets.
 
 ### Toolchain
 
-- Rust stable
+- Rust 1.100.0
 - pgrx 0.17+
 - Clippy: all warnings are errors (`-D warnings`)
 - rustfmt: enforced in CI
