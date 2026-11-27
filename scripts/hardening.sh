@@ -120,8 +120,8 @@ EOF
 run_coverage_lane() {
   need_cmd cargo-llvm-cov "cargo install cargo-llvm-cov"
   local coverage_cargo=(cargo)
-  if [ -x "$RUSTUP_CARGO" ] && "$RUSTUP_CARGO" +stable --version >/dev/null 2>&1; then
-    coverage_cargo=("$RUSTUP_CARGO" "+stable")
+  if [ -x "$RUSTUP_CARGO" ] && "$RUSTUP_CARGO" +1.100.0 --version >/dev/null 2>&1; then
+    coverage_cargo=("$RUSTUP_CARGO" "+1.100.0")
     if [ -x "$RUSTUP_BIN" ]; then
       "$RUSTUP_BIN" component add llvm-tools-preview >/dev/null
     fi

@@ -25,11 +25,11 @@ before building release artifacts.
 
 ## 1. Install Native Prerequisites
 
-Install Rust stable first:
+Install Rust 1.100.0 first:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup default stable
+rustup toolchain install 1.100.0
 ```
 
 Install the native build tools and libraries needed to compile PostgreSQL and

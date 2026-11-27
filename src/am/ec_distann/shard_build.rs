@@ -802,6 +802,8 @@ fn retain_completion_bytes(
     if bytes == 0 {
         return Ok(());
     }
+    // Keep fetch_update for the Rust 1.75 MSRV; try_update requires Rust 1.95.
+    #[allow(deprecated)]
     let previous = current
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
             value.checked_add(bytes)
@@ -818,6 +820,8 @@ fn release_completion_bytes(current: &AtomicUsize, bytes: usize) -> Result<(), S
     if bytes == 0 {
         return Ok(());
     }
+    // Keep fetch_update for the Rust 1.75 MSRV; try_update requires Rust 1.95.
+    #[allow(deprecated)]
     current
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
             value.checked_sub(bytes)

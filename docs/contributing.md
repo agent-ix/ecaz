@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) stable + nightly (for fuzzing and Miri)
+- [Rust](https://rustup.rs/) 1.100.0 + nightly (for fuzzing and Miri)
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17
 - Native PostgreSQL build dependencies, or PostgreSQL 18 development headers if
   using an existing server (PG17 only for compatibility coverage)

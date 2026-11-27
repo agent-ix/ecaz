@@ -9,11 +9,11 @@ cadence, and how to add a new one.
 
 | Target triple | PG versions | Toolchains | Cadence | Notes |
 |---|---|---|---|---|
-| `aarch64-apple-darwin` | pg18 | stable, nightly | per-PR | developer default; macOS `_BufferBlocks` dyld blocker applies to pgrx-backed runtime tests — validate via compile + Miri instead, see `feedback_dyld_buffer_blocks_known`. |
-| `x86_64-unknown-linux-gnu` | pg17, pg18 | stable, nightly | per-PR | production primary; runs the full `hardening-local` + `hardening-nightly-local` lanes. |
-| `aarch64-unknown-linux-gnu` | pg18 | stable | per-PR (compile) + nightly (full) | Graviton production target; full lane uses GitHub Actions arm64 runners. |
-| `x86_64-unknown-linux-musl` | pg18 | stable | nightly | static binaries; ecaz-cli only — pgrx extension does not link statically. |
-| `s390x-unknown-linux-gnu` (qemu-user) | n/a | stable | nightly | big-endian fixture decode lane only — see [On-Disk Format Cross-Arch](#on-disk-format-cross-arch). |
+| `aarch64-apple-darwin` | pg18 | 1.100.0, nightly | per-PR | developer default; macOS `_BufferBlocks` dyld blocker applies to pgrx-backed runtime tests — validate via compile + Miri instead, see `feedback_dyld_buffer_blocks_known`. |
+| `x86_64-unknown-linux-gnu` | pg17, pg18 | 1.100.0, nightly | per-PR | production primary; runs the full `hardening-local` + `hardening-nightly-local` lanes. |
+| `aarch64-unknown-linux-gnu` | pg18 | 1.100.0 | per-PR (compile) + nightly (full) | Graviton production target; full lane uses GitHub Actions arm64 runners. |
+| `x86_64-unknown-linux-musl` | pg18 | 1.100.0 | nightly | static binaries; ecaz-cli only — pgrx extension does not link statically. |
+| `s390x-unknown-linux-gnu` (qemu-user) | n/a | 1.100.0 | nightly | big-endian fixture decode lane only — see [On-Disk Format Cross-Arch](#on-disk-format-cross-arch). |
 
 PG version policy:
 - pg18 is the validation primary. Every per-PR lane must run pg18.
@@ -22,7 +22,7 @@ PG version policy:
 - pg19 lands in this table when the upstream RC is published.
 
 Rust toolchain policy:
-- `stable` runs every lane.
+- `1.100.0` runs every stable lane.
 - `nightly` runs `miri`, `cargo-careful`, sanitizers, and `cargo-fuzz`.
   Pinned to the toolchain recorded under `~/.rustup/toolchains/`.
 

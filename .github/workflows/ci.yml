@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
 
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -117,7 +117,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: s390x-unknown-linux-gnu
 
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -194,7 +194,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -283,7 +283,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.changes.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         if: steps.changes.outputs.run == 'true'
@@ -340,7 +340,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -374,7 +374,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -398,7 +398,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: llvm-tools-preview
 
@@ -455,7 +455,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -508,7 +508,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2

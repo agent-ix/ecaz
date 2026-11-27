@@ -85,7 +85,7 @@ operator CLI setup, and validation commands.
 Ecaz targets PG18 by default, with PG17 kept as a compatibility build. A
 complete source setup has five parts:
 
-1. Install Rust stable, native build tools, and PostgreSQL build dependencies.
+1. Install Rust 1.100.0, native build tools, and PostgreSQL build dependencies.
 2. Install the matching pgrx toolchain: `cargo install cargo-pgrx@0.17`.
 3. Initialize pgrx for PG18: `cargo pgrx init --pg18 download`.
 4. Build and install into a pgrx-managed PG18: `cargo pgrx run --release pg18`.
@@ -215,7 +215,7 @@ comparisons.
 
 PG18 is the primary target; PG17 is kept as a compatibility build.
 
-- [Rust](https://rustup.rs/) stable
+- [Rust](https://rustup.rs/) 1.100.0
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) `0.17`
 - Native PostgreSQL build dependencies, or PostgreSQL 18 development headers if
   using an existing server
